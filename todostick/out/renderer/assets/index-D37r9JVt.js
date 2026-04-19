@@ -7731,13 +7731,25 @@ function MainApp() {
     )
   ] });
 }
+let attempts = 0;
 function mount() {
-  if (typeof window.api === "undefined") {
-    setTimeout(mount, 50);
+  attempts++;
+  if (typeof window.api !== "undefined") {
+    client.createRoot(document.getElementById("root")).render(
+      /* @__PURE__ */ jsxRuntimeExports.jsx(React.StrictMode, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(App, {}) })
+    );
     return;
   }
-  client.createRoot(document.getElementById("root")).render(
-    /* @__PURE__ */ jsxRuntimeExports.jsx(React.StrictMode, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(App, {}) })
-  );
+  if (attempts > 40) {
+    document.getElementById("root").innerHTML = `
+      <div style="padding:40px;font-family:sans-serif;color:#ef4444">
+        <h2>⚠️ preload 로드 실패</h2>
+        <p style="margin-top:8px;color:#666">window.api를 찾을 수 없습니다.</p>
+        <p style="margin-top:4px;color:#666">DevTools 콘솔에서 에러를 확인하세요.</p>
+      </div>
+    `;
+    return;
+  }
+  setTimeout(mount, 50);
 }
 mount();

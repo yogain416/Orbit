@@ -1,15 +1,10 @@
-import { app, BrowserWindow, ipcMain, nativeImage, Tray, Menu } from "electron";
-import { join } from "path";
-import { electronApp, optimizer, is } from "@electron-toolkit/utils";
-import { JSONFileSyncPreset } from "lowdb/node";
-import __cjs_url__ from "node:url";
-import __cjs_path__ from "node:path";
-import __cjs_mod__ from "node:module";
-const __filename = __cjs_url__.fileURLToPath(import.meta.url);
-const __dirname = __cjs_path__.dirname(__filename);
-const require2 = __cjs_mod__.createRequire(import.meta.url);
-const dbPath = join(app.getPath("userData"), "todostick.json");
-const db = JSONFileSyncPreset(dbPath, { tasks: [] });
+"use strict";
+const electron = require("electron");
+const path = require("path");
+const utils = require("@electron-toolkit/utils");
+const node = require("lowdb/node");
+const dbPath = path.join(electron.app.getPath("userData"), "todostick.json");
+const db = node.JSONFileSyncPreset(dbPath, { tasks: [] });
 function read() {
   db.read();
   return db.data;
@@ -79,7 +74,7 @@ let mainWindow = null;
 let stickerWindow = null;
 let tray = null;
 function createMainWindow() {
-  mainWindow = new BrowserWindow({
+  mainWindow = new electron.BrowserWindow({
     width: 900,
     height: 650,
     minWidth: 700,
@@ -87,28 +82,31 @@ function createMainWindow() {
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
+      preload: path.join(__dirname, "../preload/index.js"),
       sandbox: false
     }
   });
-  mainWindow.on("ready-to-show", () => mainWindow.show());
+  mainWindow.on("ready-to-show", () => {
+    mainWindow.show();
+    if (utils.is.dev) mainWindow.webContents.openDevTools({ mode: "detach" });
+  });
   mainWindow.on("close", (e) => {
-    if (!app.isQuitting) {
+    if (!electron.app.isQuitting) {
       e.preventDefault();
       mainWindow.hide();
     }
   });
-  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
+  if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   } else {
-    mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+    mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
 }
 function createStickerWindow() {
-  const { width: sw, height: sh } = require2("electron").screen.getPrimaryDisplay().workAreaSize;
+  const { width: sw, height: sh } = electron.screen.getPrimaryDisplay().workAreaSize;
   const x = sw - 300;
   const y = sh - 380;
-  stickerWindow = new BrowserWindow({
+  stickerWindow = new electron.BrowserWindow({
     width: 280,
     height: 360,
     x,
@@ -120,26 +118,26 @@ function createStickerWindow() {
     transparent: true,
     hasShadow: true,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
+      preload: path.join(__dirname, "../preload/index.js"),
       sandbox: false
     }
   });
-  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
+  if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     stickerWindow.loadURL(`${process.env["ELECTRON_RENDERER_URL"]}#sticker`);
   } else {
-    stickerWindow.loadFile(join(__dirname, "../renderer/index.html"), { hash: "sticker" });
+    stickerWindow.loadFile(path.join(__dirname, "../renderer/index.html"), { hash: "sticker" });
   }
   stickerWindow.on("closed", () => {
     stickerWindow = null;
   });
 }
 function createTray() {
-  const iconPath = join(__dirname, "../../resources/icon.png");
-  const icon = nativeImage.createFromPath(iconPath);
-  tray = new Tray(icon);
+  const iconPath = path.join(__dirname, "../../resources/icon.png");
+  const icon = electron.nativeImage.createFromPath(iconPath);
+  tray = new electron.Tray(icon);
   tray.setToolTip("TodoStick");
   const updateMenu = () => {
-    const contextMenu = Menu.buildFromTemplate([
+    const contextMenu = electron.Menu.buildFromTemplate([
       { label: "메인 창 열기", click: () => {
         mainWindow?.show();
         mainWindow?.focus();
@@ -157,8 +155,8 @@ function createTray() {
       },
       { type: "separator" },
       { label: "종료", click: () => {
-        app.isQuitting = true;
-        app.quit();
+        electron.app.isQuitting = true;
+        electron.app.quit();
       } }
     ]);
     tray.setContextMenu(contextMenu);
@@ -169,40 +167,40 @@ function createTray() {
     mainWindow?.focus();
   });
 }
-app.whenReady().then(() => {
-  electronApp.setAppUserModelId("com.todostick");
-  app.on("browser-window-created", (_, window) => {
-    optimizer.watchWindowShortcuts(window);
+electron.app.whenReady().then(() => {
+  utils.electronApp.setAppUserModelId("com.todostick");
+  electron.app.on("browser-window-created", (_, window) => {
+    utils.optimizer.watchWindowShortcuts(window);
   });
   createMainWindow();
   createStickerWindow();
   createTray();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+  electron.app.on("activate", () => {
+    if (electron.BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
 });
-app.on("window-all-closed", () => {
-  if (process.platform === "darwin") app.quit();
+electron.app.on("window-all-closed", () => {
+  if (process.platform === "darwin") electron.app.quit();
 });
-ipcMain.handle("tasks:getByDate", (_, date) => db$1.getTasksByDate(date));
-ipcMain.handle("tasks:getByMonth", (_, year, month) => db$1.getTasksByMonth(year, month));
-ipcMain.handle("tasks:getByWeek", (_, startDate, endDate) => db$1.getTasksByRange(startDate, endDate));
-ipcMain.handle("tasks:create", (_, task) => db$1.createTask(task));
-ipcMain.handle("tasks:update", (_, id, fields) => db$1.updateTask(id, fields));
-ipcMain.handle("tasks:delete", (_, id) => db$1.deleteTask(id));
-ipcMain.handle("tasks:toggle", (_, id) => db$1.toggleTask(id));
-ipcMain.on("tasks:changed", () => {
+electron.ipcMain.handle("tasks:getByDate", (_, date) => db$1.getTasksByDate(date));
+electron.ipcMain.handle("tasks:getByMonth", (_, year, month) => db$1.getTasksByMonth(year, month));
+electron.ipcMain.handle("tasks:getByWeek", (_, startDate, endDate) => db$1.getTasksByRange(startDate, endDate));
+electron.ipcMain.handle("tasks:create", (_, task) => db$1.createTask(task));
+electron.ipcMain.handle("tasks:update", (_, id, fields) => db$1.updateTask(id, fields));
+electron.ipcMain.handle("tasks:delete", (_, id) => db$1.deleteTask(id));
+electron.ipcMain.handle("tasks:toggle", (_, id) => db$1.toggleTask(id));
+electron.ipcMain.on("tasks:changed", () => {
   mainWindow?.webContents.send("tasks:refresh");
   stickerWindow?.webContents.send("tasks:refresh");
 });
-ipcMain.on("window:startDrag", (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
+electron.ipcMain.on("window:startDrag", (event) => {
+  const win = electron.BrowserWindow.fromWebContents(event.sender);
   if (win) win.setMovable(true);
 });
-ipcMain.on("window:openMain", () => {
+electron.ipcMain.on("window:openMain", () => {
   mainWindow?.show();
   mainWindow?.focus();
 });
-ipcMain.on("window:close", (event) => {
-  BrowserWindow.fromWebContents(event.sender)?.close();
+electron.ipcMain.on("window:close", (event) => {
+  electron.BrowserWindow.fromWebContents(event.sender)?.close();
 });

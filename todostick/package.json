@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "스티커처럼 붙어있는 오늘의 할 일 앱",
   "main": "out/main/index.js",
-  "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
