@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import db from './database.js'
@@ -21,7 +21,10 @@ function createMainWindow() {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow.show())
+  mainWindow.on('ready-to-show', () => {
+    mainWindow.show()
+    if (is.dev) mainWindow.webContents.openDevTools({ mode: 'detach' })
+  })
 
   // X버튼 클릭 → 트레이로 최소화 (종료 안함)
   mainWindow.on('close', (e) => {
@@ -40,7 +43,7 @@ function createMainWindow() {
 
 function createStickerWindow() {
   // 마지막 저장 위치 불러오기 (없으면 우측 하단 기본값)
-  const { width: sw, height: sh } = require('electron').screen.getPrimaryDisplay().workAreaSize
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const x = sw - 300
   const y = sh - 380
 
