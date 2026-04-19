@@ -10,8 +10,7 @@
     "package": "electron-builder"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^4.0.0",
-    "lowdb": "^7.0.1"
+    "@electron-toolkit/utils": "^4.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
