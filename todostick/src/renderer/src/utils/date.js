@@ -1,5 +1,5 @@
-export function getTodayStr() {
-  return toDateStr(new Date())
+export function getTodayStr(date) {
+  return toDateStr(date instanceof Date ? date : new Date())
 }
 
 export function toDateStr(date) {

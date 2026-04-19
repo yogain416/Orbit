@@ -93,8 +93,10 @@ function createMainWindow() {
   });
   mainWindow.on("ready-to-show", () => mainWindow.show());
   mainWindow.on("close", (e) => {
-    e.preventDefault();
-    mainWindow.hide();
+    if (!app.isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
   });
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
@@ -103,22 +105,25 @@ function createMainWindow() {
   }
 }
 function createStickerWindow() {
+  const { width: sw, height: sh } = require2("electron").screen.getPrimaryDisplay().workAreaSize;
+  const x = sw - 300;
+  const y = sh - 380;
   stickerWindow = new BrowserWindow({
     width: 280,
-    height: 320,
-    x: 1600,
-    y: 800,
+    height: 360,
+    x,
+    y,
     frame: false,
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
     transparent: true,
+    hasShadow: true,
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: false
     }
   });
-  is.dev && process.env["ELECTRON_RENDERER_URL"] ? `${process.env["ELECTRON_RENDERER_URL"]}#/sticker` : join(__dirname, "../renderer/index.html#/sticker");
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     stickerWindow.loadURL(`${process.env["ELECTRON_RENDERER_URL"]}#sticker`);
   } else {
@@ -129,21 +134,40 @@ function createStickerWindow() {
   });
 }
 function createTray() {
-  const icon = nativeImage.createEmpty();
+  const iconPath = join(__dirname, "../../resources/icon.png");
+  const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon);
   tray.setToolTip("TodoStick");
-  const contextMenu = Menu.buildFromTemplate([
-    { label: "메인 창 열기", click: () => mainWindow?.show() },
-    { label: "스티커 팝업 열기", click: () => {
-      if (!stickerWindow) createStickerWindow();
-    } },
-    { type: "separator" },
-    { label: "종료", click: () => {
-      app.exit();
-    } }
-  ]);
-  tray.setContextMenu(contextMenu);
-  tray.on("double-click", () => mainWindow?.show());
+  const updateMenu = () => {
+    const contextMenu = Menu.buildFromTemplate([
+      { label: "메인 창 열기", click: () => {
+        mainWindow?.show();
+        mainWindow?.focus();
+      } },
+      {
+        label: stickerWindow ? "스티커 숨기기" : "스티커 팝업 열기",
+        click: () => {
+          if (stickerWindow) {
+            stickerWindow.close();
+          } else {
+            createStickerWindow();
+          }
+          updateMenu();
+        }
+      },
+      { type: "separator" },
+      { label: "종료", click: () => {
+        app.isQuitting = true;
+        app.quit();
+      } }
+    ]);
+    tray.setContextMenu(contextMenu);
+  };
+  updateMenu();
+  tray.on("double-click", () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
 }
 app.whenReady().then(() => {
   electronApp.setAppUserModelId("com.todostick");
@@ -158,7 +182,7 @@ app.whenReady().then(() => {
   });
 });
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform === "darwin") app.quit();
 });
 ipcMain.handle("tasks:getByDate", (_, date) => db$1.getTasksByDate(date));
 ipcMain.handle("tasks:getByMonth", (_, year, month) => db$1.getTasksByMonth(year, month));
@@ -170,4 +194,15 @@ ipcMain.handle("tasks:toggle", (_, id) => db$1.toggleTask(id));
 ipcMain.on("tasks:changed", () => {
   mainWindow?.webContents.send("tasks:refresh");
   stickerWindow?.webContents.send("tasks:refresh");
+});
+ipcMain.on("window:startDrag", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.setMovable(true);
+});
+ipcMain.on("window:openMain", () => {
+  mainWindow?.show();
+  mainWindow?.focus();
+});
+ipcMain.on("window:close", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
 });

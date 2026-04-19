@@ -73,19 +73,8 @@ function createStickerWindow() {
 }
 
 function createTray() {
-  // 16×16 PNG 아이콘 (nativeImage로 빈 이미지 대신 색상 있는 아이콘 생성)
-  const size = 16
-  const buf = Buffer.alloc(size * size * 4)
-  for (let i = 0; i < size * size; i++) {
-    const row = Math.floor(i / size)
-    const col = i % size
-    const inCircle = Math.pow(col - 7.5, 2) + Math.pow(row - 7.5, 2) < 49
-    buf[i * 4] = inCircle ? 99 : 0
-    buf[i * 4 + 1] = inCircle ? 102 : 0
-    buf[i * 4 + 2] = inCircle ? 241 : 0
-    buf[i * 4 + 3] = inCircle ? 255 : 0
-  }
-  const icon = nativeImage.createFromBuffer(buf, { width: size, height: size })
+  const iconPath = join(__dirname, '../../resources/icon.png')
+  const icon = nativeImage.createFromPath(iconPath)
 
   tray = new Tray(icon)
   tray.setToolTip('TodoStick')

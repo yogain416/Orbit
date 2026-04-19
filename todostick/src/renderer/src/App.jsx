@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import DayView from './views/DayView'
 import WeekView from './views/WeekView'
 import MonthView from './views/MonthView'
@@ -10,10 +10,7 @@ const VIEWS = ['일별', '주별', '월별']
 
 export default function App() {
   const isSticker = window.location.hash === '#sticker'
-  if (isSticker) {
-    return <StickerPopup />
-  }
-
+  if (isSticker) return <StickerPopup />
   return <MainApp />
 }
 
@@ -24,35 +21,68 @@ function MainApp() {
   const [editingTask, setEditingTask] = useState(null)
   const [defaultDate, setDefaultDate] = useState(getTodayStr())
 
-  const openAddModal = (date = getTodayStr()) => {
-    setEditingTask(null)
-    setDefaultDate(date)
-    setModalOpen(true)
-  }
+  const isToday = getTodayStr() === getTodayStr(currentDate)
 
-  const openEditModal = (task) => {
+  const openAddModal = useCallback((date = getTodayStr()) => {
+    setEditingTask(null)
+    setDefaultDate(typeof date === 'string' ? date : getTodayStr())
+    setModalOpen(true)
+  }, [])
+
+  const openEditModal = useCallback((task) => {
     setEditingTask(task)
     setModalOpen(true)
-  }
+  }, [])
+
+  const goToToday = () => setCurrentDate(new Date())
+
+  // 전역 키보드 단축키
+  useEffect(() => {
+    const handler = (e) => {
+      if (modalOpen) return
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault()
+        openAddModal(getTodayStr(currentDate))
+      }
+      if (e.key === 't' && !e.ctrlKey && !e.metaKey) goToToday()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [modalOpen, currentDate, openAddModal])
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-slate-50">
       {/* 헤더 */}
-      <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200 shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-bold text-indigo-600">📌 TodoStick</span>
+      <header className="flex items-center gap-4 px-5 py-2.5 bg-white border-b border-slate-200 shadow-sm">
+        {/* 로고 */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="text-lg">📌</span>
+          <span className="font-bold text-indigo-600 text-base tracking-tight">TodoStick</span>
         </div>
 
-        {/* 뷰 전환 탭 */}
-        <div className="flex rounded-lg overflow-hidden border border-gray-200">
+        {/* 날짜 네비게이션 */}
+        <div className="flex items-center gap-2 flex-1">
+          <span className="text-sm font-medium text-slate-600">{formatDate(currentDate)}</span>
+          {!isToday && (
+            <button
+              onClick={goToToday}
+              className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-colors font-medium"
+            >
+              오늘로
+            </button>
+          )}
+        </div>
+
+        {/* 뷰 전환 */}
+        <div className="flex rounded-lg overflow-hidden border border-slate-200 flex-shrink-0">
           {VIEWS.map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+              className={`px-3.5 py-1.5 text-xs font-semibold transition-colors ${
                 view === v
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-600 hover:bg-gray-50'
+                  : 'bg-white text-slate-500 hover:bg-slate-50'
               }`}
             >
               {v}
@@ -60,9 +90,14 @@ function MainApp() {
           ))}
         </div>
 
-        <div className="text-sm text-gray-500">
-          {formatDate(currentDate)}
-        </div>
+        {/* 추가 버튼 */}
+        <button
+          onClick={() => openAddModal(getTodayStr(currentDate))}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0"
+          title="Ctrl+N"
+        >
+          <span className="text-sm leading-none">+</span> 추가
+        </button>
       </header>
 
       {/* 메인 콘텐츠 */}
@@ -79,7 +114,7 @@ function MainApp() {
           <WeekView
             currentDate={currentDate}
             onDateChange={setCurrentDate}
-            onDateClick={(date) => { setCurrentDate(new Date(date)); setView('일별') }}
+            onDateClick={(date) => { setCurrentDate(new Date(date + 'T00:00:00')); setView('일별') }}
             onAddTask={openAddModal}
           />
         )}
@@ -87,10 +122,16 @@ function MainApp() {
           <MonthView
             currentDate={currentDate}
             onDateChange={setCurrentDate}
-            onDateClick={(date) => { setCurrentDate(new Date(date)); setView('일별') }}
+            onDateClick={(date) => { setCurrentDate(new Date(date + 'T00:00:00')); setView('일별') }}
           />
         )}
       </main>
+
+      {/* 하단 단축키 힌트 */}
+      <div className="px-5 py-1.5 bg-white border-t border-slate-100 flex gap-4">
+        <span className="text-xs text-slate-400"><kbd className="bg-slate-100 px-1 rounded text-xs">Ctrl+N</kbd> 할일 추가</span>
+        <span className="text-xs text-slate-400"><kbd className="bg-slate-100 px-1 rounded text-xs">T</kbd> 오늘로 이동</span>
+      </div>
 
       {/* 할일 추가/편집 모달 */}
       {modalOpen && (
@@ -103,4 +144,3 @@ function MainApp() {
     </div>
   )
 }
-
