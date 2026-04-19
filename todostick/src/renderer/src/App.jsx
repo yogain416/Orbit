@@ -3,6 +3,7 @@ import DayView from './views/DayView'
 import WeekView from './views/WeekView'
 import MonthView from './views/MonthView'
 import TaskModal from './components/TaskModal'
+import StickerPopup from './components/StickerPopup'
 import { formatDate, getTodayStr } from './utils/date'
 
 const VIEWS = ['일별', '주별', '월별']
@@ -103,16 +104,3 @@ function MainApp() {
   )
 }
 
-function StickerPopup() {
-  return (
-    <div className="w-full h-full bg-yellow-50 border-2 border-yellow-300 rounded-xl shadow-xl flex flex-col">
-      <div className="flex items-center justify-between px-3 py-2 bg-yellow-300 rounded-t-xl cursor-move">
-        <span className="text-sm font-bold text-yellow-900">📌 오늘 할 일</span>
-        <button className="text-yellow-800 hover:text-yellow-900 text-xs">접기</button>
-      </div>
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        <p className="text-sm text-gray-400 text-center mt-8">오늘은 할 일이 없어요!</p>
-      </div>
-    </div>
-  )
-}

@@ -12,5 +12,10 @@ contextBridge.exposeInMainWorld('api', {
     notifyChanged: () => ipcRenderer.send('tasks:changed'),
     onRefresh: (cb) => ipcRenderer.on('tasks:refresh', cb),
     offRefresh: (cb) => ipcRenderer.removeListener('tasks:refresh', cb)
+  },
+  window: {
+    startDrag: () => ipcRenderer.send('window:startDrag'),
+    openMain: () => ipcRenderer.send('window:openMain'),
+    close: () => ipcRenderer.send('window:close')
   }
 })

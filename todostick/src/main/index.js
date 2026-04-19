@@ -23,9 +23,12 @@ function createMainWindow() {
 
   mainWindow.on('ready-to-show', () => mainWindow.show())
 
+  // X버튼 클릭 → 트레이로 최소화 (종료 안함)
   mainWindow.on('close', (e) => {
-    e.preventDefault()
-    mainWindow.hide()
+    if (!app.isQuitting) {
+      e.preventDefault()
+      mainWindow.hide()
+    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -36,25 +39,27 @@ function createMainWindow() {
 }
 
 function createStickerWindow() {
+  // 마지막 저장 위치 불러오기 (없으면 우측 하단 기본값)
+  const { width: sw, height: sh } = require('electron').screen.getPrimaryDisplay().workAreaSize
+  const x = sw - 300
+  const y = sh - 380
+
   stickerWindow = new BrowserWindow({
     width: 280,
-    height: 320,
-    x: 1600,
-    y: 800,
+    height: 360,
+    x,
+    y,
     frame: false,
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
     transparent: true,
+    hasShadow: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
     }
   })
-
-  const stickerUrl = is.dev && process.env['ELECTRON_RENDERER_URL']
-    ? `${process.env['ELECTRON_RENDERER_URL']}#/sticker`
-    : join(__dirname, '../renderer/index.html#/sticker')
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     stickerWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#sticker`)
@@ -68,19 +73,45 @@ function createStickerWindow() {
 }
 
 function createTray() {
-  const icon = nativeImage.createEmpty()
+  // 16×16 PNG 아이콘 (nativeImage로 빈 이미지 대신 색상 있는 아이콘 생성)
+  const size = 16
+  const buf = Buffer.alloc(size * size * 4)
+  for (let i = 0; i < size * size; i++) {
+    const row = Math.floor(i / size)
+    const col = i % size
+    const inCircle = Math.pow(col - 7.5, 2) + Math.pow(row - 7.5, 2) < 49
+    buf[i * 4] = inCircle ? 99 : 0
+    buf[i * 4 + 1] = inCircle ? 102 : 0
+    buf[i * 4 + 2] = inCircle ? 241 : 0
+    buf[i * 4 + 3] = inCircle ? 255 : 0
+  }
+  const icon = nativeImage.createFromBuffer(buf, { width: size, height: size })
+
   tray = new Tray(icon)
   tray.setToolTip('TodoStick')
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: '메인 창 열기', click: () => mainWindow?.show() },
-    { label: '스티커 팝업 열기', click: () => { if (!stickerWindow) createStickerWindow() } },
-    { type: 'separator' },
-    { label: '종료', click: () => { app.exit() } }
-  ])
+  const updateMenu = () => {
+    const contextMenu = Menu.buildFromTemplate([
+      { label: '메인 창 열기', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+      {
+        label: stickerWindow ? '스티커 숨기기' : '스티커 팝업 열기',
+        click: () => {
+          if (stickerWindow) {
+            stickerWindow.close()
+          } else {
+            createStickerWindow()
+          }
+          updateMenu()
+        }
+      },
+      { type: 'separator' },
+      { label: '종료', click: () => { app.isQuitting = true; app.quit() } }
+    ])
+    tray.setContextMenu(contextMenu)
+  }
 
-  tray.setContextMenu(contextMenu)
-  tray.on('double-click', () => mainWindow?.show())
+  updateMenu()
+  tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus() })
 }
 
 app.whenReady().then(() => {
@@ -99,8 +130,10 @@ app.whenReady().then(() => {
   })
 })
 
+// 모든 창이 닫혀도 트레이가 있으면 앱 유지
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform === 'darwin') app.quit()
+  // Windows: 트레이로 계속 실행
 })
 
 // IPC: 할일 CRUD
@@ -116,4 +149,22 @@ ipcMain.handle('tasks:toggle', (_, id) => db.toggleTask(id))
 ipcMain.on('tasks:changed', () => {
   mainWindow?.webContents.send('tasks:refresh')
   stickerWindow?.webContents.send('tasks:refresh')
+})
+
+// IPC: 스티커 창 드래그 이동
+ipcMain.on('window:startDrag', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) win.setMovable(true)
+  // Electron 내장 드래그는 CSS -webkit-app-region으로 처리 (아래 참고)
+})
+
+// IPC: 메인 창 열기
+ipcMain.on('window:openMain', () => {
+  mainWindow?.show()
+  mainWindow?.focus()
+})
+
+// IPC: 창 닫기
+ipcMain.on('window:close', (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close()
 })
