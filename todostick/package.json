@@ -1,13 +1,14 @@
 {
   "name": "todostick",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "스티커처럼 붙어있는 오늘의 할 일 앱",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-builder"
+    "gen-icon": "node scripts/generate-icon.mjs",
+    "package": "npm run build && electron-builder"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0"
@@ -27,11 +28,27 @@
   "build": {
     "appId": "com.todostick.app",
     "productName": "TodoStick",
+    "copyright": "Copyright © 2026",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "resources"
     },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
     "win": {
-      "target": "nsis"
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TodoStick",
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico"
     }
   }
 }

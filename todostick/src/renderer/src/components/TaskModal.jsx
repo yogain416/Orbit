@@ -1,5 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { getTodayStr } from '../utils/date'
+import { CATEGORIES } from '../utils/categories'
+
+const COLORS = [
+  { value: null, bg: 'bg-slate-200', label: '없음' },
+  { value: 'red', bg: 'bg-red-400', label: '빨강' },
+  { value: 'orange', bg: 'bg-orange-400', label: '주황' },
+  { value: 'yellow', bg: 'bg-yellow-400', label: '노랑' },
+  { value: 'green', bg: 'bg-green-400', label: '초록' },
+  { value: 'blue', bg: 'bg-blue-400', label: '파랑' },
+  { value: 'purple', bg: 'bg-purple-400', label: '보라' },
+]
 
 const REPEAT_OPTIONS = [
   { value: 'none', label: '없음' },
@@ -13,6 +24,11 @@ export default function TaskModal({ task, defaultDate, onClose }) {
   const [memo, setMemo] = useState(task?.memo || '')
   const [date, setDate] = useState(task?.date || defaultDate || getTodayStr())
   const [repeatType, setRepeatType] = useState(task?.repeat_type || 'none')
+  const [repeatDays, setRepeatDays] = useState(task?.repeat_days || [0, 1, 2, 3, 4, 5, 6])
+  const [remindAt, setRemindAt] = useState(task?.remind_at || '')
+  const [color, setColor] = useState(task?.color || null)
+  const [category, setCategory] = useState(task?.category || null)
+  const [completionNote, setCompletionNote] = useState(task?.completion_note || '')
   const [saving, setSaving] = useState(false)
 
   const isEdit = !!task
@@ -22,10 +38,19 @@ export default function TaskModal({ task, defaultDate, onClose }) {
   const handleSave = async () => {
     if (!title.trim() || overLimit) return
     setSaving(true)
+    const payload = {
+      title: title.trim(), memo, date,
+      repeat_type: repeatType,
+      repeat_days: repeatType === 'daily' ? repeatDays : null,
+      remind_at: remindAt || null,
+      color: color || null,
+      category: category || null,
+      ...(isEdit && task.is_completed ? { completion_note: completionNote.trim() || null } : {})
+    }
     if (isEdit) {
-      await window.api.tasks.update(task.id, { title: title.trim(), memo, date, repeat_type: repeatType })
+      await window.api.tasks.update(task.id, payload)
     } else {
-      await window.api.tasks.create({ title: title.trim(), memo, date, repeat_type: repeatType })
+      await window.api.tasks.create(payload)
     }
     window.api.tasks.notifyChanged()
     setSaving(false)
@@ -40,7 +65,7 @@ export default function TaskModal({ task, defaultDate, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -51,7 +76,7 @@ export default function TaskModal({ task, defaultDate, onClose }) {
         </div>
 
         {/* 폼 */}
-        <div className="px-6 py-4 flex flex-col gap-4">
+        <div className="px-6 py-4 flex flex-col gap-4 overflow-y-auto">
           {/* 제목 */}
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">제목 *</label>
@@ -84,6 +109,47 @@ export default function TaskModal({ task, defaultDate, onClose }) {
             />
           </div>
 
+          {/* 카테고리 */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-2 block">카테고리</label>
+            <div className="flex flex-wrap gap-2">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={String(c.value)}
+                  type="button"
+                  onClick={() => setCategory(c.value)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                    category === c.value
+                      ? `${c.color} border-current ring-2 ring-offset-1 ring-indigo-400`
+                      : `${c.color} border-transparent opacity-60 hover:opacity-100`
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 색상 태그 */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-2 block">색상 태그</label>
+            <div className="flex gap-2">
+              {COLORS.map((c) => (
+                <button
+                  key={String(c.value)}
+                  type="button"
+                  onClick={() => setColor(c.value)}
+                  title={c.label}
+                  className={`w-7 h-7 rounded-full ${c.bg} transition-all ${
+                    color === c.value
+                      ? 'ring-2 ring-offset-2 ring-indigo-400 scale-110'
+                      : 'hover:scale-110 opacity-70 hover:opacity-100'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
           {/* 반복 */}
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">반복</label>
@@ -96,6 +162,77 @@ export default function TaskModal({ task, defaultDate, onClose }) {
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            {repeatType === 'daily' && (
+              <div className="mt-2">
+                <div className="flex gap-1">
+                  {['일', '월', '화', '수', '목', '금', '토'].map((label, day) => {
+                    const active = repeatDays.includes(day)
+                    const isWeekend = day === 0 || day === 6
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => setRepeatDays((prev) =>
+                          active ? prev.filter((d) => d !== day) : [...prev, day].sort()
+                        )}
+                        className={`flex-1 py-1 text-xs rounded-md font-medium transition-all border ${
+                          active
+                            ? isWeekend
+                              ? 'bg-rose-100 border-rose-300 text-rose-700'
+                              : 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                            : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-gray-300'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="flex gap-2 mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setRepeatDays([1, 2, 3, 4, 5])}
+                    className="text-xs text-indigo-500 hover:text-indigo-700"
+                  >
+                    평일만
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRepeatDays([0, 1, 2, 3, 4, 5, 6])}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    매일
+                  </button>
+                </div>
+              </div>
+            )}
+            {repeatType !== 'none' && (
+              <p className="text-xs text-indigo-500 mt-1">🔁 선택한 날짜부터 자동으로 반복 생성됩니다</p>
+            )}
+          </div>
+
+          {/* 알림 시간 */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">알림 시간 (선택)</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="time"
+                value={remindAt}
+                onChange={(e) => setRemindAt(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+              />
+              {remindAt && (
+                <button
+                  onClick={() => setRemindAt('')}
+                  className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100"
+                >
+                  지우기
+                </button>
+              )}
+            </div>
+            {remindAt && (
+              <p className="text-xs text-indigo-500 mt-1">🔔 {remindAt}에 시스템 알림이 울립니다</p>
+            )}
           </div>
 
           {/* 메모 */}
@@ -109,6 +246,20 @@ export default function TaskModal({ task, defaultDate, onClose }) {
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none"
             />
           </div>
+
+          {/* 완료 메모 (완료된 할일 편집 시만 표시) */}
+          {isEdit && task.is_completed && (
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">완료 메모</label>
+              <textarea
+                value={completionNote}
+                onChange={(e) => setCompletionNote(e.target.value)}
+                placeholder="완료 후 기록 (운동 결과, 소감 등)"
+                rows={3}
+                className="w-full border border-green-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-400 resize-none bg-green-50"
+              />
+            </div>
+          )}
         </div>
 
         {/* 버튼 */}

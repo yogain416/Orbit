@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback } from 'react'
 import DayView from './views/DayView'
 import WeekView from './views/WeekView'
 import MonthView from './views/MonthView'
+import RecordsView from './views/RecordsView'
 import TaskModal from './components/TaskModal'
 import StickerPopup from './components/StickerPopup'
+import SettingsModal from './components/SettingsModal'
 import { formatDate, getTodayStr } from './utils/date'
 
-const VIEWS = ['일별', '주별', '월별']
+const VIEWS = ['일별', '주별', '월별', '기록']
 
 export default function App() {
   const isSticker = window.location.hash === '#sticker'
@@ -20,6 +22,7 @@ function MainApp() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [defaultDate, setDefaultDate] = useState(getTodayStr())
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const isToday = getTodayStr() === getTodayStr(currentDate)
 
@@ -98,6 +101,13 @@ function MainApp() {
         >
           <span className="text-sm leading-none">+</span> 추가
         </button>
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0"
+          title="단축키 설정"
+        >
+          ⚙️
+        </button>
       </header>
 
       {/* 메인 콘텐츠 */}
@@ -125,6 +135,7 @@ function MainApp() {
             onDateClick={(date) => { setCurrentDate(new Date(date + 'T00:00:00')); setView('일별') }}
           />
         )}
+        {view === '기록' && <RecordsView />}
       </main>
 
       {/* 하단 단축키 힌트 */}
@@ -141,6 +152,9 @@ function MainApp() {
           onClose={() => setModalOpen(false)}
         />
       )}
+
+      {/* 단축키 설정 모달 */}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }

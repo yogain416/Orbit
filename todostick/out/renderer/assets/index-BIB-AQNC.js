@@ -6996,44 +6996,133 @@ function getDaysInMonth(year, month) {
   for (let d = 1; d <= last.getDate(); d++) days.push(new Date(year, month, d));
   return days;
 }
+const CATEGORIES = [
+  { value: null, label: "없음", color: "bg-slate-200 text-slate-600", dot: "bg-slate-400" },
+  { value: "work", label: "업무", color: "bg-blue-100 text-blue-700", dot: "bg-blue-500" },
+  { value: "personal", label: "개인", color: "bg-green-100 text-green-700", dot: "bg-green-500" },
+  { value: "exercise", label: "운동", color: "bg-orange-100 text-orange-700", dot: "bg-orange-500" },
+  { value: "other", label: "기타", color: "bg-slate-100 text-slate-600", dot: "bg-slate-400" }
+];
+function getCategoryInfo(value) {
+  return CATEGORIES.find((c) => c.value === value) || CATEGORIES[0];
+}
 function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [tasks, setTasks] = reactExports.useState([]);
   const [toast, setToast] = reactExports.useState(null);
+  const [showCompleted, setShowCompleted] = reactExports.useState(true);
+  const [expandedId, setExpandedId] = reactExports.useState(null);
+  const [overdueTasks, setOverdueTasks] = reactExports.useState([]);
+  const [rolloverDone, setRolloverDone] = reactExports.useState(false);
+  const [draggedId, setDraggedId] = reactExports.useState(null);
+  const [dragOverId, setDragOverId] = reactExports.useState(null);
+  const [deleteConfirm, setDeleteConfirm] = reactExports.useState(null);
+  const [completionNoteTask, setCompletionNoteTask] = reactExports.useState(null);
   const dateStr = toDateStr(currentDate);
   const isToday = dateStr === getTodayStr();
   const load = reactExports.useCallback(async () => {
     const data = await window.api.tasks.getByDate(dateStr);
     setTasks(data);
   }, [dateStr]);
+  const loadOverdue = reactExports.useCallback(async () => {
+    if (!isToday) {
+      setOverdueTasks([]);
+      return;
+    }
+    const data = await window.api.tasks.getOverdue(dateStr);
+    setOverdueTasks(data);
+  }, [dateStr, isToday]);
   reactExports.useEffect(() => {
     load();
-  }, [load]);
+    loadOverdue();
+    setRolloverDone(false);
+  }, [load, loadOverdue]);
   reactExports.useEffect(() => {
-    const handler = () => load();
+    const handler = () => {
+      load();
+      loadOverdue();
+    };
     window.api.tasks.onRefresh(handler);
     return () => window.api.tasks.offRefresh(handler);
-  }, [load]);
-  const handleToggle = async (task) => {
-    await window.api.tasks.toggle(task.id);
+  }, [load, loadOverdue]);
+  const handleToggle = (task) => {
+    if (!task.is_completed) {
+      setCompletionNoteTask(task);
+    } else {
+      doToggle(task.id, null);
+    }
+  };
+  const doToggle = async (id2, note) => {
+    await window.api.tasks.toggle(id2, note);
     window.api.tasks.notifyChanged();
     load();
   };
-  const handleDelete = async (task) => {
+  const handleDelete = (task) => {
+    if (task.parent_id || task.is_template) {
+      setDeleteConfirm({ task });
+      return;
+    }
+    performDelete(task);
+  };
+  const performDelete = async (task) => {
     const snap = { ...task };
     await window.api.tasks.delete(task.id);
     window.api.tasks.notifyChanged();
+    load();
     setToast({
       msg: `"${task.title.length > 16 ? task.title.slice(0, 16) + "…" : task.title}" 삭제`,
       undo: async () => {
-        await window.api.tasks.create({ title: snap.title, memo: snap.memo, date: snap.date, repeat_type: snap.repeat_type });
+        await window.api.tasks.create({
+          title: snap.title,
+          memo: snap.memo,
+          date: snap.date,
+          repeat_type: "none",
+          remind_at: snap.remind_at || null
+        });
         window.api.tasks.notifyChanged();
         setToast(null);
         load();
       }
     });
-    load();
     setTimeout(() => setToast(null), 5e3);
   };
+  const handleDeleteAndFuture = async (task) => {
+    await window.api.tasks.deleteAndFuture(task.id, dateStr);
+    window.api.tasks.notifyChanged();
+    setDeleteConfirm(null);
+    load();
+  };
+  const handleRollover = async () => {
+    await window.api.tasks.rollover(dateStr);
+    setRolloverDone(true);
+    setOverdueTasks([]);
+    load();
+  };
+  const handleDragStart = (id2) => setDraggedId(id2);
+  const handleDragOver = (id2) => {
+    if (id2 !== draggedId) setDragOverId(id2);
+  };
+  const handleDrop = async (targetId) => {
+    if (!draggedId || draggedId === targetId) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
+    const ids = tasks.map((t2) => t2.id);
+    const from = ids.indexOf(draggedId);
+    const to = ids.indexOf(targetId);
+    const newOrder = [...ids];
+    newOrder.splice(from, 1);
+    newOrder.splice(to, 0, draggedId);
+    setDraggedId(null);
+    setDragOverId(null);
+    await window.api.tasks.reorder(dateStr, newOrder);
+    load();
+  };
+  const handleDragEnd = () => {
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+  const displayTasks = showCompleted ? tasks : tasks.filter((t2) => !t2.is_completed);
   const completed = tasks.filter((t2) => t2.is_completed).length;
   const total = tasks.length;
   const pct = total > 0 ? Math.round(completed / total * 100) : 0;
@@ -7049,21 +7138,33 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
     onDateChange(d);
   };
   const DAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
-  const dayLabel = `${DAY_KO[currentDate.getDay()]}요일`;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: prevDay, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors", children: "‹" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-base font-bold text-slate-800", children: [
           currentDate.getMonth() + 1,
           "월 ",
           currentDate.getDate(),
           "일"
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-slate-500", children: dayLabel }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-sm text-slate-500", children: [
+          DAY_KO[currentDate.getDay()],
+          "요일"
+        ] }),
         isToday && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold", children: "오늘" })
-      ] }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: nextDay, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors", children: "›" })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1", children: [
+        total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setShowCompleted((v2) => !v2),
+            className: "text-xs px-2.5 py-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors",
+            children: showCompleted ? "완료 숨기기" : "완료 보이기"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: nextDay, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors", children: "›" })
+      ] })
     ] }),
     total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "px-6 py-2 bg-white border-b border-slate-100", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -7075,17 +7176,62 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
       ) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-medium flex-shrink-0 ${allDone ? "text-green-600" : "text-slate-500"}`, children: allDone ? "🎉 모두 완료!" : `${completed}/${total} 완료` })
     ] }) }),
+    isToday && overdueTasks.length > 0 && !rolloverDone && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mx-6 mt-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-amber-700", children: [
+        "⏰ 이전 미완료 할일 ",
+        overdueTasks.length,
+        "개가 있어요"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 flex-shrink-0", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: handleRollover,
+            className: "text-xs px-3 py-1 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors font-medium",
+            children: "오늘로 이월"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setOverdueTasks([]),
+            className: "text-xs px-2 py-1 text-amber-500 hover:bg-amber-100 rounded-lg transition-colors",
+            children: "닫기"
+          }
+        )
+      ] })
+    ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto px-6 py-4", children: total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(EmptyState, { onAdd: () => onAddTask(dateStr), isToday }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2", children: [
-      tasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+      displayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
         TaskCard,
         {
           task,
           onToggle: handleToggle,
           onEdit: onEditTask,
-          onDelete: handleDelete
+          onDelete: handleDelete,
+          isExpanded: expandedId === task.id,
+          onExpand: (id2) => setExpandedId(expandedId === id2 ? null : id2),
+          isDragging: draggedId === task.id,
+          isDragOver: dragOverId === task.id,
+          onDragStart: handleDragStart,
+          onDragOver: handleDragOver,
+          onDrop: handleDrop,
+          onDragEnd: handleDragEnd
         },
         task.id
       )),
+      !showCompleted && completed > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: () => setShowCompleted(true),
+          className: "text-xs text-center text-slate-400 hover:text-slate-600 py-1.5 transition-colors",
+          children: [
+            "완료된 항목 ",
+            completed,
+            "개 더 보기 ↓"
+          ]
+        }
+      ),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "button",
         {
@@ -7095,7 +7241,58 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
         }
       )
     ] }) }),
-    toast && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-xl flex items-center gap-3 shadow-lg text-sm animate-fade-in", children: [
+    deleteConfirm && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-black/30 flex items-center justify-center z-50", onClick: () => setDeleteConfirm(null), children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white rounded-2xl shadow-2xl p-6 mx-4 max-w-sm w-full", onClick: (e) => e.stopPropagation(), children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "font-bold text-slate-800 mb-1", children: "반복 할일 삭제" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-slate-500 mb-5", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-medium text-slate-700", children: [
+          '"',
+          deleteConfirm.task.title,
+          '"'
+        ] }),
+        "은 반복 할일입니다."
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => {
+              performDelete(deleteConfirm.task);
+              setDeleteConfirm(null);
+            },
+            className: "w-full py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 hover:bg-slate-50 transition-colors",
+            children: "이 날만 삭제"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => handleDeleteAndFuture(deleteConfirm.task),
+            className: "w-full py-2.5 rounded-xl bg-red-500 text-sm text-white hover:bg-red-600 transition-colors",
+            children: "이후 모두 삭제"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setDeleteConfirm(null),
+            className: "text-sm text-slate-400 hover:text-slate-600 py-1 transition-colors",
+            children: "취소"
+          }
+        )
+      ] })
+    ] }) }),
+    completionNoteTask && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      CompletionNoteModal,
+      {
+        task: completionNoteTask,
+        onConfirm: (note) => {
+          doToggle(completionNoteTask.id, note);
+          setCompletionNoteTask(null);
+        },
+        onClose: () => setCompletionNoteTask(null)
+      }
+    ),
+    toast && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "absolute bottom-12 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-xl flex items-center gap-3 shadow-lg text-sm", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: toast.msg }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: toast.undo, className: "text-indigo-300 hover:text-indigo-200 font-semibold", children: "취소" })
     ] })
@@ -7118,51 +7315,155 @@ function EmptyState({ onAdd, isToday }) {
     )
   ] });
 }
-function TaskCard({ task, onToggle, onEdit, onDelete }) {
+const COLOR_BORDER = {
+  red: "border-l-red-400",
+  orange: "border-l-orange-400",
+  yellow: "border-l-yellow-400",
+  green: "border-l-green-400",
+  blue: "border-l-blue-400",
+  purple: "border-l-purple-400"
+};
+function TaskCard({ task, onToggle, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr();
   const isOverdue = !task.is_completed && task.date < today;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `group flex items-start gap-3 p-3.5 rounded-xl border transition-all ${task.is_completed ? "bg-slate-50 border-slate-100" : isOverdue ? "bg-red-50 border-red-100 hover:border-red-200" : "bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm"}`, children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx(
-      "button",
-      {
-        onClick: () => onToggle(task),
-        className: `mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${task.is_completed ? "bg-green-500 border-green-500 text-white" : isOverdue ? "border-red-300 hover:border-red-500" : "border-slate-300 hover:border-indigo-400"}`,
-        children: task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { className: "w-2.5 h-2.5", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 3, children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", d: "M5 13l4 4L19 7" }) })
-      }
-    ),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: `text-sm font-medium leading-snug ${task.is_completed ? "line-through text-slate-400" : isOverdue ? "text-red-700" : "text-slate-700"}`, children: [
-        task.title,
-        isOverdue && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-red-400 font-normal", children: "기한 초과" }),
-        task.repeat_type !== "none" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-indigo-400 font-normal", children: "🔁" })
-      ] }),
-      task.memo && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-400 mt-0.5 truncate", children: task.memo })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "button",
-        {
-          onClick: () => onEdit(task),
-          className: "text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors",
-          children: "편집"
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "button",
-        {
-          onClick: () => onDelete(task),
-          className: "text-xs text-red-300 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors",
-          children: "삭제"
-        }
-      )
-    ] })
-  ] });
+  const isRepeat = task.parent_id || task.is_template;
+  const colorBorder = task.color ? COLOR_BORDER[task.color] : null;
+  const catInfo = task.category ? getCategoryInfo(task.category) : null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      draggable: true,
+      onDragStart: () => onDragStart(task.id),
+      onDragOver: (e) => {
+        e.preventDefault();
+        onDragOver(task.id);
+      },
+      onDrop: () => onDrop(task.id),
+      onDragEnd,
+      className: `group flex flex-col rounded-xl border transition-all ${isDragging ? "opacity-40" : ""} ${isDragOver ? "border-indigo-400 shadow-md scale-[1.01]" : ""} ${colorBorder ? `border-l-4 ${colorBorder}` : ""} ${task.is_completed ? "bg-slate-50 border-slate-100" : isOverdue ? "bg-red-50 border-red-100 hover:border-red-200" : "bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm"}`,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3 p-3.5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-slate-200 group-hover:text-slate-300 cursor-grab mt-0.5 text-sm leading-none select-none flex-shrink-0", children: "⠿" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => onToggle(task),
+              className: `mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${task.is_completed ? "bg-green-500 border-green-500 text-white" : isOverdue ? "border-red-300 hover:border-red-500" : "border-slate-300 hover:border-indigo-400"}`,
+              children: task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { className: "w-2.5 h-2.5", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 3, children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", d: "M5 13l4 4L19 7" }) })
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0 cursor-pointer", onClick: () => (task.memo || task.completion_note) && onExpand(task.id), children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: `text-sm font-medium leading-snug ${task.is_completed ? "line-through text-slate-400" : isOverdue ? "text-red-700" : "text-slate-700"}`, children: [
+              task.title,
+              isOverdue && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-red-400 font-normal", children: "기한 초과" }),
+              isRepeat && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-indigo-400 font-normal", children: "🔁" }),
+              catInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-normal ${catInfo.color}`, children: catInfo.label })
+            ] }),
+            task.memo && !isExpanded && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-400 mt-0.5 truncate", children: task.memo }),
+            task.remind_at && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-indigo-400 mt-0.5", children: [
+              "🔔 ",
+              task.remind_at
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: () => onEdit(task),
+                className: "text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors",
+                children: "편집"
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: () => onDelete(task),
+                className: "text-xs text-red-300 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors",
+                children: "삭제"
+              }
+            )
+          ] })
+        ] }),
+        isExpanded && (task.memo || task.completion_note) && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-4 pb-3 ml-10 flex flex-col gap-1.5", children: [
+          task.memo && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100", children: task.memo }),
+          task.completion_note && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-green-700 leading-relaxed whitespace-pre-wrap bg-green-50 rounded-lg px-3 py-2.5 border border-green-100", children: [
+            "✅ ",
+            task.completion_note
+          ] })
+        ] })
+      ]
+    }
+  );
+}
+function CompletionNoteModal({ task, onConfirm, onClose }) {
+  const [note, setNote] = reactExports.useState("");
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape") onClose();
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onConfirm(note.trim() || null);
+    }
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-black/30 flex items-center justify-center z-50", onClick: onClose, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      className: "bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4",
+      onClick: (e) => e.stopPropagation(),
+      onKeyDown: handleKeyDown,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 py-5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mb-1", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xl", children: "🎉" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "font-bold text-slate-800", children: "할 일 완료!" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-slate-500 mb-4", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-medium text-slate-700 line-clamp-1", children: [
+              '"',
+              task.title,
+              '"'
+            ] }),
+            "을 완료했어요"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-slate-500 mb-1 block", children: "완료 메모 (선택)" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "textarea",
+            {
+              autoFocus: true,
+              value: note,
+              onChange: (e) => setNote(e.target.value),
+              placeholder: "운동 기록, 결과, 소감 등을 남겨보세요",
+              rows: 3,
+              className: "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-end gap-2 px-6 pb-5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => onConfirm(null),
+              className: "px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors",
+              children: "메모 없이 완료"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => onConfirm(note.trim() || null),
+              className: "px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors",
+              children: "저장하고 완료"
+            }
+          )
+        ] })
+      ]
+    }
+  ) });
 }
 const DAY_NAMES$1 = ["월", "화", "수", "목", "금", "토", "일"];
 function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
   const [tasksByDate, setTasksByDate] = reactExports.useState({});
   const { start, end, monday } = getWeekRange(currentDate);
-  reactExports.useEffect(() => {
+  const loadTasks = () => {
     window.api.tasks.getByWeek(start, end).then((tasks) => {
       const map = {};
       tasks.forEach((t2) => {
@@ -7171,20 +7472,13 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
       });
       setTasksByDate(map);
     });
+  };
+  reactExports.useEffect(() => {
+    loadTasks();
   }, [start, end]);
   reactExports.useEffect(() => {
-    const handler = () => {
-      window.api.tasks.getByWeek(start, end).then((tasks) => {
-        const map = {};
-        tasks.forEach((t2) => {
-          if (!map[t2.date]) map[t2.date] = [];
-          map[t2.date].push(t2);
-        });
-        setTasksByDate(map);
-      });
-    };
-    window.api.tasks.onRefresh(handler);
-    return () => window.api.tasks.offRefresh(handler);
+    window.api.tasks.onRefresh(loadTasks);
+    return () => window.api.tasks.offRefresh(loadTasks);
   }, [start, end]);
   const prevWeek = () => {
     const d = new Date(currentDate);
@@ -7203,6 +7497,9 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
   });
   const today = getTodayStr();
   const weekLabel = `${monday.getMonth() + 1}월 ${Math.ceil(monday.getDate() / 7)}주차`;
+  const allTasks = Object.values(tasksByDate).flat();
+  const weekTotal = allTasks.length;
+  const weekDone = allTasks.filter((t2) => t2.is_completed).length;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: prevWeek, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "‹" }),
@@ -7252,7 +7549,33 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
         },
         dateStr
       );
-    }) })
+    }) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-4 py-2.5 bg-white border-t border-slate-100 flex items-center gap-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-400 flex-shrink-0", children: "주간 완료율" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 flex gap-1.5 items-end", children: days.map((day, i) => {
+        const dateStr = toDateStr(day);
+        const dayTasks = tasksByDate[dateStr] || [];
+        const dayTotal = dayTasks.length;
+        const dayDone = dayTasks.filter((t2) => t2.is_completed).length;
+        const pct = dayTotal > 0 ? dayDone / dayTotal * 100 : 0;
+        const isWeekend = i >= 5;
+        return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col items-center gap-0.5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-full h-1.5 bg-slate-100 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              className: `h-full rounded-full transition-all ${pct === 100 && dayTotal > 0 ? "bg-green-400" : "bg-indigo-400"}`,
+              style: { width: `${pct}%` }
+            }
+          ) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs ${isWeekend ? "text-red-300" : "text-slate-300"}`, children: DAY_NAMES$1[i] })
+        ] }, dateStr);
+      }) }),
+      weekTotal > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-slate-500 flex-shrink-0 font-medium", children: [
+        weekDone,
+        "/",
+        weekTotal
+      ] })
+    ] })
   ] });
 }
 const DAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"];
@@ -7281,25 +7604,20 @@ function MonthView({ currentDate, onDateChange, onDateClick }) {
   const nextMonth = () => onDateChange(new Date(year, month + 1, 1));
   const days = getDaysInMonth(year, month);
   const today = getTodayStr();
-  const totalTasks = Object.values(tasksByDate).flat().length;
-  const totalDone = Object.values(tasksByDate).flat().filter((t2) => t2.is_completed).length;
+  const allTasks = Object.values(tasksByDate).flat();
+  const totalTasks = allTasks.length;
+  const totalDone = allTasks.filter((t2) => t2.is_completed).length;
+  const totalRemaining = totalTasks - totalDone;
+  const completionRate = totalTasks > 0 ? Math.round(totalDone / totalTasks * 100) : 0;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: prevMonth, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "‹" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-base font-bold text-slate-800", children: [
-          year,
-          "년 ",
-          month + 1,
-          "월"
-        ] }),
-        totalTasks > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "ml-2 text-xs text-slate-400", children: [
-          totalDone,
-          "/",
-          totalTasks,
-          " 완료"
-        ] })
-      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-base font-bold text-slate-800", children: [
+        year,
+        "년 ",
+        month + 1,
+        "월"
+      ] }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: nextMonth, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "›" })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col p-4 gap-1 overflow-hidden", children: [
@@ -7328,7 +7646,25 @@ function MonthView({ currentDate, onDateChange, onDateClick }) {
           dateStr
         );
       }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-center gap-5 pt-2 border-t border-slate-100", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-2 border-t border-slate-100 flex items-center justify-center gap-6", children: totalTasks > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
+          "완료 ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-green-600", children: totalDone }),
+          "개"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
+          "미완료 ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-amber-500", children: totalRemaining }),
+          "개"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
+          "완료율 ",
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-semibold text-indigo-600", children: [
+            completionRate,
+            "%"
+          ] })
+        ] })
+      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-400", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-green-400" }),
           " 전체 완료"
@@ -7337,7 +7673,7 @@ function MonthView({ currentDate, onDateChange, onDateClick }) {
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-amber-400" }),
           " 미완료 있음"
         ] })
-      ] })
+      ] }) })
     ] })
   ] });
 }
@@ -7345,6 +7681,236 @@ function getDayIndex(date) {
   const day = date.getDay();
   return day === 0 ? 6 : day - 1;
 }
+function RecordsView() {
+  const [tasks, setTasks] = reactExports.useState([]);
+  const [search, setSearch] = reactExports.useState("");
+  const [categoryFilter, setCategoryFilter] = reactExports.useState(null);
+  const [loading, setLoading] = reactExports.useState(false);
+  const load = reactExports.useCallback(async () => {
+    setLoading(true);
+    const data = await window.api.tasks.getCompleted({ category: categoryFilter, search });
+    setTasks(data);
+    setLoading(false);
+  }, [categoryFilter, search]);
+  reactExports.useEffect(() => {
+    const timer = setTimeout(load, 200);
+    return () => clearTimeout(timer);
+  }, [load]);
+  reactExports.useEffect(() => {
+    const handler = () => load();
+    window.api.tasks.onRefresh(handler);
+    return () => window.api.tasks.offRefresh(handler);
+  }, [load]);
+  const grouped = tasks.reduce((acc, task) => {
+    const date = (task.completed_at || task.updated_at || task.date).slice(0, 10);
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(task);
+    return acc;
+  }, {});
+  const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 py-3 bg-white border-b border-slate-100 flex flex-col gap-2", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 relative", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm", children: "🔍" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              type: "text",
+              value: search,
+              onChange: (e) => setSearch(e.target.value),
+              placeholder: "제목 또는 메모로 검색",
+              className: "w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-400"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-slate-400 flex-shrink-0", children: [
+          tasks.length,
+          "개"
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1.5 flex-wrap", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setCategoryFilter(null),
+            className: `px-3 py-1 rounded-full text-xs font-medium transition-all border ${categoryFilter === null ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-100 text-slate-600 border-transparent hover:bg-slate-200"}`,
+            children: "전체"
+          }
+        ),
+        CATEGORIES.filter((c) => c.value !== null).map((c) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setCategoryFilter(categoryFilter === c.value ? null : c.value),
+            className: `px-3 py-1 rounded-full text-xs font-medium transition-all border ${categoryFilter === c.value ? `${c.color} border-current ring-2 ring-offset-1 ring-indigo-400` : `${c.color} border-transparent opacity-60 hover:opacity-100`}`,
+            children: c.label
+          },
+          c.value
+        ))
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto px-6 py-4", children: loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center h-32 text-slate-400 text-sm", children: "불러오는 중..." }) : sortedDates.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(EmptyRecords, { search }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-6", children: sortedDates.map((date) => /* @__PURE__ */ jsxRuntimeExports.jsx(DateGroup, { date, tasks: grouped[date], onUpdated: load }, date)) }) })
+  ] });
+}
+function DateGroup({ date, tasks, onUpdated }) {
+  const d = /* @__PURE__ */ new Date(date + "T00:00:00");
+  const DAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
+  const label = `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAY_KO[d.getDay()]})`;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mb-2", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs font-semibold text-slate-500", children: label }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-slate-400", children: [
+        tasks.length,
+        "개 완료"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 h-px bg-slate-100" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-2", children: tasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(RecordCard, { task, onUpdated }, task.id)) })
+  ] });
+}
+function RecordCard({ task, onUpdated }) {
+  const [expanded, setExpanded] = reactExports.useState(false);
+  const [editing, setEditing] = reactExports.useState(false);
+  const [noteValue, setNoteValue] = reactExports.useState(task.completion_note || "");
+  const [saving, setSaving] = reactExports.useState(false);
+  const catInfo = task.category ? getCategoryInfo(task.category) : null;
+  const handleSaveNote = async () => {
+    setSaving(true);
+    await window.api.tasks.update(task.id, { completion_note: noteValue.trim() || null });
+    window.api.tasks.notifyChanged();
+    setSaving(false);
+    setEditing(false);
+    onUpdated?.();
+  };
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape") {
+      setEditing(false);
+      setNoteValue(task.completion_note || "");
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSaveNote();
+    }
+  };
+  const currentNote = task.completion_note;
+  const hasDetail = currentNote || task.memo;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border bg-white p-3.5 transition-all hover:border-indigo-200 hover:shadow-sm border-slate-100", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-0.5 text-green-500 text-base flex-shrink-0", children: "✓" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          className: "flex-1 min-w-0 cursor-pointer",
+          onClick: () => !editing && setExpanded((v2) => !v2),
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-slate-600 line-through", children: task.title }),
+            currentNote && !expanded && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-green-600 mt-0.5 truncate", children: currentNote }),
+            !currentNote && task.memo && !expanded && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-400 mt-0.5 truncate", children: task.memo })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5 flex-shrink-0", children: [
+        catInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs px-2 py-0.5 rounded-full font-medium ${catInfo.color}`, children: catInfo.label }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: (e) => {
+              e.stopPropagation();
+              setExpanded(true);
+              setEditing(true);
+            },
+            className: "text-xs text-slate-300 hover:text-indigo-400 px-1.5 py-0.5 rounded transition-colors",
+            title: "완료 메모 편집",
+            children: "✎"
+          }
+        ),
+        hasDetail && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "span",
+          {
+            className: "text-xs text-slate-300 cursor-pointer",
+            onClick: () => setExpanded((v2) => !v2),
+            children: expanded ? "▲" : "▼"
+          }
+        )
+      ] })
+    ] }),
+    expanded && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-2 ml-7 flex flex-col gap-1.5", children: editing ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1.5", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "textarea",
+        {
+          autoFocus: true,
+          value: noteValue,
+          onChange: (e) => setNoteValue(e.target.value),
+          onKeyDown: handleKeyDown,
+          placeholder: "완료 메모를 입력하세요",
+          rows: 3,
+          className: "w-full border border-indigo-300 rounded-lg px-3 py-2 text-xs outline-none resize-none focus:border-indigo-400 bg-green-50"
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-end gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => {
+              setEditing(false);
+              setNoteValue(task.completion_note || "");
+            },
+            className: "text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded",
+            children: "취소"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: handleSaveNote,
+            disabled: saving,
+            className: "text-xs bg-indigo-600 text-white px-3 py-1 rounded-lg hover:bg-indigo-700 disabled:opacity-40",
+            children: saving ? "저장 중..." : "저장"
+          }
+        )
+      ] })
+    ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+      currentNote && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "p",
+        {
+          className: "text-xs text-green-700 leading-relaxed whitespace-pre-wrap bg-green-50 rounded-lg px-3 py-2.5 border border-green-100 cursor-pointer hover:border-green-300",
+          onClick: () => setEditing(true),
+          children: [
+            "✅ ",
+            currentNote
+          ]
+        }
+      ),
+      !currentNote && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => setEditing(true),
+          className: "text-xs text-slate-400 hover:text-indigo-500 text-left px-3 py-2 border border-dashed border-slate-200 rounded-lg hover:border-indigo-300 transition-colors",
+          children: "+ 완료 메모 추가"
+        }
+      ),
+      task.memo && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100", children: task.memo })
+    ] }) })
+  ] });
+}
+function EmptyRecords({ search }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full gap-4 py-16", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center text-3xl", children: search ? "🔍" : "📖" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-slate-600 font-medium", children: search ? "검색 결과가 없어요" : "완료된 할 일이 없어요" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-slate-400 text-sm mt-1", children: search ? "다른 검색어를 입력해보세요" : "할 일을 완료하면 여기에 기록돼요" })
+    ] })
+  ] });
+}
+const COLORS = [
+  { value: null, bg: "bg-slate-200", label: "없음" },
+  { value: "red", bg: "bg-red-400", label: "빨강" },
+  { value: "orange", bg: "bg-orange-400", label: "주황" },
+  { value: "yellow", bg: "bg-yellow-400", label: "노랑" },
+  { value: "green", bg: "bg-green-400", label: "초록" },
+  { value: "blue", bg: "bg-blue-400", label: "파랑" },
+  { value: "purple", bg: "bg-purple-400", label: "보라" }
+];
 const REPEAT_OPTIONS = [
   { value: "none", label: "없음" },
   { value: "daily", label: "매일" },
@@ -7356,6 +7922,11 @@ function TaskModal({ task, defaultDate, onClose }) {
   const [memo, setMemo] = reactExports.useState(task?.memo || "");
   const [date, setDate] = reactExports.useState(task?.date || defaultDate || getTodayStr());
   const [repeatType, setRepeatType] = reactExports.useState(task?.repeat_type || "none");
+  const [repeatDays, setRepeatDays] = reactExports.useState(task?.repeat_days || [0, 1, 2, 3, 4, 5, 6]);
+  const [remindAt, setRemindAt] = reactExports.useState(task?.remind_at || "");
+  const [color, setColor] = reactExports.useState(task?.color || null);
+  const [category, setCategory] = reactExports.useState(task?.category || null);
+  const [completionNote, setCompletionNote] = reactExports.useState(task?.completion_note || "");
   const [saving, setSaving] = reactExports.useState(false);
   const isEdit = !!task;
   const titleLen = title.length;
@@ -7363,10 +7934,21 @@ function TaskModal({ task, defaultDate, onClose }) {
   const handleSave = async () => {
     if (!title.trim() || overLimit) return;
     setSaving(true);
+    const payload = {
+      title: title.trim(),
+      memo,
+      date,
+      repeat_type: repeatType,
+      repeat_days: repeatType === "daily" ? repeatDays : null,
+      remind_at: remindAt || null,
+      color: color || null,
+      category: category || null,
+      ...isEdit && task.is_completed ? { completion_note: completionNote.trim() || null } : {}
+    };
     if (isEdit) {
-      await window.api.tasks.update(task.id, { title: title.trim(), memo, date, repeat_type: repeatType });
+      await window.api.tasks.update(task.id, payload);
     } else {
-      await window.api.tasks.create({ title: title.trim(), memo, date, repeat_type: repeatType });
+      await window.api.tasks.create(payload);
     }
     window.api.tasks.notifyChanged();
     setSaving(false);
@@ -7382,7 +7964,7 @@ function TaskModal({ task, defaultDate, onClose }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-black/30 flex items-center justify-center z-50", onClick: onClose, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "div",
     {
-      className: "bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4",
+      className: "bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col",
       onClick: (e) => e.stopPropagation(),
       onKeyDown: handleKeyDown,
       children: [
@@ -7390,7 +7972,7 @@ function TaskModal({ task, defaultDate, onClose }) {
           /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "font-bold text-gray-800", children: isEdit ? "할 일 편집" : "할 일 추가" }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "text-gray-400 hover:text-gray-600 text-lg", children: "✕" })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 py-4 flex flex-col gap-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 py-4 flex flex-col gap-4 overflow-y-auto", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-1 block", children: "제목 *" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -7423,6 +8005,32 @@ function TaskModal({ task, defaultDate, onClose }) {
             )
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-2 block", children: "카테고리" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2", children: CATEGORIES.map((c) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                type: "button",
+                onClick: () => setCategory(c.value),
+                className: `px-3 py-1 rounded-full text-xs font-medium transition-all border ${category === c.value ? `${c.color} border-current ring-2 ring-offset-1 ring-indigo-400` : `${c.color} border-transparent opacity-60 hover:opacity-100`}`,
+                children: c.label
+              },
+              String(c.value)
+            )) })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-2 block", children: "색상 태그" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-2", children: COLORS.map((c) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                type: "button",
+                onClick: () => setColor(c.value),
+                title: c.label,
+                className: `w-7 h-7 rounded-full ${c.bg} transition-all ${color === c.value ? "ring-2 ring-offset-2 ring-indigo-400 scale-110" : "hover:scale-110 opacity-70 hover:opacity-100"}`
+              },
+              String(c.value)
+            )) })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-1 block", children: "반복" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               "select",
@@ -7432,7 +8040,73 @@ function TaskModal({ task, defaultDate, onClose }) {
                 className: "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 bg-white",
                 children: REPEAT_OPTIONS.map((o) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: o.value, children: o.label }, o.value))
               }
-            )
+            ),
+            repeatType === "daily" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-1", children: ["일", "월", "화", "수", "목", "금", "토"].map((label, day) => {
+                const active = repeatDays.includes(day);
+                const isWeekend = day === 0 || day === 6;
+                return /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => setRepeatDays(
+                      (prev) => active ? prev.filter((d) => d !== day) : [...prev, day].sort()
+                    ),
+                    className: `flex-1 py-1 text-xs rounded-md font-medium transition-all border ${active ? isWeekend ? "bg-rose-100 border-rose-300 text-rose-700" : "bg-indigo-100 border-indigo-300 text-indigo-700" : "bg-gray-50 border-gray-200 text-gray-400 hover:border-gray-300"}`,
+                    children: label
+                  },
+                  day
+                );
+              }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 mt-1.5", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => setRepeatDays([1, 2, 3, 4, 5]),
+                    className: "text-xs text-indigo-500 hover:text-indigo-700",
+                    children: "평일만"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => setRepeatDays([0, 1, 2, 3, 4, 5, 6]),
+                    className: "text-xs text-gray-400 hover:text-gray-600",
+                    children: "매일"
+                  }
+                )
+              ] })
+            ] }),
+            repeatType !== "none" && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-500 mt-1", children: "🔁 선택한 날짜부터 자동으로 반복 생성됩니다" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-1 block", children: "알림 시간 (선택)" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "time",
+                  value: remindAt,
+                  onChange: (e) => setRemindAt(e.target.value),
+                  className: "flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                }
+              ),
+              remindAt && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => setRemindAt(""),
+                  className: "text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100",
+                  children: "지우기"
+                }
+              )
+            ] }),
+            remindAt && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-indigo-500 mt-1", children: [
+              "🔔 ",
+              remindAt,
+              "에 시스템 알림이 울립니다"
+            ] })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-1 block", children: "메모" }),
@@ -7444,6 +8118,19 @@ function TaskModal({ task, defaultDate, onClose }) {
                 placeholder: "추가 메모 (선택)",
                 rows: 3,
                 className: "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none"
+              }
+            )
+          ] }),
+          isEdit && task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-1 block", children: "완료 메모" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "textarea",
+              {
+                value: completionNote,
+                onChange: (e) => setCompletionNote(e.target.value),
+                placeholder: "완료 후 기록 (운동 결과, 소감 등)",
+                rows: 3,
+                className: "w-full border border-green-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-400 resize-none bg-green-50"
               }
             )
           ] })
@@ -7471,10 +8158,17 @@ function TaskModal({ task, defaultDate, onClose }) {
     }
   ) });
 }
+const STICKER_W = 280;
+const STICKER_H_FULL = 360;
+const STICKER_H_COLLAPSED = 46;
 function StickerPopup() {
   const [tasks, setTasks] = reactExports.useState([]);
   const [collapsed, setCollapsed] = reactExports.useState(false);
   const [toast, setToast] = reactExports.useState(null);
+  const [showQuickAdd, setShowQuickAdd] = reactExports.useState(false);
+  const [quickTitle, setQuickTitle] = reactExports.useState("");
+  const [showCompleted, setShowCompleted] = reactExports.useState(true);
+  const [completionNoteTask, setCompletionNoteTask] = reactExports.useState(null);
   const today = getTodayStr();
   const load = reactExports.useCallback(async () => {
     const data = await window.api.tasks.getByDate(today);
@@ -7494,8 +8188,31 @@ function StickerPopup() {
     const timer = setTimeout(() => load(), msToMidnight + 100);
     return () => clearTimeout(timer);
   }, [load]);
-  const handleToggle = async (task) => {
-    await window.api.tasks.toggle(task.id);
+  reactExports.useEffect(() => {
+    const onMouseMove = (e) => {
+      const el2 = document.elementFromPoint(e.clientX, e.clientY);
+      const isInteractive = !!el2?.closest('button, input, textarea, a, [role="button"], [data-drag]');
+      window.api.window.setIgnoreMouseEvents(!isInteractive);
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.api.window.setIgnoreMouseEvents(true);
+    return () => window.removeEventListener("mousemove", onMouseMove);
+  }, []);
+  const toggleCollapse = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    window.api.window.setSize(STICKER_W, next ? STICKER_H_COLLAPSED : STICKER_H_FULL);
+    if (next) setShowQuickAdd(false);
+  };
+  const handleToggle = (task) => {
+    if (!task.is_completed) {
+      setCompletionNoteTask(task);
+    } else {
+      doToggle(task.id, null);
+    }
+  };
+  const doToggle = async (id2, note) => {
+    await window.api.tasks.toggle(id2, note);
     window.api.tasks.notifyChanged();
     load();
   };
@@ -7504,29 +8221,49 @@ function StickerPopup() {
     await window.api.tasks.delete(task.id);
     window.api.tasks.notifyChanged();
     load();
-    setToast({ msg: `"${task.title.slice(0, 12)}..." 삭제됨`, undo: async () => {
-      await window.api.tasks.create({
-        title: snapshot.title,
-        memo: snapshot.memo,
-        date: snapshot.date,
-        repeat_type: snapshot.repeat_type,
-        order_index: snapshot.order_index
-      });
-      window.api.tasks.notifyChanged();
-      load();
-      setToast(null);
-    } });
+    setToast({
+      msg: `"${task.title.slice(0, 12)}${task.title.length > 12 ? "..." : ""}" 삭제됨`,
+      undo: async () => {
+        await window.api.tasks.create({
+          title: snapshot.title,
+          memo: snapshot.memo,
+          date: snapshot.date,
+          repeat_type: snapshot.repeat_type,
+          order_index: snapshot.order_index
+        });
+        window.api.tasks.notifyChanged();
+        load();
+        setToast(null);
+      }
+    });
     setTimeout(() => setToast(null), 5e3);
+  };
+  const handleQuickAdd = async () => {
+    if (!quickTitle.trim()) return;
+    await window.api.tasks.create({ title: quickTitle.trim(), date: today, repeat_type: "none", order_index: tasks.length });
+    window.api.tasks.notifyChanged();
+    setQuickTitle("");
+    setShowQuickAdd(false);
+    load();
+  };
+  const handleQuickKeyDown = (e) => {
+    if (e.key === "Enter") handleQuickAdd();
+    if (e.key === "Escape") {
+      setShowQuickAdd(false);
+      setQuickTitle("");
+    }
   };
   const completed = tasks.filter((t2) => t2.is_completed).length;
   const total = tasks.length;
   const allDone = total > 0 && completed === total;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-screen select-none", children: [
+  const displayTasks = showCompleted ? tasks : tasks.filter((t2) => !t2.is_completed);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex flex-col h-screen select-none overflow-hidden rounded-xl ${collapsed ? "bg-transparent" : "bg-yellow-50"}`, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs(
       "div",
       {
+        "data-drag": true,
         style: { WebkitAppRegion: "drag" },
-        className: "flex items-center justify-between px-3 py-2 bg-yellow-400 rounded-t-xl cursor-grab",
+        className: `flex items-center justify-between px-3 py-2 bg-yellow-400 cursor-grab flex-shrink-0 ${collapsed ? "rounded-xl" : "rounded-t-xl"}`,
         children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm", children: "📌" }),
@@ -7541,9 +8278,33 @@ function StickerPopup() {
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               "button",
               {
-                onClick: () => setCollapsed((v2) => !v2),
+                onClick: () => {
+                  if (!collapsed) {
+                    setShowQuickAdd((v2) => !v2);
+                    setQuickTitle("");
+                  }
+                },
+                className: "text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 font-bold",
+                title: "할일 추가",
+                children: "+"
+              }
+            ),
+            !collapsed && total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: () => setShowCompleted((v2) => !v2),
                 className: "text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300",
-                children: collapsed ? "펼치기" : "접기"
+                title: showCompleted ? "완료 숨기기" : "완료 보이기",
+                children: showCompleted ? "👁" : "🙈"
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: toggleCollapse,
+                className: "text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300",
+                title: collapsed ? "펼치기" : "접기",
+                children: collapsed ? "▼" : "▲"
               }
             ),
             /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -7554,36 +8315,131 @@ function StickerPopup() {
                 title: "메인 창 열기",
                 children: "↗"
               }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: () => window.api.window.close(),
+                className: "text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300",
+                title: "닫기 (트레이 우클릭으로 다시 열기)",
+                children: "✕"
+              }
             )
           ] })
         ]
       }
     ),
+    !collapsed && showQuickAdd && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-yellow-100 px-2 py-1.5 flex gap-1.5 flex-shrink-0", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "input",
+        {
+          autoFocus: true,
+          type: "text",
+          value: quickTitle,
+          onChange: (e) => setQuickTitle(e.target.value),
+          onKeyDown: handleQuickKeyDown,
+          placeholder: "할 일 입력 후 Enter",
+          className: "flex-1 text-xs border border-yellow-300 rounded px-2 py-1 bg-white outline-none focus:border-yellow-500"
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: handleQuickAdd,
+          className: "text-xs bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600",
+          children: "추가"
+        }
+      )
+    ] }),
     !collapsed && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5", children: total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full text-gray-400 gap-1", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5", children: total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full text-gray-400 gap-2", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl", children: "🎉" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs", children: "오늘은 할 일이 없어요!" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs", children: "오늘은 할 일이 없어요!" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setShowQuickAdd(true),
+            className: "text-xs text-yellow-700 bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded-full",
+            children: "+ 할일 추가"
+          }
+        )
       ] }) : allDone ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full gap-1", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl", children: "✅" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-green-600 font-medium", children: "모두 완료!" })
-      ] }) : tasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(StickerTask, { task, onToggle: handleToggle, onDelete: handleDelete }, task.id)) }),
-      total > 0 && !allDone && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-yellow-50 px-2 pb-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-1.5 bg-yellow-200 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+      ] }) : displayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(StickerTask, { task, onToggle: handleToggle, onDelete: handleDelete }, task.id)) }),
+      total > 0 && !allDone && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-yellow-50 px-2 pb-2 flex-shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-1.5 bg-yellow-200 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
         "div",
         {
           className: "h-full bg-yellow-500 transition-all duration-300",
           style: { width: `${completed / total * 100}%` }
         }
       ) }) }),
-      toast && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-gray-800 text-white text-xs px-2 py-1.5 flex items-center justify-between gap-2", children: [
+      toast && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-gray-800 text-white text-xs px-2 py-1.5 flex items-center justify-between gap-2 flex-shrink-0", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: toast.msg }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: toast.undo, className: "text-yellow-300 hover:text-yellow-200 flex-shrink-0", children: "취소" })
       ] })
-    ] })
+    ] }),
+    completionNoteTask && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      StickerCompletionNote,
+      {
+        task: completionNoteTask,
+        onConfirm: (note) => {
+          doToggle(completionNoteTask.id, note);
+          setCompletionNoteTask(null);
+        },
+        onClose: () => setCompletionNoteTask(null)
+      }
+    )
   ] });
+}
+const STICKER_COLOR_DOT = {
+  red: "bg-red-400",
+  orange: "bg-orange-400",
+  yellow: "bg-yellow-400",
+  green: "bg-green-400",
+  blue: "bg-blue-400",
+  purple: "bg-purple-400"
+};
+function StickerCompletionNote({ task, onConfirm, onClose }) {
+  const [note, setNote] = reactExports.useState("");
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "absolute inset-0 bg-black/40 flex items-center justify-center z-50 rounded-xl", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white rounded-xl shadow-xl mx-2 w-full", onClick: (e) => e.stopPropagation(), children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-3 pt-3 pb-2", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-bold text-slate-700 mb-0.5", children: "🎉 완료!" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-slate-500 truncate mb-2", children: [
+        '"',
+        task.title,
+        '"'
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "textarea",
+        {
+          autoFocus: true,
+          value: note,
+          onChange: (e) => setNote(e.target.value),
+          onKeyDown: (e) => {
+            if (e.key === "Escape") onClose();
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onConfirm(note.trim() || null);
+            }
+          },
+          placeholder: "완료 메모 (선택, Enter로 저장)",
+          rows: 2,
+          className: "w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 resize-none"
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1.5 px-3 pb-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onConfirm(null), className: "flex-1 text-xs text-slate-500 hover:bg-slate-100 py-1.5 rounded-lg", children: "메모 없이" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onConfirm(note.trim() || null), className: "flex-1 text-xs bg-indigo-600 text-white py-1.5 rounded-lg hover:bg-indigo-700", children: "저장" })
+    ] })
+  ] }) });
 }
 function StickerTask({ task, onToggle, onDelete }) {
   const isOverdue = !task.is_completed && task.date < (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const colorDot = task.color ? STICKER_COLOR_DOT[task.color] : null;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-2 px-2 py-1.5 rounded-lg group ${task.is_completed ? "opacity-60" : isOverdue ? "bg-red-100" : "bg-white shadow-sm"}`, children: [
+    colorDot && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${colorDot}` }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {
@@ -7603,7 +8459,126 @@ function StickerTask({ task, onToggle, onDelete }) {
     )
   ] });
 }
-const VIEWS = ["일별", "주별", "월별"];
+const SHORTCUT_DEFS = [
+  { key: "openMain", label: "메인 창 열기", desc: "어디서든 메인 창을 포커스" },
+  { key: "toggleSticker", label: "스티커 토글", desc: "스티커 팝업 열기/닫기" }
+];
+function SettingsModal({ onClose }) {
+  const [shortcuts, setShortcuts] = reactExports.useState({});
+  const [recording, setRecording] = reactExports.useState(null);
+  const [saved, setSaved] = reactExports.useState(false);
+  reactExports.useEffect(() => {
+    window.api.shortcuts.get().then(setShortcuts);
+  }, []);
+  const handleKeyDown = reactExports.useCallback((e) => {
+    if (!recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const parts = [];
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.shiftKey) parts.push("Shift");
+    if (e.altKey) parts.push("Alt");
+    const ignored = ["Control", "Shift", "Alt", "Meta", "Escape"];
+    if (!ignored.includes(e.key)) {
+      parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    }
+    if (e.key === "Escape") {
+      setRecording(null);
+      return;
+    }
+    if (parts.length >= 2) {
+      setShortcuts((prev) => ({ ...prev, [recording]: parts.join("+") }));
+      setRecording(null);
+    }
+  }, [recording]);
+  reactExports.useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+  const handleSave = async () => {
+    await window.api.shortcuts.set(shortcuts);
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      onClose();
+    }, 800);
+  };
+  const handleReset = async () => {
+    const defaults = await window.api.shortcuts.get();
+    setShortcuts(defaults);
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-black/30 flex items-center justify-center z-50", onClick: onClose, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      className: "bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4",
+      onClick: (e) => e.stopPropagation(),
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-4 border-b border-gray-100", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "font-bold text-gray-800", children: "⚙️ 단축키 설정" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "text-gray-400 hover:text-gray-600 text-lg", children: "✕" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 py-4 flex flex-col gap-3", children: [
+          SHORTCUT_DEFS.map(({ key, label, desc }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-4", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-gray-700", children: label }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: desc })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: () => setRecording(recording === key ? null : key),
+                className: `flex-shrink-0 px-3 py-1.5 rounded-lg border text-sm font-mono transition-all ${recording === key ? "border-indigo-400 bg-indigo-50 text-indigo-600 animate-pulse" : "border-gray-200 bg-gray-50 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50"}`,
+                children: recording === key ? "키를 누르세요..." : shortcuts[key] || "미설정"
+              }
+            )
+          ] }, key)),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400 mt-1", children: "단축키 버튼 클릭 후 원하는 키 조합을 누르세요 (예: Ctrl+Shift+T). ESC로 취소." })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 pb-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-medium text-gray-500 mb-2", children: "앱 내 단축키 (변경 불가)" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-gray-50 rounded-xl px-4 py-3 flex flex-col gap-1.5", children: [
+            ["Ctrl+N", "할일 추가"],
+            ["T", "오늘로 이동"],
+            ["Enter", "모달에서 저장"],
+            ["Esc", "모달 닫기"]
+          ].map(([key, desc]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-gray-500", children: desc }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("kbd", { className: "text-xs bg-white border border-gray-200 rounded px-2 py-0.5 font-mono text-gray-600", children: key })
+          ] }, key)) })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center gap-2 px-6 py-4 border-t border-gray-100", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: handleReset,
+              className: "text-sm text-gray-400 hover:text-gray-600 transition-colors",
+              children: "기본값 복원"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: onClose,
+                className: "px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors",
+                children: "취소"
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: handleSave,
+                className: `px-4 py-2 text-sm rounded-lg transition-colors ${saved ? "bg-green-500 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700"}`,
+                children: saved ? "저장됨 ✓" : "저장"
+              }
+            )
+          ] })
+        ] })
+      ]
+    }
+  ) });
+}
+const VIEWS = ["일별", "주별", "월별", "기록"];
 function App() {
   const isSticker = window.location.hash === "#sticker";
   if (isSticker) return /* @__PURE__ */ jsxRuntimeExports.jsx(StickerPopup, {});
@@ -7615,6 +8590,7 @@ function MainApp() {
   const [modalOpen, setModalOpen] = reactExports.useState(false);
   const [editingTask, setEditingTask] = reactExports.useState(null);
   const [defaultDate, setDefaultDate] = reactExports.useState(getTodayStr());
+  const [settingsOpen, setSettingsOpen] = reactExports.useState(false);
   const isToday = getTodayStr() === getTodayStr(currentDate);
   const openAddModal = reactExports.useCallback((date = getTodayStr()) => {
     setEditingTask(null);
@@ -7675,6 +8651,15 @@ function MainApp() {
             " 추가"
           ]
         }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => setSettingsOpen(true),
+          className: "w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0",
+          title: "단축키 설정",
+          children: "⚙️"
+        }
       )
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("main", { className: "flex-1 overflow-hidden", children: [
@@ -7709,7 +8694,8 @@ function MainApp() {
             setView("일별");
           }
         }
-      )
+      ),
+      view === "기록" && /* @__PURE__ */ jsxRuntimeExports.jsx(RecordsView, {})
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-5 py-1.5 bg-white border-t border-slate-100 flex gap-4", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-slate-400", children: [
@@ -7728,7 +8714,8 @@ function MainApp() {
         defaultDate,
         onClose: () => setModalOpen(false)
       }
-    )
+    ),
+    settingsOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(SettingsModal, { onClose: () => setSettingsOpen(false) })
   ] });
 }
 let attempts = 0;

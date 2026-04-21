@@ -1,10 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getTodayStr } from '../utils/date'
 
+const STICKER_W = 280
+const STICKER_H_FULL = 360
+const STICKER_H_COLLAPSED = 46
+
 export default function StickerPopup() {
   const [tasks, setTasks] = useState([])
   const [collapsed, setCollapsed] = useState(false)
   const [toast, setToast] = useState(null)
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [quickTitle, setQuickTitle] = useState('')
+  const [showCompleted, setShowCompleted] = useState(true)
+  const [completionNoteTask, setCompletionNoteTask] = useState(null)
   const today = getTodayStr()
 
   const load = useCallback(async () => {
@@ -20,7 +28,6 @@ export default function StickerPopup() {
     return () => window.api.tasks.offRefresh(handler)
   }, [load])
 
-  // 날짜 자정 자동 갱신
   useEffect(() => {
     const now = new Date()
     const msToMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1) - now
@@ -28,8 +35,37 @@ export default function StickerPopup() {
     return () => clearTimeout(timer)
   }, [load])
 
-  const handleToggle = async (task) => {
-    await window.api.tasks.toggle(task.id)
+  // 스티커 영역 밖 클릭이 다른 앱으로 통과되도록 처리
+  // mouseenter/mouseleave는 Alt+Tab 전환 시 mouseleave가 누락되어 클릭 차단 버그 발생
+  // mousemove + elementFromPoint 방식으로 실시간 판별
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const isInteractive = !!el?.closest('button, input, textarea, a, [role="button"], [data-drag]')
+      window.api.window.setIgnoreMouseEvents(!isInteractive)
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.api.window.setIgnoreMouseEvents(true)
+    return () => window.removeEventListener('mousemove', onMouseMove)
+  }, [])
+
+  const toggleCollapse = () => {
+    const next = !collapsed
+    setCollapsed(next)
+    window.api.window.setSize(STICKER_W, next ? STICKER_H_COLLAPSED : STICKER_H_FULL)
+    if (next) setShowQuickAdd(false)
+  }
+
+  const handleToggle = (task) => {
+    if (!task.is_completed) {
+      setCompletionNoteTask(task)
+    } else {
+      doToggle(task.id, null)
+    }
+  }
+
+  const doToggle = async (id, note) => {
+    await window.api.tasks.toggle(id, note)
     window.api.tasks.notifyChanged()
     load()
   }
@@ -39,30 +75,47 @@ export default function StickerPopup() {
     await window.api.tasks.delete(task.id)
     window.api.tasks.notifyChanged()
     load()
-    setToast({ msg: `"${task.title.slice(0, 12)}..." 삭제됨`, undo: async () => {
-      await window.api.tasks.create({
-        title: snapshot.title, memo: snapshot.memo,
-        date: snapshot.date, repeat_type: snapshot.repeat_type, order_index: snapshot.order_index
-      })
-      window.api.tasks.notifyChanged()
-      load()
-      setToast(null)
-    }})
+    setToast({
+      msg: `"${task.title.slice(0, 12)}${task.title.length > 12 ? '...' : ''}" 삭제됨`,
+      undo: async () => {
+        await window.api.tasks.create({
+          title: snapshot.title, memo: snapshot.memo,
+          date: snapshot.date, repeat_type: snapshot.repeat_type, order_index: snapshot.order_index
+        })
+        window.api.tasks.notifyChanged()
+        load()
+        setToast(null)
+      }
+    })
     setTimeout(() => setToast(null), 5000)
   }
 
-  // 드래그: CSS -webkit-app-region 방식 (헤더에 style 적용)
+  const handleQuickAdd = async () => {
+    if (!quickTitle.trim()) return
+    await window.api.tasks.create({ title: quickTitle.trim(), date: today, repeat_type: 'none', order_index: tasks.length })
+    window.api.tasks.notifyChanged()
+    setQuickTitle('')
+    setShowQuickAdd(false)
+    load()
+  }
+
+  const handleQuickKeyDown = (e) => {
+    if (e.key === 'Enter') handleQuickAdd()
+    if (e.key === 'Escape') { setShowQuickAdd(false); setQuickTitle('') }
+  }
 
   const completed = tasks.filter((t) => t.is_completed).length
   const total = tasks.length
   const allDone = total > 0 && completed === total
+  const displayTasks = showCompleted ? tasks : tasks.filter((t) => !t.is_completed)
 
   return (
-    <div className="flex flex-col h-screen select-none">
+    <div className={`flex flex-col h-screen select-none overflow-hidden rounded-xl ${collapsed ? 'bg-transparent' : 'bg-yellow-50'}`}>
       {/* 헤더 (드래그 영역) */}
       <div
+        data-drag
         style={{ WebkitAppRegion: 'drag' }}
-        className="flex items-center justify-between px-3 py-2 bg-yellow-400 rounded-t-xl cursor-grab"
+        className={`flex items-center justify-between px-3 py-2 bg-yellow-400 cursor-grab flex-shrink-0 ${collapsed ? 'rounded-xl' : 'rounded-t-xl'}`}
       >
         <div className="flex items-center gap-1.5">
           <span className="text-sm">📌</span>
@@ -75,10 +128,27 @@ export default function StickerPopup() {
         </div>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
           <button
-            onClick={() => setCollapsed((v) => !v)}
-            className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
+            onClick={() => { if (!collapsed) { setShowQuickAdd((v) => !v); setQuickTitle('') } }}
+            className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 font-bold"
+            title="할일 추가"
           >
-            {collapsed ? '펼치기' : '접기'}
+            +
+          </button>
+          {!collapsed && total > 0 && (
+            <button
+              onClick={() => setShowCompleted((v) => !v)}
+              className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
+              title={showCompleted ? '완료 숨기기' : '완료 보이기'}
+            >
+              {showCompleted ? '👁' : '🙈'}
+            </button>
+          )}
+          <button
+            onClick={toggleCollapse}
+            className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
+            title={collapsed ? '펼치기' : '접기'}
+          >
+            {collapsed ? '▼' : '▲'}
           </button>
           <button
             onClick={() => window.api.window.openMain()}
@@ -87,17 +157,51 @@ export default function StickerPopup() {
           >
             ↗
           </button>
+          <button
+            onClick={() => window.api.window.close()}
+            className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
+            title="닫기 (트레이 우클릭으로 다시 열기)"
+          >
+            ✕
+          </button>
         </div>
       </div>
+
+      {/* 빠른 추가 입력 */}
+      {!collapsed && showQuickAdd && (
+        <div className="bg-yellow-100 px-2 py-1.5 flex gap-1.5 flex-shrink-0">
+          <input
+            autoFocus
+            type="text"
+            value={quickTitle}
+            onChange={(e) => setQuickTitle(e.target.value)}
+            onKeyDown={handleQuickKeyDown}
+            placeholder="할 일 입력 후 Enter"
+            className="flex-1 text-xs border border-yellow-300 rounded px-2 py-1 bg-white outline-none focus:border-yellow-500"
+          />
+          <button
+            onClick={handleQuickAdd}
+            className="text-xs bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600"
+          >
+            추가
+          </button>
+        </div>
+      )}
 
       {/* 할일 목록 */}
       {!collapsed && (
         <>
           <div className="flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5">
             {total === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-1">
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
                 <span className="text-2xl">🎉</span>
                 <p className="text-xs">오늘은 할 일이 없어요!</p>
+                <button
+                  onClick={() => setShowQuickAdd(true)}
+                  className="text-xs text-yellow-700 bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded-full"
+                >
+                  + 할일 추가
+                </button>
               </div>
             ) : allDone ? (
               <div className="flex flex-col items-center justify-center h-full gap-1">
@@ -105,7 +209,7 @@ export default function StickerPopup() {
                 <p className="text-xs text-green-600 font-medium">모두 완료!</p>
               </div>
             ) : (
-              tasks.map((task) => (
+              displayTasks.map((task) => (
                 <StickerTask key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} />
               ))
             )}
@@ -113,7 +217,7 @@ export default function StickerPopup() {
 
           {/* 진행률 바 */}
           {total > 0 && !allDone && (
-            <div className="bg-yellow-50 px-2 pb-2">
+            <div className="bg-yellow-50 px-2 pb-2 flex-shrink-0">
               <div className="h-1.5 bg-yellow-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-yellow-500 transition-all duration-300"
@@ -125,24 +229,81 @@ export default function StickerPopup() {
 
           {/* Undo 토스트 */}
           {toast && (
-            <div className="bg-gray-800 text-white text-xs px-2 py-1.5 flex items-center justify-between gap-2">
+            <div className="bg-gray-800 text-white text-xs px-2 py-1.5 flex items-center justify-between gap-2 flex-shrink-0">
               <span className="truncate">{toast.msg}</span>
               <button onClick={toast.undo} className="text-yellow-300 hover:text-yellow-200 flex-shrink-0">취소</button>
             </div>
           )}
         </>
       )}
+
+      {/* 완료 메모 팝업 */}
+      {completionNoteTask && (
+        <StickerCompletionNote
+          task={completionNoteTask}
+          onConfirm={(note) => { doToggle(completionNoteTask.id, note); setCompletionNoteTask(null) }}
+          onClose={() => setCompletionNoteTask(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+const STICKER_COLOR_DOT = {
+  red: 'bg-red-400',
+  orange: 'bg-orange-400',
+  yellow: 'bg-yellow-400',
+  green: 'bg-green-400',
+  blue: 'bg-blue-400',
+  purple: 'bg-purple-400',
+}
+
+function StickerCompletionNote({ task, onConfirm, onClose }) {
+  const [note, setNote] = useState('')
+
+  return (
+    <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50 rounded-xl">
+      <div className="bg-white rounded-xl shadow-xl mx-2 w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="px-3 pt-3 pb-2">
+          <p className="text-xs font-bold text-slate-700 mb-0.5">🎉 완료!</p>
+          <p className="text-xs text-slate-500 truncate mb-2">"{task.title}"</p>
+          <textarea
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') onClose()
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onConfirm(note.trim() || null) }
+            }}
+            placeholder="완료 메모 (선택, Enter로 저장)"
+            rows={2}
+            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 resize-none"
+          />
+        </div>
+        <div className="flex gap-1.5 px-3 pb-3">
+          <button onClick={() => onConfirm(null)} className="flex-1 text-xs text-slate-500 hover:bg-slate-100 py-1.5 rounded-lg">
+            메모 없이
+          </button>
+          <button onClick={() => onConfirm(note.trim() || null)} className="flex-1 text-xs bg-indigo-600 text-white py-1.5 rounded-lg hover:bg-indigo-700">
+            저장
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
 function StickerTask({ task, onToggle, onDelete }) {
   const isOverdue = !task.is_completed && task.date < new Date().toISOString().slice(0, 10)
+  const colorDot = task.color ? STICKER_COLOR_DOT[task.color] : null
 
   return (
     <div className={`flex items-center gap-2 px-2 py-1.5 rounded-lg group ${
       task.is_completed ? 'opacity-60' : isOverdue ? 'bg-red-100' : 'bg-white shadow-sm'
     }`}>
+      {colorDot && (
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${colorDot}`} />
+      )}
       <button
         onClick={() => onToggle(task)}
         className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${

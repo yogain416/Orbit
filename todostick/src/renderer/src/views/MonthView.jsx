@@ -29,8 +29,11 @@ export default function MonthView({ currentDate, onDateChange, onDateClick }) {
   const days = getDaysInMonth(year, month)
   const today = getTodayStr()
 
-  const totalTasks = Object.values(tasksByDate).flat().length
-  const totalDone = Object.values(tasksByDate).flat().filter((t) => t.is_completed).length
+  const allTasks = Object.values(tasksByDate).flat()
+  const totalTasks = allTasks.length
+  const totalDone = allTasks.filter((t) => t.is_completed).length
+  const totalRemaining = totalTasks - totalDone
+  const completionRate = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0
 
   return (
     <div className="flex flex-col h-full">
@@ -39,9 +42,6 @@ export default function MonthView({ currentDate, onDateChange, onDateClick }) {
         <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">‹</button>
         <div className="text-center">
           <span className="text-base font-bold text-slate-800">{year}년 {month + 1}월</span>
-          {totalTasks > 0 && (
-            <span className="ml-2 text-xs text-slate-400">{totalDone}/{totalTasks} 완료</span>
-          )}
         </div>
         <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">›</button>
       </div>
@@ -66,7 +66,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick }) {
             const completed = tasks.filter((t) => t.is_completed).length
             const allDone = tasks.length > 0 && completed === tasks.length
             const isToday = dateStr === today
-            const isWeekend = (getDayIndex(day) >= 5)
+            const isWeekend = getDayIndex(day) >= 5
 
             return (
               <div
@@ -97,14 +97,30 @@ export default function MonthView({ currentDate, onDateChange, onDateClick }) {
           })}
         </div>
 
-        {/* 범례 */}
-        <div className="flex items-center justify-center gap-5 pt-2 border-t border-slate-100">
-          <span className="flex items-center gap-1.5 text-xs text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-green-400" /> 전체 완료
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-amber-400" /> 미완료 있음
-          </span>
+        {/* 월간 통계 */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-6">
+          {totalTasks > 0 ? (
+            <>
+              <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                완료 <span className="font-semibold text-green-600">{totalDone}</span>개
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                미완료 <span className="font-semibold text-amber-500">{totalRemaining}</span>개
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                완료율 <span className="font-semibold text-indigo-600">{completionRate}%</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-green-400" /> 전체 완료
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-amber-400" /> 미완료 있음
+              </span>
+            </>
+          )}
         </div>
       </div>
     </div>

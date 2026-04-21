@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, Notification, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import db from './database.js'
@@ -6,6 +6,7 @@ import db from './database.js'
 let mainWindow = null
 let stickerWindow = null
 let tray = null
+let reminderTimers = []
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -26,7 +27,6 @@ function createMainWindow() {
     if (is.dev) mainWindow.webContents.openDevTools({ mode: 'detach' })
   })
 
-  // X버튼 클릭 → 트레이로 최소화 (종료 안함)
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
       e.preventDefault()
@@ -42,10 +42,12 @@ function createMainWindow() {
 }
 
 function createStickerWindow() {
-  // 마지막 저장 위치 불러오기 (없으면 우측 하단 기본값)
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
-  const x = sw - 300
-  const y = sh - 380
+  const saved = db.getSetting('stickerPosition')
+  const rawX = saved?.x ?? sw - 300
+  const rawY = saved?.y ?? sh - 380
+  const x = Math.max(0, Math.min(rawX, sw - 280))
+  const y = Math.max(0, Math.min(rawY, sh - 100))
 
   stickerWindow = new BrowserWindow({
     width: 280,
@@ -70,9 +72,36 @@ function createStickerWindow() {
     stickerWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'sticker' })
   }
 
+  stickerWindow.on('moved', () => {
+    const [x, y] = stickerWindow.getPosition()
+    db.setSetting('stickerPosition', { x, y })
+  })
+
   stickerWindow.on('closed', () => {
     stickerWindow = null
+    updateTrayMenu()
   })
+}
+
+function updateTrayMenu() {
+  if (!tray) return
+  const contextMenu = Menu.buildFromTemplate([
+    { label: '메인 창 열기', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+    {
+      label: stickerWindow ? '스티커 숨기기' : '스티커 열기',
+      click: () => {
+        if (stickerWindow) {
+          stickerWindow.close()
+        } else {
+          createStickerWindow()
+          updateTrayMenu()
+        }
+      }
+    },
+    { type: 'separator' },
+    { label: '종료', click: () => { app.isQuitting = true; app.quit() } }
+  ])
+  tray.setContextMenu(contextMenu)
 }
 
 function createTray() {
@@ -81,29 +110,70 @@ function createTray() {
 
   tray = new Tray(icon)
   tray.setToolTip('TodoStick')
-
-  const updateMenu = () => {
-    const contextMenu = Menu.buildFromTemplate([
-      { label: '메인 창 열기', click: () => { mainWindow?.show(); mainWindow?.focus() } },
-      {
-        label: stickerWindow ? '스티커 숨기기' : '스티커 팝업 열기',
-        click: () => {
-          if (stickerWindow) {
-            stickerWindow.close()
-          } else {
-            createStickerWindow()
-          }
-          updateMenu()
-        }
-      },
-      { type: 'separator' },
-      { label: '종료', click: () => { app.isQuitting = true; app.quit() } }
-    ])
-    tray.setContextMenu(contextMenu)
-  }
-
-  updateMenu()
+  updateTrayMenu()
   tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus() })
+}
+
+// 전역 단축키
+const DEFAULT_SHORTCUTS = {
+  openMain: 'Ctrl+Shift+T',
+  toggleSticker: 'Ctrl+Shift+S'
+}
+
+function toElectronKey(display) {
+  return display.replace('Ctrl', 'CommandOrControl')
+}
+
+function registerShortcuts() {
+  globalShortcut.unregisterAll()
+  const saved = db.getSetting('shortcuts') || {}
+  const shortcuts = { ...DEFAULT_SHORTCUTS, ...saved }
+
+  try {
+    globalShortcut.register(toElectronKey(shortcuts.openMain), () => {
+      mainWindow?.show(); mainWindow?.focus()
+    })
+  } catch {}
+
+  try {
+    globalShortcut.register(toElectronKey(shortcuts.toggleSticker), () => {
+      if (stickerWindow) { stickerWindow.close() } else { createStickerWindow() }
+    })
+  } catch {}
+}
+
+// 알림 스케줄러
+function scheduleReminders() {
+  reminderTimers.forEach(clearTimeout)
+  reminderTimers = []
+
+  const today = new Date().toISOString().slice(0, 10)
+  const tasks = db.getTodayReminders(today)
+  const now = new Date()
+
+  tasks.forEach((task) => {
+    if (!task.remind_at) return
+    const [hours, minutes] = task.remind_at.split(':').map(Number)
+    const reminderTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes)
+    const delay = reminderTime - now
+    if (delay <= 0) return
+
+    const timer = setTimeout(() => {
+      if (Notification.isSupported()) {
+        new Notification({ title: '📌 TodoStick', body: task.title }).show()
+      }
+    }, delay)
+    reminderTimers.push(timer)
+  })
+}
+
+function scheduleMidnightRefresh() {
+  const now = new Date()
+  const msToMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1) - now
+  setTimeout(() => {
+    scheduleReminders()
+    scheduleMidnightRefresh()
+  }, msToMidnight + 500)
 }
 
 app.whenReady().then(() => {
@@ -116,26 +186,57 @@ app.whenReady().then(() => {
   createMainWindow()
   createStickerWindow()
   createTray()
+  registerShortcuts()
+  scheduleReminders()
+  scheduleMidnightRefresh()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
   })
 })
 
-// 모든 창이 닫혀도 트레이가 있으면 앱 유지
 app.on('window-all-closed', () => {
   if (process.platform === 'darwin') app.quit()
-  // Windows: 트레이로 계속 실행
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
 })
 
 // IPC: 할일 CRUD
 ipcMain.handle('tasks:getByDate', (_, date) => db.getTasksByDate(date))
 ipcMain.handle('tasks:getByMonth', (_, year, month) => db.getTasksByMonth(year, month))
 ipcMain.handle('tasks:getByWeek', (_, startDate, endDate) => db.getTasksByRange(startDate, endDate))
-ipcMain.handle('tasks:create', (_, task) => db.createTask(task))
-ipcMain.handle('tasks:update', (_, id, fields) => db.updateTask(id, fields))
+ipcMain.handle('tasks:create', (_, task) => {
+  const result = db.createTask(task)
+  if (task.remind_at) scheduleReminders()
+  return result
+})
+ipcMain.handle('tasks:update', (_, id, fields) => {
+  const result = db.updateTask(id, fields)
+  if (fields.remind_at !== undefined) scheduleReminders()
+  return result
+})
 ipcMain.handle('tasks:delete', (_, id) => db.deleteTask(id))
-ipcMain.handle('tasks:toggle', (_, id) => db.toggleTask(id))
+ipcMain.handle('tasks:toggle', (_, id, note) => db.toggleTask(id, note))
+
+// IPC: 미완료 이월
+ipcMain.handle('tasks:getOverdue', (_, date) => db.getOverdueTasks(date))
+ipcMain.handle('tasks:rollover', (_, toDate) => {
+  const result = db.rolloverTasks(toDate)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  return result
+})
+
+// IPC: 순서 변경
+ipcMain.handle('tasks:reorder', (_, date, orderedIds) => db.reorderTasks(date, orderedIds))
+
+// IPC: 반복 할일 이후 모두 삭제
+ipcMain.handle('tasks:deleteAndFuture', (_, id, fromDate) => db.deleteTaskAndFuture(id, fromDate))
+
+// IPC: 완료 기록 조회
+ipcMain.handle('tasks:getCompleted', (_, filters) => db.getCompletedTasks(filters))
 
 // IPC: 스티커 ↔ 메인 창 실시간 동기화
 ipcMain.on('tasks:changed', () => {
@@ -147,7 +248,6 @@ ipcMain.on('tasks:changed', () => {
 ipcMain.on('window:startDrag', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (win) win.setMovable(true)
-  // Electron 내장 드래그는 CSS -webkit-app-region으로 처리 (아래 참고)
 })
 
 // IPC: 메인 창 열기
@@ -159,4 +259,27 @@ ipcMain.on('window:openMain', () => {
 // IPC: 창 닫기
 ipcMain.on('window:close', (event) => {
   BrowserWindow.fromWebContents(event.sender)?.close()
+})
+
+// IPC: 단축키 설정
+ipcMain.handle('shortcuts:get', () => {
+  const saved = db.getSetting('shortcuts') || {}
+  return { ...DEFAULT_SHORTCUTS, ...saved }
+})
+ipcMain.handle('shortcuts:set', (_, shortcuts) => {
+  db.setSetting('shortcuts', shortcuts)
+  registerShortcuts()
+  return true
+})
+
+// IPC: 창 크기 조절 (스티커 접기/펼치기)
+ipcMain.on('window:setSize', (event, width, height) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) win.setSize(width, height)
+})
+
+// IPC: 마우스 이벤트 통과 (스티커 영역 밖 클릭 허용)
+ipcMain.on('window:setIgnoreMouseEvents', (event, ignore) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) win.setIgnoreMouseEvents(ignore, { forward: true })
 })

@@ -7,27 +7,19 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
   const [tasksByDate, setTasksByDate] = useState({})
   const { start, end, monday } = getWeekRange(currentDate)
 
-  useEffect(() => {
+  const loadTasks = () => {
     window.api.tasks.getByWeek(start, end).then((tasks) => {
       const map = {}
-      tasks.forEach((t) => {
-        if (!map[t.date]) map[t.date] = []
-        map[t.date].push(t)
-      })
+      tasks.forEach((t) => { if (!map[t.date]) map[t.date] = []; map[t.date].push(t) })
       setTasksByDate(map)
     })
-  }, [start, end])
+  }
+
+  useEffect(() => { loadTasks() }, [start, end])
 
   useEffect(() => {
-    const handler = () => {
-      window.api.tasks.getByWeek(start, end).then((tasks) => {
-        const map = {}
-        tasks.forEach((t) => { if (!map[t.date]) map[t.date] = []; map[t.date].push(t) })
-        setTasksByDate(map)
-      })
-    }
-    window.api.tasks.onRefresh(handler)
-    return () => window.api.tasks.offRefresh(handler)
+    window.api.tasks.onRefresh(loadTasks)
+    return () => window.api.tasks.offRefresh(loadTasks)
   }, [start, end])
 
   const prevWeek = () => { const d = new Date(currentDate); d.setDate(d.getDate() - 7); onDateChange(d) }
@@ -41,6 +33,10 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
 
   const today = getTodayStr()
   const weekLabel = `${monday.getMonth() + 1}월 ${Math.ceil(monday.getDate() / 7)}주차`
+
+  const allTasks = Object.values(tasksByDate).flat()
+  const weekTotal = allTasks.length
+  const weekDone = allTasks.filter((t) => t.is_completed).length
 
   return (
     <div className="flex flex-col h-full">
@@ -114,6 +110,37 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
             </div>
           )
         })}
+      </div>
+
+      {/* 주간 통계 */}
+      <div className="px-4 py-2.5 bg-white border-t border-slate-100 flex items-center gap-4">
+        <span className="text-xs text-slate-400 flex-shrink-0">주간 완료율</span>
+        <div className="flex-1 flex gap-1.5 items-end">
+          {days.map((day, i) => {
+            const dateStr = toDateStr(day)
+            const dayTasks = tasksByDate[dateStr] || []
+            const dayTotal = dayTasks.length
+            const dayDone = dayTasks.filter((t) => t.is_completed).length
+            const pct = dayTotal > 0 ? (dayDone / dayTotal) * 100 : 0
+            const isWeekend = i >= 5
+            return (
+              <div key={dateStr} className="flex-1 flex flex-col items-center gap-0.5">
+                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${pct === 100 && dayTotal > 0 ? 'bg-green-400' : 'bg-indigo-400'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className={`text-xs ${isWeekend ? 'text-red-300' : 'text-slate-300'}`}>{DAY_NAMES[i]}</span>
+              </div>
+            )
+          })}
+        </div>
+        {weekTotal > 0 && (
+          <span className="text-xs text-slate-500 flex-shrink-0 font-medium">
+            {weekDone}/{weekTotal}
+          </span>
+        )}
       </div>
     </div>
   )
