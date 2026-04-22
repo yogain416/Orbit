@@ -8257,7 +8257,7 @@ function StickerPopup() {
   reactExports.useEffect(() => {
     const onMouseMove = (e) => {
       const el2 = document.elementFromPoint(e.clientX, e.clientY);
-      const isInteractive = !!el2?.closest('button, input, textarea, a, [role="button"], [data-drag]');
+      const isInteractive = !!el2?.closest('button, input, textarea, a, [role="button"], [data-drag], [data-scroll]');
       window.api.window.setIgnoreMouseEvents(!isInteractive);
     };
     window.addEventListener("mousemove", onMouseMove);
@@ -8418,7 +8418,7 @@ function StickerPopup() {
       )
     ] }),
     !collapsed && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5", children: total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full text-gray-400 gap-2", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { "data-scroll": true, className: "flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5", children: total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full text-gray-400 gap-2", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl", children: "🎉" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs", children: "오늘은 할 일이 없어요!" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
