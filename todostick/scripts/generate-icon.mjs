@@ -21,9 +21,11 @@ function makePng(size, r, g, b) {
   const raw = Buffer.from(pixels)
   const deflated = deflateSync(raw)
 
-  const ihdr = chunk('IHDR', Buffer.from([
-    0,0,0,size, 0,0,0,size, 8, 6, 0, 0, 0
-  ]))
+  const ihdrData = Buffer.allocUnsafe(13)
+  ihdrData.writeUInt32BE(size, 0)
+  ihdrData.writeUInt32BE(size, 4)
+  ihdrData[8] = 8; ihdrData[9] = 6; ihdrData[10] = 0; ihdrData[11] = 0; ihdrData[12] = 0
+  const ihdr = chunk('IHDR', ihdrData)
   const idat = chunk('IDAT', deflated)
   const iend = chunk('IEND', Buffer.alloc(0))
 
@@ -81,5 +83,5 @@ function deflateSync(buf) {
 
 const outPath = join(__dirname, '../resources/icon.png')
 mkdirSync(join(__dirname, '../resources'), { recursive: true })
-writeFileSync(outPath, makePng(32, 99, 102, 241))
-console.log('아이콘 생성 완료:', outPath)
+writeFileSync(outPath, makePng(256, 99, 102, 241))
+console.log('아이콘 생성 완료 (256x256):', outPath)

@@ -52,8 +52,11 @@ function generateRepeatInstances(data, date) {
         order_index: tmpl.order_index,
         remind_at: tmpl.remind_at || null,
         color: tmpl.color || null,
+        category: tmpl.category || null,
         parent_id: tmpl.id,
         is_template: false,
+        completion_note: null,
+        completed_at: null,
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -61,6 +64,16 @@ function generateRepeatInstances(data, date) {
     }
   }
   return changed;
+}
+function dateRange(startDate, endDate) {
+  const dates = [];
+  const cur = /* @__PURE__ */ new Date(startDate + "T00:00:00");
+  const end = /* @__PURE__ */ new Date(endDate + "T00:00:00");
+  while (cur <= end) {
+    dates.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
 }
 const db = {
   getTasksByDate(date) {
@@ -71,12 +84,25 @@ const db = {
   },
   getTasksByMonth(year, month) {
     const prefix = `${year}-${String(month).padStart(2, "0")}`;
-    const { tasks } = read();
-    return tasks.filter((t) => t.date.startsWith(prefix) && !t.is_template).sort((a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const startDate = `${prefix}-01`;
+    const endDate = `${prefix}-${String(daysInMonth).padStart(2, "0")}`;
+    const data = read();
+    let changed = false;
+    for (const date of dateRange(startDate, endDate)) {
+      if (generateRepeatInstances(data, date)) changed = true;
+    }
+    if (changed) write(data);
+    return data.tasks.filter((t) => t.date.startsWith(prefix) && !t.is_template).sort((a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index);
   },
   getTasksByRange(startDate, endDate) {
-    const { tasks } = read();
-    return tasks.filter((t) => t.date >= startDate && t.date <= endDate && !t.is_template).sort((a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index);
+    const data = read();
+    let changed = false;
+    for (const date of dateRange(startDate, endDate)) {
+      if (generateRepeatInstances(data, date)) changed = true;
+    }
+    if (changed) write(data);
+    return data.tasks.filter((t) => t.date >= startDate && t.date <= endDate && !t.is_template).sort((a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index);
   },
   getOverdueTasks(date) {
     const { tasks } = read();
@@ -244,8 +270,11 @@ const db = {
       order_index: maxOrder + i,
       remind_at: null,
       color: t.color || null,
+      category: t.category || null,
       is_template: false,
       parent_id: null,
+      completion_note: null,
+      completed_at: null,
       created_at: (/* @__PURE__ */ new Date()).toISOString(),
       updated_at: (/* @__PURE__ */ new Date()).toISOString()
     }));
@@ -253,6 +282,15 @@ const db = {
     data.tasks.push(...newTasks);
     write(data);
     return newTasks;
+  },
+  getCategories() {
+    const { settings } = read();
+    return settings.categories || [];
+  },
+  setCategories(categories) {
+    const data = read();
+    data.settings.categories = categories;
+    write(data);
   },
   getSetting(key) {
     const { settings } = read();
@@ -413,9 +451,7 @@ function scheduleReminders() {
     const delay = reminderTime - now;
     if (delay <= 0) return;
     const timer = setTimeout(() => {
-      if (electron.Notification.isSupported()) {
-        new electron.Notification({ title: "📌 TodoStick", body: task.title }).show();
-      }
+      mainWindow?.webContents.send("reminder:notify", { title: task.title, remind_at: task.remind_at });
     }, delay);
     reminderTimers.push(timer);
   });
@@ -474,6 +510,11 @@ electron.ipcMain.handle("tasks:rollover", (_, toDate) => {
 electron.ipcMain.handle("tasks:reorder", (_, date, orderedIds) => db.reorderTasks(date, orderedIds));
 electron.ipcMain.handle("tasks:deleteAndFuture", (_, id, fromDate) => db.deleteTaskAndFuture(id, fromDate));
 electron.ipcMain.handle("tasks:getCompleted", (_, filters) => db.getCompletedTasks(filters));
+electron.ipcMain.handle("categories:get", () => db.getCategories());
+electron.ipcMain.handle("categories:set", (_, categories) => db.setCategories(categories));
+electron.ipcMain.handle("reminder:test", () => {
+  mainWindow?.webContents.send("reminder:notify", { title: "테스트 알림 🎉", remind_at: "지금" });
+});
 electron.ipcMain.on("tasks:changed", () => {
   mainWindow?.webContents.send("tasks:refresh");
   stickerWindow?.webContents.send("tasks:refresh");

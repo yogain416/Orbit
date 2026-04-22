@@ -18,6 +18,15 @@ electron.contextBridge.exposeInMainWorld("api", {
     onRefresh: (cb) => electron.ipcRenderer.on("tasks:refresh", cb),
     offRefresh: (cb) => electron.ipcRenderer.removeListener("tasks:refresh", cb)
   },
+  reminders: {
+    onNotify: (cb) => electron.ipcRenderer.on("reminder:notify", cb),
+    offNotify: (cb) => electron.ipcRenderer.removeListener("reminder:notify", cb),
+    test: () => electron.ipcRenderer.invoke("reminder:test")
+  },
+  categories: {
+    get: () => electron.ipcRenderer.invoke("categories:get"),
+    set: (cats) => electron.ipcRenderer.invoke("categories:set", cats)
+  },
   shortcuts: {
     get: () => electron.ipcRenderer.invoke("shortcuts:get"),
     set: (shortcuts) => electron.ipcRenderer.invoke("shortcuts:set", shortcuts)

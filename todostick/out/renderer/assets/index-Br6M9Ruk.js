@@ -6996,15 +6996,35 @@ function getDaysInMonth(year, month) {
   for (let d = 1; d <= last.getDate(); d++) days.push(new Date(year, month, d));
   return days;
 }
-const CATEGORIES = [
-  { value: null, label: "없음", color: "bg-slate-200 text-slate-600", dot: "bg-slate-400" },
-  { value: "work", label: "업무", color: "bg-blue-100 text-blue-700", dot: "bg-blue-500" },
-  { value: "personal", label: "개인", color: "bg-green-100 text-green-700", dot: "bg-green-500" },
-  { value: "exercise", label: "운동", color: "bg-orange-100 text-orange-700", dot: "bg-orange-500" },
-  { value: "other", label: "기타", color: "bg-slate-100 text-slate-600", dot: "bg-slate-400" }
+const DEFAULT_CATEGORIES = [
+  { id: "work", label: "업무", color: "#3B82F6" },
+  { id: "personal", label: "개인", color: "#22C55E" },
+  { id: "exercise", label: "운동", color: "#F97316" },
+  { id: "other", label: "기타", color: "#94A3B8" }
 ];
-function getCategoryInfo(value) {
-  return CATEGORIES.find((c) => c.value === value) || CATEGORIES[0];
+const PALETTE = [
+  "#EF4444",
+  "#F97316",
+  "#F59E0B",
+  "#EAB308",
+  "#22C55E",
+  "#10B981",
+  "#06B6D4",
+  "#3B82F6",
+  "#6366F1",
+  "#8B5CF6",
+  "#EC4899",
+  "#94A3B8"
+];
+function getCategoryById(id2, categories) {
+  return (categories?.length ? categories : DEFAULT_CATEGORIES).find((c) => c.id === id2) || null;
+}
+function categoryStyle(color, selected = false) {
+  return {
+    backgroundColor: color + (selected ? "30" : "18"),
+    color,
+    borderColor: selected ? color : "transparent"
+  };
 }
 function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [tasks, setTasks] = reactExports.useState([]);
@@ -7017,6 +7037,12 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [dragOverId, setDragOverId] = reactExports.useState(null);
   const [deleteConfirm, setDeleteConfirm] = reactExports.useState(null);
   const [completionNoteTask, setCompletionNoteTask] = reactExports.useState(null);
+  const [categories, setCategories] = reactExports.useState(DEFAULT_CATEGORIES);
+  reactExports.useEffect(() => {
+    window.api.categories.get().then((cats) => {
+      if (cats.length) setCategories(cats);
+    });
+  }, []);
   const dateStr = toDateStr(currentDate);
   const isToday = dateStr === getTodayStr();
   const load = reactExports.useCallback(async () => {
@@ -7206,6 +7232,7 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
         TaskCard,
         {
           task,
+          categories,
           onToggle: handleToggle,
           onEdit: onEditTask,
           onDelete: handleDelete,
@@ -7323,12 +7350,12 @@ const COLOR_BORDER = {
   blue: "border-l-blue-400",
   purple: "border-l-purple-400"
 };
-function TaskCard({ task, onToggle, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr();
   const isOverdue = !task.is_completed && task.date < today;
   const isRepeat = task.parent_id || task.is_template;
   const colorBorder = task.color ? COLOR_BORDER[task.color] : null;
-  const catInfo = task.category ? getCategoryInfo(task.category) : null;
+  const catInfo = task.category ? getCategoryById(task.category, categories) : null;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "div",
     {
@@ -7357,7 +7384,14 @@ function TaskCard({ task, onToggle, onEdit, onDelete, isExpanded, onExpand, isDr
               task.title,
               isOverdue && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-red-400 font-normal", children: "기한 초과" }),
               isRepeat && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-indigo-400 font-normal", children: "🔁" }),
-              catInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-normal ${catInfo.color}`, children: catInfo.label })
+              catInfo && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "span",
+                {
+                  style: { backgroundColor: catInfo.color + "20", color: catInfo.color },
+                  className: "ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-normal",
+                  children: catInfo.label
+                }
+              )
             ] }),
             task.memo && !isExpanded && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-400 mt-0.5 truncate", children: task.memo }),
             task.remind_at && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-indigo-400 mt-0.5", children: [
@@ -7686,6 +7720,12 @@ function RecordsView() {
   const [search, setSearch] = reactExports.useState("");
   const [categoryFilter, setCategoryFilter] = reactExports.useState(null);
   const [loading, setLoading] = reactExports.useState(false);
+  const [categories, setCategories] = reactExports.useState(DEFAULT_CATEGORIES);
+  reactExports.useEffect(() => {
+    window.api.categories.get().then((cats) => {
+      if (cats.length) setCategories(cats);
+    });
+  }, []);
   const load = reactExports.useCallback(async () => {
     setLoading(true);
     const data = await window.api.tasks.getCompleted({ category: categoryFilter, search });
@@ -7729,30 +7769,31 @@ function RecordsView() {
           "개"
         ] })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1.5 flex-wrap", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1.5 overflow-x-auto pb-0.5", style: { scrollbarWidth: "none" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
             onClick: () => setCategoryFilter(null),
-            className: `px-3 py-1 rounded-full text-xs font-medium transition-all border ${categoryFilter === null ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-100 text-slate-600 border-transparent hover:bg-slate-200"}`,
+            className: `flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${categoryFilter === null ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-100 text-slate-600 border-transparent hover:bg-slate-200"}`,
             children: "전체"
           }
         ),
-        CATEGORIES.filter((c) => c.value !== null).map((c) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+        categories.map((c) => /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
-            onClick: () => setCategoryFilter(categoryFilter === c.value ? null : c.value),
-            className: `px-3 py-1 rounded-full text-xs font-medium transition-all border ${categoryFilter === c.value ? `${c.color} border-current ring-2 ring-offset-1 ring-indigo-400` : `${c.color} border-transparent opacity-60 hover:opacity-100`}`,
+            onClick: () => setCategoryFilter(categoryFilter === c.id ? null : c.id),
+            style: categoryStyle(c.color, categoryFilter === c.id),
+            className: `flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${categoryFilter === c.id ? "ring-2 ring-offset-1 ring-indigo-400" : "opacity-70 hover:opacity-100"}`,
             children: c.label
           },
-          c.value
+          c.id
         ))
       ] })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto px-6 py-4", children: loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center h-32 text-slate-400 text-sm", children: "불러오는 중..." }) : sortedDates.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(EmptyRecords, { search }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-6", children: sortedDates.map((date) => /* @__PURE__ */ jsxRuntimeExports.jsx(DateGroup, { date, tasks: grouped[date], onUpdated: load }, date)) }) })
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto px-6 py-4", children: loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center h-32 text-slate-400 text-sm", children: "불러오는 중..." }) : sortedDates.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(EmptyRecords, { search }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-6", children: sortedDates.map((date) => /* @__PURE__ */ jsxRuntimeExports.jsx(DateGroup, { date, tasks: grouped[date], onUpdated: load, categories }, date)) }) })
   ] });
 }
-function DateGroup({ date, tasks, onUpdated }) {
+function DateGroup({ date, tasks, onUpdated, categories }) {
   const d = /* @__PURE__ */ new Date(date + "T00:00:00");
   const DAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
   const label = `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAY_KO[d.getDay()]})`;
@@ -7765,15 +7806,15 @@ function DateGroup({ date, tasks, onUpdated }) {
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 h-px bg-slate-100" })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-2", children: tasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(RecordCard, { task, onUpdated }, task.id)) })
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-2", children: tasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(RecordCard, { task, onUpdated, categories }, task.id)) })
   ] });
 }
-function RecordCard({ task, onUpdated }) {
+function RecordCard({ task, onUpdated, categories }) {
   const [expanded, setExpanded] = reactExports.useState(false);
   const [editing, setEditing] = reactExports.useState(false);
   const [noteValue, setNoteValue] = reactExports.useState(task.completion_note || "");
   const [saving, setSaving] = reactExports.useState(false);
-  const catInfo = task.category ? getCategoryInfo(task.category) : null;
+  const catInfo = task.category ? getCategoryById(task.category, categories) : null;
   const handleSaveNote = async () => {
     setSaving(true);
     await window.api.tasks.update(task.id, { completion_note: noteValue.trim() || null });
@@ -7810,7 +7851,14 @@ function RecordCard({ task, onUpdated }) {
         }
       ),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5 flex-shrink-0", children: [
-        catInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs px-2 py-0.5 rounded-full font-medium ${catInfo.color}`, children: catInfo.label }),
+        catInfo && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "span",
+          {
+            style: { backgroundColor: catInfo.color + "20", color: catInfo.color },
+            className: "text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0",
+            children: catInfo.label
+          }
+        ),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
@@ -7928,6 +7976,12 @@ function TaskModal({ task, defaultDate, onClose }) {
   const [category, setCategory] = reactExports.useState(task?.category || null);
   const [completionNote, setCompletionNote] = reactExports.useState(task?.completion_note || "");
   const [saving, setSaving] = reactExports.useState(false);
+  const [categories, setCategories] = reactExports.useState(DEFAULT_CATEGORIES);
+  reactExports.useEffect(() => {
+    window.api.categories.get().then((cats) => {
+      if (cats.length) setCategories(cats);
+    });
+  }, []);
   const isEdit = !!task;
   const titleLen = title.length;
   const overLimit = titleLen > 100;
@@ -8006,16 +8060,28 @@ function TaskModal({ task, defaultDate, onClose }) {
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-2 block", children: "카테고리" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2", children: CATEGORIES.map((c) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "button",
-              {
-                type: "button",
-                onClick: () => setCategory(c.value),
-                className: `px-3 py-1 rounded-full text-xs font-medium transition-all border ${category === c.value ? `${c.color} border-current ring-2 ring-offset-1 ring-indigo-400` : `${c.color} border-transparent opacity-60 hover:opacity-100`}`,
-                children: c.label
-              },
-              String(c.value)
-            )) })
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 overflow-x-auto pb-1", style: { scrollbarWidth: "none" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => setCategory(null),
+                  className: `flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${category === null ? "bg-slate-200 text-slate-700 border-slate-400 ring-2 ring-offset-1 ring-indigo-400" : "bg-slate-100 text-slate-500 border-transparent opacity-60 hover:opacity-100"}`,
+                  children: "없음"
+                }
+              ),
+              categories.map((c) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => setCategory(c.id),
+                  style: categoryStyle(c.color, category === c.id),
+                  className: `flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${category === c.id ? "ring-2 ring-offset-1 ring-indigo-400" : "opacity-70 hover:opacity-100"}`,
+                  children: c.label
+                },
+                c.id
+              ))
+            ] })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-2 block", children: "색상 태그" }),
@@ -8464,6 +8530,32 @@ const SHORTCUT_DEFS = [
   { key: "toggleSticker", label: "스티커 토글", desc: "스티커 팝업 열기/닫기" }
 ];
 function SettingsModal({ onClose }) {
+  const [tab, setTab] = reactExports.useState("shortcuts");
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-black/30 flex items-center justify-center z-50", onClick: onClose, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      className: "bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col",
+      onClick: (e) => e.stopPropagation(),
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-4 border-b border-gray-100", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "font-bold text-gray-800", children: "⚙️ 설정" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "text-gray-400 hover:text-gray-600 text-lg", children: "✕" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex border-b border-gray-100 px-6", children: [["shortcuts", "단축키"], ["categories", "카테고리"]].map(([key, label]) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setTab(key),
+            className: `px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === key ? "border-indigo-500 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600"}`,
+            children: label
+          },
+          key
+        )) }),
+        tab === "shortcuts" ? /* @__PURE__ */ jsxRuntimeExports.jsx(ShortcutsTab, { onClose }) : /* @__PURE__ */ jsxRuntimeExports.jsx(CategoriesTab, { onClose })
+      ]
+    }
+  ) });
+}
+function ShortcutsTab({ onClose }) {
   const [shortcuts, setShortcuts] = reactExports.useState({});
   const [recording, setRecording] = reactExports.useState(null);
   const [saved, setSaved] = reactExports.useState(false);
@@ -8503,80 +8595,237 @@ function SettingsModal({ onClose }) {
       onClose();
     }, 800);
   };
-  const handleReset = async () => {
-    const defaults = await window.api.shortcuts.get();
-    setShortcuts(defaults);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 py-4 flex flex-col gap-3 overflow-y-auto flex-1", children: [
+      SHORTCUT_DEFS.map(({ key, label, desc }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-gray-700", children: label }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: desc })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => setRecording(recording === key ? null : key),
+            className: `flex-shrink-0 px-3 py-1.5 rounded-lg border text-sm font-mono transition-all ${recording === key ? "border-indigo-400 bg-indigo-50 text-indigo-600 animate-pulse" : "border-gray-200 bg-gray-50 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50"}`,
+            children: recording === key ? "키를 누르세요..." : shortcuts[key] || "미설정"
+          }
+        )
+      ] }, key)),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400 mt-1", children: "단축키 버튼 클릭 후 원하는 키 조합을 누르세요 (예: Ctrl+Shift+T). ESC로 취소." }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-1", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-medium text-gray-500 mb-2", children: "앱 내 단축키 (변경 불가)" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-gray-50 rounded-xl px-4 py-3 flex flex-col gap-1.5", children: [["Ctrl+N", "할일 추가"], ["T", "오늘로 이동"], ["Enter", "모달에서 저장"], ["Esc", "모달 닫기"]].map(([key, desc]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-gray-500", children: desc }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("kbd", { className: "text-xs bg-white border border-gray-200 rounded px-2 py-0.5 font-mono text-gray-600", children: key })
+        ] }, key)) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center gap-2 px-6 py-4 border-t border-gray-100", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => window.api.shortcuts.get().then(setShortcuts),
+          className: "text-sm text-gray-400 hover:text-gray-600 transition-colors",
+          children: "기본값 복원"
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors", children: "취소" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: handleSave,
+            className: `px-4 py-2 text-sm rounded-lg transition-colors ${saved ? "bg-green-500 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700"}`,
+            children: saved ? "저장됨 ✓" : "저장"
+          }
+        )
+      ] })
+    ] })
+  ] });
+}
+function CategoriesTab({ onClose }) {
+  const [categories, setCategories] = reactExports.useState([]);
+  const [newLabel, setNewLabel] = reactExports.useState("");
+  const [newColor, setNewColor] = reactExports.useState(PALETTE[7]);
+  const [adding, setAdding] = reactExports.useState(false);
+  reactExports.useEffect(() => {
+    window.api.categories.get().then((cats) => {
+      setCategories(cats.length ? cats : DEFAULT_CATEGORIES);
+    });
+  }, []);
+  const save = async (updated) => {
+    setCategories(updated);
+    await window.api.categories.set(updated);
   };
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-black/30 flex items-center justify-center z-50", onClick: onClose, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "div",
-    {
-      className: "bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4",
-      onClick: (e) => e.stopPropagation(),
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-4 border-b border-gray-100", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "font-bold text-gray-800", children: "⚙️ 단축키 설정" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "text-gray-400 hover:text-gray-600 text-lg", children: "✕" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 py-4 flex flex-col gap-3", children: [
-          SHORTCUT_DEFS.map(({ key, label, desc }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-4", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-gray-700", children: label }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: desc })
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "button",
-              {
-                onClick: () => setRecording(recording === key ? null : key),
-                className: `flex-shrink-0 px-3 py-1.5 rounded-lg border text-sm font-mono transition-all ${recording === key ? "border-indigo-400 bg-indigo-50 text-indigo-600 animate-pulse" : "border-gray-200 bg-gray-50 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50"}`,
-                children: recording === key ? "키를 누르세요..." : shortcuts[key] || "미설정"
-              }
-            )
-          ] }, key)),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400 mt-1", children: "단축키 버튼 클릭 후 원하는 키 조합을 누르세요 (예: Ctrl+Shift+T). ESC로 취소." })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 pb-4", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-medium text-gray-500 mb-2", children: "앱 내 단축키 (변경 불가)" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-gray-50 rounded-xl px-4 py-3 flex flex-col gap-1.5", children: [
-            ["Ctrl+N", "할일 추가"],
-            ["T", "오늘로 이동"],
-            ["Enter", "모달에서 저장"],
-            ["Esc", "모달 닫기"]
-          ].map(([key, desc]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-gray-500", children: desc }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("kbd", { className: "text-xs bg-white border border-gray-200 rounded px-2 py-0.5 font-mono text-gray-600", children: key })
-          ] }, key)) })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center gap-2 px-6 py-4 border-t border-gray-100", children: [
+  const handleAdd = async () => {
+    const label = newLabel.trim();
+    if (!label || categories.length >= 10) return;
+    const id2 = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    await save([...categories, { id: id2, label, color: newColor }]);
+    setNewLabel("");
+    setNewColor(PALETTE[7]);
+    setAdding(false);
+  };
+  const handleDelete = async (id2) => {
+    await save(categories.filter((c) => c.id !== id2));
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-6 py-4 flex flex-col gap-3 overflow-y-auto flex-1", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-medium text-gray-500", children: "카테고리 목록" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-gray-400", children: [
+          categories.length,
+          "/10"
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1.5", children: [
+        categories.map((c) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "span",
+            {
+              className: "w-3 h-3 rounded-full flex-shrink-0",
+              style: { backgroundColor: c.color }
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "flex-1 text-sm text-gray-700 truncate", children: c.label }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "button",
             {
-              onClick: handleReset,
-              className: "text-sm text-gray-400 hover:text-gray-600 transition-colors",
-              children: "기본값 복원"
+              onClick: () => handleDelete(c.id),
+              className: "text-gray-300 hover:text-red-400 transition-colors text-sm flex-shrink-0",
+              title: "삭제",
+              children: "✕"
+            }
+          )
+        ] }, c.id)),
+        categories.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400 text-center py-4", children: "카테고리가 없습니다" })
+      ] }),
+      adding ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-3 p-3 rounded-xl border border-indigo-100 bg-indigo-50/30", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
+          {
+            autoFocus: true,
+            type: "text",
+            value: newLabel,
+            onChange: (e) => setNewLabel(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === "Enter") handleAdd();
+              if (e.key === "Escape") setAdding(false);
+            },
+            placeholder: "카테고리 이름",
+            maxLength: 12,
+            className: "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 bg-white"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400 mb-2", children: "색상 선택" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2", children: PALETTE.map((hex) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              type: "button",
+              onClick: () => setNewColor(hex),
+              className: `w-7 h-7 rounded-full transition-all ${newColor === hex ? "ring-2 ring-offset-2 ring-indigo-400 scale-110" : "hover:scale-110 opacity-80"}`,
+              style: { backgroundColor: hex }
+            },
+            hex
+          )) })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 justify-end", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => {
+                setAdding(false);
+                setNewLabel("");
+              },
+              className: "px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition-colors",
+              children: "취소"
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "button",
-              {
-                onClick: onClose,
-                className: "px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors",
-                children: "취소"
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "button",
-              {
-                onClick: handleSave,
-                className: `px-4 py-2 text-sm rounded-lg transition-colors ${saved ? "bg-green-500 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700"}`,
-                children: saved ? "저장됨 ✓" : "저장"
-              }
-            )
-          ] })
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: handleAdd,
+              disabled: !newLabel.trim(),
+              className: "px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors",
+              children: "추가"
+            }
+          )
+        ] })
+      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: () => setAdding(true),
+          disabled: categories.length >= 10,
+          className: "flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-gray-200 text-sm text-gray-400 hover:border-indigo-300 hover:text-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "+" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: categories.length >= 10 ? "최대 10개까지 가능합니다" : "새 카테고리 추가" })
+          ]
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex justify-end px-6 py-4 border-t border-gray-100", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors", children: "닫기" }) })
+  ] });
+}
+function playFunSound() {
+  try {
+    const ctx = new AudioContext();
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t2 = ctx.currentTime + i * 0.09;
+      gain.gain.setValueAtTime(0, t2);
+      gain.gain.linearRampToValueAtTime(0.25, t2 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(1e-3, t2 + 0.35);
+      osc.start(t2);
+      osc.stop(t2 + 0.35);
+    });
+  } catch {
+  }
+}
+function Toast({ id: id2, title, remind_at, onDismiss }) {
+  const [visible, setVisible] = reactExports.useState(false);
+  reactExports.useEffect(() => {
+    const t2 = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(t2);
+  }, []);
+  const dismiss = () => {
+    setVisible(false);
+    setTimeout(() => onDismiss(id2), 300);
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      className: "flex items-start gap-3 bg-white rounded-2xl shadow-2xl border border-indigo-100 px-4 py-3.5 w-80 cursor-pointer",
+      style: {
+        transform: visible ? "translateY(0)" : "translateY(120%)",
+        opacity: visible ? 1 : 0,
+        transition: "transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease"
+      },
+      onClick: dismiss,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl flex-shrink-0 mt-0.5", children: "🔔" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs font-semibold text-indigo-500 mb-0.5", children: [
+            "알림 · ",
+            remind_at
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-slate-800 truncate", children: title }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-400 mt-1", children: "클릭하여 닫기" })
         ] })
       ]
     }
-  ) });
+  );
+}
+function ReminderToastContainer({ toasts, onDismiss }) {
+  if (toasts.length === 0) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-6 right-6 flex flex-col gap-3 z-[9999] pointer-events-none", children: toasts.map((t2) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Toast, { ...t2, onDismiss }) }, t2.id)) });
 }
 const VIEWS = ["일별", "주별", "월별", "기록"];
 function App() {
@@ -8591,6 +8840,20 @@ function MainApp() {
   const [editingTask, setEditingTask] = reactExports.useState(null);
   const [defaultDate, setDefaultDate] = reactExports.useState(getTodayStr());
   const [settingsOpen, setSettingsOpen] = reactExports.useState(false);
+  const [toasts, setToasts] = reactExports.useState([]);
+  const dismissToast = reactExports.useCallback((id2) => {
+    setToasts((prev) => prev.filter((t2) => t2.id !== id2));
+  }, []);
+  reactExports.useEffect(() => {
+    const handler = (_, task) => {
+      playFunSound();
+      const id2 = Date.now();
+      setToasts((prev) => [...prev, { id: id2, ...task }]);
+      setTimeout(() => dismissToast(id2), 6e3);
+    };
+    window.api.reminders.onNotify(handler);
+    return () => window.api.reminders.offNotify(handler);
+  }, [dismissToast]);
   const isToday = getTodayStr() === getTodayStr(currentDate);
   const openAddModal = reactExports.useCallback((date = getTodayStr()) => {
     setEditingTask(null);
@@ -8715,7 +8978,8 @@ function MainApp() {
         onClose: () => setModalOpen(false)
       }
     ),
-    settingsOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(SettingsModal, { onClose: () => setSettingsOpen(false) })
+    settingsOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(SettingsModal, { onClose: () => setSettingsOpen(false) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(ReminderToastContainer, { toasts, onDismiss: dismissToast })
   ] });
 }
 let attempts = 0;
