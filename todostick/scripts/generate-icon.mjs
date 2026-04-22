@@ -1,5 +1,6 @@
-// 트레이용 32x32 PNG 아이콘 생성 (의존성 없음)
+// 트레이용 256x256 PNG 아이콘 생성 (Node.js 내장 zlib 압축)
 import { writeFileSync, mkdirSync } from 'fs'
+import { deflateSync as zlibDeflateSync } from 'zlib'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -19,7 +20,7 @@ function makePng(size, r, g, b) {
   }
 
   const raw = Buffer.from(pixels)
-  const deflated = deflateSync(raw)
+  const deflated = zlibDeflateSync(raw, { level: 9 })
 
   const ihdrData = Buffer.allocUnsafe(13)
   ihdrData.writeUInt32BE(size, 0)
@@ -60,26 +61,6 @@ function makeCrcTable() {
   return t
 }
 
-function deflateSync(buf) {
-  // zlib 없이 무압축 deflate (store only)
-  const blockSize = 65535
-  const blocks = []
-  for (let i = 0; i < buf.length; i += blockSize) {
-    const block = buf.slice(i, i + blockSize)
-    const last = i + blockSize >= buf.length ? 1 : 0
-    const blen = Buffer.alloc(2); blen.writeUInt16LE(block.length)
-    const nlen = Buffer.alloc(2); nlen.writeUInt16LE(~block.length & 0xFFFF)
-    blocks.push(Buffer.from([last]), blen, nlen, block)
-  }
-  const deflated = Buffer.concat(blocks)
-
-  // adler32
-  let s1 = 1, s2 = 0
-  for (const b of buf) { s1 = (s1 + b) % 65521; s2 = (s2 + s1) % 65521 }
-  const adler = Buffer.alloc(4); adler.writeUInt32BE((s2 << 16) | s1)
-
-  return Buffer.concat([Buffer.from([0x78, 0x01]), deflated, adler])
-}
 
 const outPath = join(__dirname, '../resources/icon.png')
 mkdirSync(join(__dirname, '../resources'), { recursive: true })
