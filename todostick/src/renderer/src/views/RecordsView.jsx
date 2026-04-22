@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
-import { CATEGORIES, getCategoryInfo } from '../utils/categories'
+import { DEFAULT_CATEGORIES, getCategoryById, categoryStyle } from '../utils/categories'
 
 export default function RecordsView() {
   const [tasks, setTasks] = useState([])
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+
+  useEffect(() => {
+    window.api.categories.get().then((cats) => { if (cats.length) setCategories(cats) })
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -54,10 +59,10 @@ export default function RecordsView() {
         </div>
 
         {/* 카테고리 필터 */}
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
           <button
             onClick={() => setCategoryFilter(null)}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+            className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${
               categoryFilter === null
                 ? 'bg-indigo-600 text-white border-indigo-600'
                 : 'bg-slate-100 text-slate-600 border-transparent hover:bg-slate-200'
@@ -65,14 +70,13 @@ export default function RecordsView() {
           >
             전체
           </button>
-          {CATEGORIES.filter((c) => c.value !== null).map((c) => (
+          {categories.map((c) => (
             <button
-              key={c.value}
-              onClick={() => setCategoryFilter(categoryFilter === c.value ? null : c.value)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
-                categoryFilter === c.value
-                  ? `${c.color} border-current ring-2 ring-offset-1 ring-indigo-400`
-                  : `${c.color} border-transparent opacity-60 hover:opacity-100`
+              key={c.id}
+              onClick={() => setCategoryFilter(categoryFilter === c.id ? null : c.id)}
+              style={categoryStyle(c.color, categoryFilter === c.id)}
+              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                categoryFilter === c.id ? 'ring-2 ring-offset-1 ring-indigo-400' : 'opacity-70 hover:opacity-100'
               }`}
             >
               {c.label}
@@ -90,7 +94,7 @@ export default function RecordsView() {
         ) : (
           <div className="flex flex-col gap-6">
             {sortedDates.map((date) => (
-              <DateGroup key={date} date={date} tasks={grouped[date]} onUpdated={load} />
+              <DateGroup key={date} date={date} tasks={grouped[date]} onUpdated={load} categories={categories} />
             ))}
           </div>
         )}
@@ -99,7 +103,7 @@ export default function RecordsView() {
   )
 }
 
-function DateGroup({ date, tasks, onUpdated }) {
+function DateGroup({ date, tasks, onUpdated, categories }) {
   const d = new Date(date + 'T00:00:00')
   const DAY_KO = ['일', '월', '화', '수', '목', '금', '토']
   const label = `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAY_KO[d.getDay()]})`
@@ -113,19 +117,19 @@ function DateGroup({ date, tasks, onUpdated }) {
       </div>
       <div className="flex flex-col gap-2">
         {tasks.map((task) => (
-          <RecordCard key={task.id} task={task} onUpdated={onUpdated} />
+          <RecordCard key={task.id} task={task} onUpdated={onUpdated} categories={categories} />
         ))}
       </div>
     </div>
   )
 }
 
-function RecordCard({ task, onUpdated }) {
+function RecordCard({ task, onUpdated, categories }) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
   const [noteValue, setNoteValue] = useState(task.completion_note || '')
   const [saving, setSaving] = useState(false)
-  const catInfo = task.category ? getCategoryInfo(task.category) : null
+  const catInfo = task.category ? getCategoryById(task.category, categories) : null
 
   const handleSaveNote = async () => {
     setSaving(true)
@@ -162,7 +166,10 @@ function RecordCard({ task, onUpdated }) {
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {catInfo && (
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${catInfo.color}`}>
+            <span
+              style={{ backgroundColor: catInfo.color + '20', color: catInfo.color }}
+              className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+            >
               {catInfo.label}
             </span>
           )}

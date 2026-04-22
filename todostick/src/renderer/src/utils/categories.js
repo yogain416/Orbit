@@ -1,11 +1,25 @@
-export const CATEGORIES = [
-  { value: null, label: '없음', color: 'bg-slate-200 text-slate-600', dot: 'bg-slate-400' },
-  { value: 'work', label: '업무', color: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
-  { value: 'personal', label: '개인', color: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
-  { value: 'exercise', label: '운동', color: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
-  { value: 'other', label: '기타', color: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
+export const DEFAULT_CATEGORIES = [
+  { id: 'work', label: '업무', color: '#3B82F6' },
+  { id: 'personal', label: '개인', color: '#22C55E' },
+  { id: 'exercise', label: '운동', color: '#F97316' },
+  { id: 'other', label: '기타', color: '#94A3B8' },
 ]
 
-export function getCategoryInfo(value) {
-  return CATEGORIES.find((c) => c.value === value) || CATEGORIES[0]
+export const PALETTE = [
+  '#EF4444', '#F97316', '#F59E0B', '#EAB308',
+  '#22C55E', '#10B981', '#06B6D4', '#3B82F6',
+  '#6366F1', '#8B5CF6', '#EC4899', '#94A3B8',
+]
+
+export function getCategoryById(id, categories) {
+  return (categories?.length ? categories : DEFAULT_CATEGORIES).find((c) => c.id === id) || null
+}
+
+// 카테고리 pill 인라인 스타일 헬퍼
+export function categoryStyle(color, selected = false) {
+  return {
+    backgroundColor: color + (selected ? '30' : '18'),
+    color,
+    borderColor: selected ? color : 'transparent',
+  }
 }

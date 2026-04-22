@@ -159,9 +159,7 @@ function scheduleReminders() {
     if (delay <= 0) return
 
     const timer = setTimeout(() => {
-      if (Notification.isSupported()) {
-        new Notification({ title: '📌 TodoStick', body: task.title }).show()
-      }
+      mainWindow?.webContents.send('reminder:notify', { title: task.title, remind_at: task.remind_at })
     }, delay)
     reminderTimers.push(timer)
   })
@@ -237,6 +235,15 @@ ipcMain.handle('tasks:deleteAndFuture', (_, id, fromDate) => db.deleteTaskAndFut
 
 // IPC: 완료 기록 조회
 ipcMain.handle('tasks:getCompleted', (_, filters) => db.getCompletedTasks(filters))
+
+// IPC: 카테고리 관리
+ipcMain.handle('categories:get', () => db.getCategories())
+ipcMain.handle('categories:set', (_, categories) => db.setCategories(categories))
+
+// IPC: 알림 테스트 (개발용)
+ipcMain.handle('reminder:test', () => {
+  mainWindow?.webContents.send('reminder:notify', { title: '테스트 알림 🎉', remind_at: '지금' })
+})
 
 // IPC: 스티커 ↔ 메인 창 실시간 동기화
 ipcMain.on('tasks:changed', () => {

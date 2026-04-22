@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { getTodayStr } from '../utils/date'
-import { CATEGORIES } from '../utils/categories'
+import { DEFAULT_CATEGORIES, categoryStyle } from '../utils/categories'
 
 const COLORS = [
   { value: null, bg: 'bg-slate-200', label: '없음' },
@@ -30,6 +30,13 @@ export default function TaskModal({ task, defaultDate, onClose }) {
   const [category, setCategory] = useState(task?.category || null)
   const [completionNote, setCompletionNote] = useState(task?.completion_note || '')
   const [saving, setSaving] = useState(false)
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+
+  useEffect(() => {
+    window.api.categories.get().then((cats) => {
+      if (cats.length) setCategories(cats)
+    })
+  }, [])
 
   const isEdit = !!task
   const titleLen = title.length
@@ -112,16 +119,26 @@ export default function TaskModal({ task, defaultDate, onClose }) {
           {/* 카테고리 */}
           <div>
             <label className="text-xs font-medium text-gray-500 mb-2 block">카테고리</label>
-            <div className="flex flex-wrap gap-2">
-              {CATEGORIES.map((c) => (
+            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              <button
+                type="button"
+                onClick={() => setCategory(null)}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                  category === null
+                    ? 'bg-slate-200 text-slate-700 border-slate-400 ring-2 ring-offset-1 ring-indigo-400'
+                    : 'bg-slate-100 text-slate-500 border-transparent opacity-60 hover:opacity-100'
+                }`}
+              >
+                없음
+              </button>
+              {categories.map((c) => (
                 <button
-                  key={String(c.value)}
+                  key={c.id}
                   type="button"
-                  onClick={() => setCategory(c.value)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
-                    category === c.value
-                      ? `${c.color} border-current ring-2 ring-offset-1 ring-indigo-400`
-                      : `${c.color} border-transparent opacity-60 hover:opacity-100`
+                  onClick={() => setCategory(c.id)}
+                  style={categoryStyle(c.color, category === c.id)}
+                  className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                    category === c.id ? 'ring-2 ring-offset-1 ring-indigo-400' : 'opacity-70 hover:opacity-100'
                   }`}
                 >
                   {c.label}

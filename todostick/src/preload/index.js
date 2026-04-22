@@ -18,6 +18,15 @@ contextBridge.exposeInMainWorld('api', {
     onRefresh: (cb) => ipcRenderer.on('tasks:refresh', cb),
     offRefresh: (cb) => ipcRenderer.removeListener('tasks:refresh', cb)
   },
+  reminders: {
+    onNotify: (cb) => ipcRenderer.on('reminder:notify', cb),
+    offNotify: (cb) => ipcRenderer.removeListener('reminder:notify', cb),
+    test: () => ipcRenderer.invoke('reminder:test'),
+  },
+  categories: {
+    get: () => ipcRenderer.invoke('categories:get'),
+    set: (cats) => ipcRenderer.invoke('categories:set', cats),
+  },
   shortcuts: {
     get: () => ipcRenderer.invoke('shortcuts:get'),
     set: (shortcuts) => ipcRenderer.invoke('shortcuts:set', shortcuts)

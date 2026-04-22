@@ -6,6 +6,7 @@ import RecordsView from './views/RecordsView'
 import TaskModal from './components/TaskModal'
 import StickerPopup from './components/StickerPopup'
 import SettingsModal from './components/SettingsModal'
+import ReminderToastContainer, { playFunSound } from './components/ReminderToast'
 import { formatDate, getTodayStr } from './utils/date'
 
 const VIEWS = ['일별', '주별', '월별', '기록']
@@ -23,6 +24,22 @@ function MainApp() {
   const [editingTask, setEditingTask] = useState(null)
   const [defaultDate, setDefaultDate] = useState(getTodayStr())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [toasts, setToasts] = useState([])
+
+  const dismissToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }, [])
+
+  useEffect(() => {
+    const handler = (_, task) => {
+      playFunSound()
+      const id = Date.now()
+      setToasts((prev) => [...prev, { id, ...task }])
+      setTimeout(() => dismissToast(id), 6000)
+    }
+    window.api.reminders.onNotify(handler)
+    return () => window.api.reminders.offNotify(handler)
+  }, [dismissToast])
 
   const isToday = getTodayStr() === getTodayStr(currentDate)
 
@@ -155,6 +172,9 @@ function MainApp() {
 
       {/* 단축키 설정 모달 */}
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      {/* 알림 토스트 */}
+      <ReminderToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

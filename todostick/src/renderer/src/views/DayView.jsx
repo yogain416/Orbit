@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toDateStr, getTodayStr } from '../utils/date'
-import { getCategoryInfo } from '../utils/categories'
+import { DEFAULT_CATEGORIES, getCategoryById } from '../utils/categories'
 
 export default function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [tasks, setTasks] = useState([])
@@ -13,6 +13,11 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
   const [dragOverId, setDragOverId] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [completionNoteTask, setCompletionNoteTask] = useState(null)
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+
+  useEffect(() => {
+    window.api.categories.get().then((cats) => { if (cats.length) setCategories(cats) })
+  }, [])
 
   const dateStr = toDateStr(currentDate)
   const isToday = dateStr === getTodayStr()
@@ -201,6 +206,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
               <TaskCard
                 key={task.id}
                 task={task}
+                categories={categories}
                 onToggle={handleToggle}
                 onEdit={onEditTask}
                 onDelete={handleDelete}
@@ -316,12 +322,12 @@ const COLOR_BORDER = {
   purple: 'border-l-purple-400',
 }
 
-function TaskCard({ task, onToggle, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr()
   const isOverdue = !task.is_completed && task.date < today
   const isRepeat = task.parent_id || task.is_template
   const colorBorder = task.color ? COLOR_BORDER[task.color] : null
-  const catInfo = task.category ? getCategoryInfo(task.category) : null
+  const catInfo = task.category ? getCategoryById(task.category, categories) : null
 
   return (
     <div
@@ -373,7 +379,10 @@ function TaskCard({ task, onToggle, onEdit, onDelete, isExpanded, onExpand, isDr
             {isOverdue && <span className="ml-1.5 text-xs text-red-400 font-normal">기한 초과</span>}
             {isRepeat && <span className="ml-1.5 text-xs text-indigo-400 font-normal">🔁</span>}
             {catInfo && (
-              <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-normal ${catInfo.color}`}>
+              <span
+                style={{ backgroundColor: catInfo.color + '20', color: catInfo.color }}
+                className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-normal"
+              >
                 {catInfo.label}
               </span>
             )}
