@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
     getCompleted: (filters) => ipcRenderer.invoke('tasks:getCompleted', filters),
     getOverdue: (date) => ipcRenderer.invoke('tasks:getOverdue', date),
     rollover: (toDate) => ipcRenderer.invoke('tasks:rollover', toDate),
+    rolloverSelected: (taskIds, toDate) => ipcRenderer.invoke('tasks:rolloverSelected', taskIds, toDate),
     reorder: (date, orderedIds) => ipcRenderer.invoke('tasks:reorder', date, orderedIds),
     deleteAndFuture: (id, fromDate) => ipcRenderer.invoke('tasks:deleteAndFuture', id, fromDate),
     notifyChanged: () => ipcRenderer.send('tasks:changed'),

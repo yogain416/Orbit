@@ -226,6 +226,12 @@ ipcMain.handle('tasks:rollover', (_, toDate) => {
   stickerWindow?.webContents.send('tasks:refresh')
   return result
 })
+ipcMain.handle('tasks:rolloverSelected', (_, taskIds, toDate) => {
+  const result = db.rolloverSelectedTasks(taskIds, toDate)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  return result
+})
 
 // IPC: 순서 변경
 ipcMain.handle('tasks:reorder', (_, date, orderedIds) => db.reorderTasks(date, orderedIds))

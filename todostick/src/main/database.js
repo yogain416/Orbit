@@ -121,7 +121,10 @@ export default {
 
   getOverdueTasks(date) {
     const { tasks } = read()
-    return tasks.filter((t) => t.date < date && !t.is_completed && !t.is_template)
+    const d = new Date(date)
+    d.setDate(d.getDate() - 1)
+    const yesterday = d.toISOString().slice(0, 10)
+    return tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template)
   },
 
   getTodayReminders(date) {
@@ -255,7 +258,10 @@ export default {
 
   rolloverTasks(toDate) {
     const data = read()
-    const overdue = data.tasks.filter((t) => t.date < toDate && !t.is_completed && !t.is_template)
+    const d = new Date(toDate)
+    d.setDate(d.getDate() - 1)
+    const yesterday = d.toISOString().slice(0, 10)
+    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template)
     const overdueIds = new Set(overdue.map((t) => t.id))
     const maxOrder = data.tasks.filter((t) => t.date === toDate).length
     const newTasks = overdue.map((t, i) => ({
@@ -283,6 +289,27 @@ export default {
     return newTasks
   },
 
+  rolloverSelectedTasks(taskIds, toDate) {
+    const data = read()
+    const idSet = new Set(taskIds)
+    const selected = data.tasks.filter((t) => idSet.has(t.id))
+    const maxOrder = data.tasks.filter((t) => t.date === toDate).length
+    const newTasks = selected.map((t, i) => ({
+      id: generateId(), title: t.title, memo: t.memo, date: toDate,
+      is_completed: false, repeat_type: 'none', order_index: maxOrder + i,
+      remind_at: null, color: t.color || null,
+      category: t.category || null,
+      is_template: false, parent_id: null,
+      completion_note: null, completed_at: null,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+    }))
+    data.tasks = data.tasks.filter((t) => !idSet.has(t.id))
+    data.tasks.push(...newTasks)
+    write(data)
+    return newTasks
+  },
+
+  // ── Categories ─────────────────────────────────────────
   getCategories() {
     const { settings } = read()
     return settings.categories || []

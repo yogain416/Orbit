@@ -9,6 +9,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
   const [expandedId, setExpandedId] = useState(null)
   const [overdueTasks, setOverdueTasks] = useState([])
   const [rolloverDone, setRolloverDone] = useState(false)
+  const [selectedRolloverIds, setSelectedRolloverIds] = useState(new Set())
   const [draggedId, setDraggedId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
@@ -38,6 +39,10 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     loadOverdue()
     setRolloverDone(false)
   }, [load, loadOverdue])
+
+  useEffect(() => {
+    setSelectedRolloverIds(new Set(overdueTasks.map((t) => t.id)))
+  }, [overdueTasks])
 
   useEffect(() => {
     const handler = () => { load(); loadOverdue() }
@@ -99,6 +104,22 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     setRolloverDone(true)
     setOverdueTasks([])
     load()
+  }
+
+  const handleRolloverSelected = async () => {
+    if (selectedRolloverIds.size === 0) return
+    await window.api.tasks.rolloverSelected([...selectedRolloverIds], dateStr)
+    setRolloverDone(true)
+    setOverdueTasks([])
+    load()
+  }
+
+  const toggleRolloverSelect = (id) => {
+    setSelectedRolloverIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
   }
 
   const handleDragStart = (id) => setDraggedId(id)
@@ -175,24 +196,36 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
 
       {/* 이월 배너 */}
       {isToday && overdueTasks.length > 0 && !rolloverDone && (
-        <div className="mx-6 mt-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3">
-          <span className="text-xs text-amber-700">
-            ⏰ 이전 미완료 할일 {overdueTasks.length}개가 있어요
-          </span>
-          <div className="flex gap-2 flex-shrink-0">
-            <button
-              onClick={handleRollover}
-              className="text-xs px-3 py-1 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors font-medium"
-            >
-              오늘로 이월
-            </button>
+        <div className="mx-6 mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-amber-700 font-medium">⏰ 어제 미완료 할일</span>
             <button
               onClick={() => setOverdueTasks([])}
-              className="text-xs px-2 py-1 text-amber-500 hover:bg-amber-100 rounded-lg transition-colors"
+              className="text-xs text-amber-400 hover:text-amber-600 transition-colors"
             >
               닫기
             </button>
           </div>
+          <div className="flex flex-col gap-1 mb-2.5">
+            {overdueTasks.map((t) => (
+              <label key={t.id} className="flex items-center gap-2 text-xs text-amber-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={selectedRolloverIds.has(t.id)}
+                  onChange={() => toggleRolloverSelect(t.id)}
+                  className="accent-amber-500"
+                />
+                <span className="truncate">{t.title}</span>
+              </label>
+            ))}
+          </div>
+          <button
+            onClick={handleRolloverSelected}
+            disabled={selectedRolloverIds.size === 0}
+            className="text-xs px-3 py-1 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-40 transition-colors font-medium"
+          >
+            선택한 {selectedRolloverIds.size}개 오늘로 이월
+          </button>
         </div>
       )}
 
