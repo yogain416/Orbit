@@ -52,5 +52,9 @@ contextBridge.exposeInMainWorld('api', {
     getStats: (months) => ipcRenderer.invoke('review:getStats', months),
     getGoal: (ym) => ipcRenderer.invoke('review:getGoal', ym),
     setGoal: (ym, text) => ipcRenderer.invoke('review:setGoal', ym, text)
+  },
+  habits: {
+    getMatrix: (fromDate, toDate) => ipcRenderer.invoke('habits:getMatrix', fromDate, toDate),
+    toggle: (templateId, date) => ipcRenderer.invoke('habits:toggle', templateId, date)
   }
 })

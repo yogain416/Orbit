@@ -25,6 +25,7 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
   const [date, setDate] = useState(task?.date || defaultDate || getTodayStr())
   const [repeatType, setRepeatType] = useState(task?.repeat_type || 'none')
   const [repeatDays, setRepeatDays] = useState(task?.repeat_days || [0, 1, 2, 3, 4, 5, 6])
+  const [isHabit, setIsHabit] = useState(!!task?.is_habit)
   const [remindAt, setRemindAt] = useState(task?.remind_at || '')
   const [color, setColor] = useState(task?.color || null)
   const [category, setCategory] = useState(task?.category || null)
@@ -56,6 +57,7 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
       end_time: endTime || null,
       color: color || null,
       category: category || null,
+      is_habit: repeatType !== 'none' ? isHabit : false,
       ...(isEdit && task.is_completed ? { completion_note: completionNote.trim() || null } : {})
     }
     if (isEdit) {
@@ -264,6 +266,22 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
             )}
             {repeatType !== 'none' && (
               <p className="text-xs text-indigo-500 mt-1">🔁 선택한 날짜부터 자동으로 반복 생성됩니다</p>
+            )}
+
+            {/* 습관 트래커 — 반복일 때만 노출 */}
+            {repeatType !== 'none' && (
+              <label className="flex items-center gap-2 mt-2 px-2 py-2 bg-emerald-50 rounded-lg border border-emerald-100 cursor-pointer hover:bg-emerald-100/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={isHabit}
+                  onChange={(e) => setIsHabit(e.target.checked)}
+                  className="accent-emerald-500"
+                />
+                <span className="text-xs text-emerald-800">
+                  🌱 <span className="font-semibold">습관으로 추적</span>
+                  <span className="text-emerald-600 ml-1">— 잔디/스트릭 표시</span>
+                </span>
+              </label>
             )}
           </div>
 

@@ -9,6 +9,10 @@ function read() {
     if (!existsSync(dbPath)) return { tasks: [], settings: {} }
     const data = JSON.parse(readFileSync(dbPath, 'utf-8'))
     if (!data.settings) data.settings = {}
+    // lazy migration: is_habit 필드 보정
+    for (const t of data.tasks) {
+      if (t.is_habit === undefined) t.is_habit = false
+    }
     return data
   } catch {
     return { tasks: [], settings: {} }
@@ -57,6 +61,7 @@ function generateRepeatInstances(data, date) {
         remind_at: tmpl.remind_at || null,
         color: tmpl.color || null,
         category: tmpl.category || null,
+        is_habit: !!tmpl.is_habit,
         parent_id: tmpl.id,
         is_template: false,
         completion_note: null,
@@ -132,13 +137,17 @@ export default {
     return tasks.filter((t) => t.date === date && t.remind_at && !t.is_template)
   },
 
-  createTask({ title, memo = '', date, repeat_type = 'none', repeat_days = null, order_index = 0, remind_at = null, color = null, category = null }) {
+  createTask({ title, memo = '', date, repeat_type = 'none', repeat_days = null, order_index = 0, remind_at = null, color = null, category = null, is_habit = false, start_time = null, end_time = null }) {
     const data = read()
+    // 습관은 반복 일정일 때만 의미가 있음
+    const habit = repeat_type !== 'none' && !!is_habit
     if (repeat_type === 'none') {
       const task = {
         id: generateId(), title, memo, date,
         is_completed: false, repeat_type, order_index,
-        remind_at, color, category, is_template: false, parent_id: null,
+        remind_at, color, category, is_habit: false,
+        start_time, end_time,
+        is_template: false, parent_id: null,
         completion_note: null, completed_at: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -152,7 +161,9 @@ export default {
     const template = {
       id: templateId, title, memo, date,
       is_completed: false, repeat_type, repeat_days: resolvedRepeatDays, order_index,
-      remind_at, color, category, is_template: true, parent_id: null,
+      remind_at, color, category, is_habit: habit,
+      start_time, end_time,
+      is_template: true, parent_id: null,
       skipped_dates: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -160,7 +171,9 @@ export default {
     const instance = {
       id: generateId(), title, memo, date,
       is_completed: false, repeat_type, order_index,
-      remind_at, color, category, is_template: false, parent_id: templateId,
+      remind_at, color, category, is_habit: habit,
+      start_time, end_time,
+      is_template: false, parent_id: templateId,
       completion_note: null, completed_at: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -307,6 +320,94 @@ export default {
     data.tasks.push(...newTasks)
     write(data)
     return newTasks
+  },
+
+  // ── 습관 트래커 ─────────────────────────────────────────
+  getHabitMatrix(fromDate, toDate) {
+    const data = read()
+    // fromDate~toDate 범위에 인스턴스 자동 생성
+    let changed = false
+    for (const date of dateRange(fromDate, toDate)) {
+      if (generateRepeatInstances(data, date)) changed = true
+    }
+    if (changed) write(data)
+
+    const templates = data.tasks.filter((t) => t.is_template && t.is_habit && t.repeat_type !== 'none')
+    return templates.map((tmpl) => {
+      const instances = data.tasks.filter(
+        (t) => !t.is_template && t.parent_id === tmpl.id && t.date >= fromDate && t.date <= toDate
+      )
+      const byDate = {}
+      for (const inst of instances) {
+        byDate[inst.date] = {
+          id: inst.id,
+          is_completed: !!inst.is_completed,
+          completed_at: inst.completed_at || null,
+          completion_note: inst.completion_note || null
+        }
+      }
+      const skipped = new Set(tmpl.skipped_dates || [])
+      const days = []
+      for (const date of dateRange(fromDate, toDate)) {
+        const expected = shouldRepeatOnDate(tmpl, date) || tmpl.date === date
+        let status
+        if (skipped.has(date)) status = 'skip'
+        else if (!expected) status = 'off'
+        else if (byDate[date]?.is_completed) status = 'done'
+        else if (date > new Date().toISOString().slice(0, 10)) status = 'future'
+        else if (date === new Date().toISOString().slice(0, 10)) status = 'today'
+        else status = 'miss'
+        days.push({ date, status, instance: byDate[date] || null })
+      }
+      return {
+        template: {
+          id: tmpl.id,
+          title: tmpl.title,
+          color: tmpl.color || null,
+          category: tmpl.category || null,
+          repeat_type: tmpl.repeat_type,
+          repeat_days: tmpl.repeat_days || null,
+          start_date: tmpl.date
+        },
+        days
+      }
+    })
+  },
+
+  toggleHabitOnDate(templateId, date) {
+    const data = read()
+    const tmpl = data.tasks.find((t) => t.id === templateId && t.is_template)
+    if (!tmpl) return null
+    let inst = data.tasks.find((t) => t.parent_id === templateId && t.date === date && !t.is_template)
+    if (!inst) {
+      // 인스턴스가 아직 없는 날에 직접 체크 → 인스턴스 생성 후 완료 처리
+      inst = {
+        id: generateId(),
+        title: tmpl.title,
+        memo: tmpl.memo,
+        date,
+        is_completed: true,
+        repeat_type: tmpl.repeat_type,
+        order_index: tmpl.order_index,
+        remind_at: tmpl.remind_at || null,
+        color: tmpl.color || null,
+        category: tmpl.category || null,
+        is_habit: true,
+        parent_id: templateId,
+        is_template: false,
+        completion_note: null,
+        completed_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      data.tasks.push(inst)
+    } else {
+      inst.is_completed = !inst.is_completed
+      inst.completed_at = inst.is_completed ? new Date().toISOString() : null
+      inst.updated_at = new Date().toISOString()
+    }
+    write(data)
+    return inst
   },
 
   // ── 플래너 풀 (M:YYYY-MM, W:YYYY-MM-DD 형식) ───────────

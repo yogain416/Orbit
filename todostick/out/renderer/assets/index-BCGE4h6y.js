@@ -9075,6 +9075,214 @@ function ReviewView() {
     ] })
   ] }) });
 }
+const WEEKS = 12;
+const DAYS_IN_WEEK = 7;
+const TOTAL_DAYS = WEEKS * DAYS_IN_WEEK;
+const STATUS_STYLE = {
+  off: "bg-slate-100",
+  skip: "bg-slate-200",
+  miss: "bg-rose-100",
+  today: "bg-yellow-200 ring-1 ring-yellow-400",
+  future: "bg-slate-50",
+  done: "bg-emerald-400"
+};
+const HABIT_ACCENT = {
+  red: { dot: "bg-red-400", done: "bg-red-400" },
+  orange: { dot: "bg-orange-400", done: "bg-orange-400" },
+  yellow: { dot: "bg-yellow-400", done: "bg-yellow-400" },
+  green: { dot: "bg-green-500", done: "bg-green-500" },
+  blue: { dot: "bg-blue-400", done: "bg-blue-400" },
+  purple: { dot: "bg-purple-400", done: "bg-purple-400" }
+};
+function getDateRangeBack(days) {
+  const today = /* @__PURE__ */ new Date();
+  const end = toDateStr(today);
+  const start = new Date(today);
+  start.setDate(today.getDate() - (days - 1));
+  return { start: toDateStr(start), end };
+}
+function calcStats(days, todayStr) {
+  let current = 0;
+  let longest = 0;
+  let run = 0;
+  let monthExpected = 0;
+  let monthDone = 0;
+  const ymPrefix = todayStr.slice(0, 7);
+  for (const d of days) {
+    if (d.date.startsWith(ymPrefix) && (d.status === "done" || d.status === "miss" || d.status === "today")) {
+      monthExpected += 1;
+      if (d.status === "done") monthDone += 1;
+    }
+    if (d.status === "done") {
+      run += 1;
+      if (run > longest) longest = run;
+    } else if (d.status === "miss") {
+      run = 0;
+    }
+  }
+  for (let i = days.length - 1; i >= 0; i--) {
+    const d = days[i];
+    if (d.status === "future") continue;
+    if (d.status === "today") {
+      if (d.instance?.is_completed) current += 1;
+      continue;
+    }
+    if (d.status === "off" || d.status === "skip") continue;
+    if (d.status === "done") current += 1;
+    else break;
+  }
+  const monthRate = monthExpected > 0 ? Math.round(monthDone / monthExpected * 100) : 0;
+  return { current, longest, monthDone, monthExpected, monthRate };
+}
+function HabitGrid({ days, accent, onToggle }) {
+  const firstDayOfWeek = (/* @__PURE__ */ new Date(days[0].date + "T00:00:00")).getDay();
+  const offsetFromMon = (firstDayOfWeek + 6) % 7;
+  const padded = [...Array(offsetFromMon).fill(null), ...days];
+  while (padded.length % 7 !== 0) padded.push(null);
+  const weeks = [];
+  for (let i = 0; i < padded.length; i += 7) {
+    weeks.push(padded.slice(i, i + 7));
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-[3px]", children: weeks.map((week, wi2) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-[3px]", children: week.map((cell, di2) => {
+    if (!cell) return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-3 h-3 opacity-0" }, di2);
+    const isDone = cell.status === "done";
+    const baseStyle = STATUS_STYLE[cell.status];
+    const doneStyle = accent ? HABIT_ACCENT[accent]?.done || STATUS_STYLE.done : STATUS_STYLE.done;
+    return /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        title: `${cell.date} · ${cell.status}`,
+        onClick: () => cell.status !== "off" && cell.status !== "future" && onToggle(cell.date),
+        disabled: cell.status === "off" || cell.status === "future",
+        className: `w-3 h-3 rounded-[3px] transition-all ${isDone ? doneStyle : baseStyle} ${cell.status === "off" || cell.status === "future" ? "cursor-default" : "hover:ring-1 hover:ring-indigo-400 cursor-pointer"}`
+      },
+      di2
+    );
+  }) }, wi2)) });
+}
+function HabitView() {
+  const [matrix, setMatrix] = reactExports.useState([]);
+  const todayStr = getTodayStr();
+  const range = reactExports.useMemo(() => getDateRangeBack(TOTAL_DAYS), []);
+  const load = reactExports.useCallback(async () => {
+    const data = await window.api.habits.getMatrix(range.start, range.end);
+    setMatrix(data);
+  }, [range]);
+  reactExports.useEffect(() => {
+    load();
+  }, [load]);
+  reactExports.useEffect(() => {
+    const handler = () => load();
+    window.api.tasks.onRefresh(handler);
+    return () => window.api.tasks.offRefresh(handler);
+  }, [load]);
+  const handleToggle = async (templateId, date) => {
+    await window.api.habits.toggle(templateId, date);
+    load();
+  };
+  if (matrix.length === 0) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-full overflow-y-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-3xl mx-auto px-6 py-12 flex flex-col items-center gap-3 text-center", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-5xl", children: "🌱" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-lg font-bold text-slate-700", children: "아직 추적 중인 습관이 없어요" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-slate-500 max-w-md leading-relaxed", children: [
+        "반복 일정을 추가할 때 ",
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium", children: "🌱 습관으로 추적" }),
+        " 옵션을 켜면 여기서 잔디와 스트릭을 볼 수 있어요."
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-400 mt-2", children: "예: 매일 물 8잔, 평일 스트레칭, 매주 독서 30분 등" })
+    ] }) });
+  }
+  const todayMissing = matrix.filter((h) => {
+    const todayCell = h.days[h.days.length - 1];
+    return todayCell?.date === todayStr && todayCell.status === "today";
+  });
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-full overflow-y-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-4xl mx-auto px-6 py-5 flex flex-col gap-6", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-lg font-bold text-slate-800 mb-0.5", children: "🌱 습관 트래커" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-slate-400", children: [
+        "최근 12주 · ",
+        matrix.length,
+        "개 습관"
+      ] })
+    ] }),
+    todayMissing.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "bg-yellow-50 border border-yellow-200 rounded-xl p-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs font-semibold text-yellow-800 mb-2", children: [
+        "⚡ 오늘 아직 안 한 습관 (",
+        todayMissing.length,
+        ")"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2", children: todayMissing.map((h) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: () => handleToggle(h.template.id, todayStr),
+          className: "px-3 py-1.5 bg-white border border-yellow-300 rounded-full text-xs font-medium text-slate-700 hover:bg-yellow-100 hover:border-yellow-400 transition-colors",
+          children: [
+            "✓ ",
+            h.template.title
+          ]
+        },
+        h.template.id
+      )) })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-3", children: matrix.map((h) => {
+      const stats = calcStats(h.days, todayStr);
+      const accent = HABIT_ACCENT[h.template.color];
+      return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white rounded-xl border border-slate-100 shadow-sm p-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between gap-3 mb-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 min-w-0", children: [
+            accent && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-2 h-2 rounded-full flex-shrink-0 ${accent.dot}` }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "font-bold text-slate-800 truncate", children: h.template.title })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 text-xs flex-shrink-0", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-slate-500", children: [
+              "🔥 ",
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-bold text-orange-600", children: stats.current }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-slate-400 ml-1", children: "현재" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-slate-500", children: [
+              "🏆 ",
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-bold text-indigo-600", children: stats.longest }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-slate-400 ml-1", children: "최장" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-slate-500", children: [
+              "📅 ",
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-bold text-emerald-600", children: [
+                stats.monthRate,
+                "%"
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-slate-400 ml-1", children: [
+                "(",
+                stats.monthDone,
+                "/",
+                stats.monthExpected,
+                ")"
+              ] })
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          HabitGrid,
+          {
+            days: h.days,
+            accent: h.template.color,
+            onToggle: (date) => handleToggle(h.template.id, date)
+          }
+        )
+      ] }, h.template.id);
+    }) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 text-xs text-slate-400 px-1", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "적게" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-3 h-3 rounded-[3px] bg-slate-100" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-3 h-3 rounded-[3px] bg-slate-200" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-3 h-3 rounded-[3px] bg-rose-100" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-3 h-3 rounded-[3px] bg-emerald-400" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "많이" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-4", children: "·" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-3 h-3 rounded-[3px] bg-yellow-200 ring-1 ring-yellow-400" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "오늘" })
+    ] })
+  ] }) });
+}
 const COLORS = [
   { value: null, bg: "bg-slate-200", label: "없음" },
   { value: "red", bg: "bg-red-400", label: "빨강" },
@@ -9096,6 +9304,7 @@ function TaskModal({ task, defaultDate, timeDefaults, onClose }) {
   const [date, setDate] = reactExports.useState(task?.date || defaultDate || getTodayStr());
   const [repeatType, setRepeatType] = reactExports.useState(task?.repeat_type || "none");
   const [repeatDays, setRepeatDays] = reactExports.useState(task?.repeat_days || [0, 1, 2, 3, 4, 5, 6]);
+  const [isHabit, setIsHabit] = reactExports.useState(!!task?.is_habit);
   const [remindAt, setRemindAt] = reactExports.useState(task?.remind_at || "");
   const [color, setColor] = reactExports.useState(task?.color || null);
   const [category, setCategory] = reactExports.useState(task?.category || null);
@@ -9126,6 +9335,7 @@ function TaskModal({ task, defaultDate, timeDefaults, onClose }) {
       end_time: endTime || null,
       color: color || null,
       category: category || null,
+      is_habit: repeatType !== "none" ? isHabit : false,
       ...isEdit && task.is_completed ? { completion_note: completionNote.trim() || null } : {}
     };
     if (isEdit) {
@@ -9324,7 +9534,23 @@ function TaskModal({ task, defaultDate, timeDefaults, onClose }) {
                 )
               ] })
             ] }),
-            repeatType !== "none" && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-500 mt-1", children: "🔁 선택한 날짜부터 자동으로 반복 생성됩니다" })
+            repeatType !== "none" && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-500 mt-1", children: "🔁 선택한 날짜부터 자동으로 반복 생성됩니다" }),
+            repeatType !== "none" && /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "flex items-center gap-2 mt-2 px-2 py-2 bg-emerald-50 rounded-lg border border-emerald-100 cursor-pointer hover:bg-emerald-100/50 transition-colors", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "checkbox",
+                  checked: isHabit,
+                  onChange: (e) => setIsHabit(e.target.checked),
+                  className: "accent-emerald-500"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-emerald-800", children: [
+                "🌱 ",
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold", children: "습관으로 추적" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-emerald-600 ml-1", children: "— 잔디/스트릭 표시" })
+              ] })
+            ] })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-1 block", children: "알림 시간 (선택)" }),
@@ -10139,7 +10365,7 @@ function ReminderToastContainer({ toasts, onDismiss }) {
   if (toasts.length === 0) return null;
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-6 right-6 flex flex-col gap-3 z-[9999] pointer-events-none", children: toasts.map((t2) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Toast, { ...t2, onDismiss }) }, t2.id)) });
 }
-const VIEWS = ["일별", "주별", "월별", "타임블록", "리뷰", "기록"];
+const VIEWS = ["일별", "주별", "월별", "타임블록", "습관", "리뷰", "기록"];
 function App() {
   const isSticker = window.location.hash === "#sticker";
   if (isSticker) return /* @__PURE__ */ jsxRuntimeExports.jsx(StickerPopup, {});
@@ -10282,6 +10508,7 @@ function MainApp() {
           onEditTask: openEditModal
         }
       ),
+      view === "습관" && /* @__PURE__ */ jsxRuntimeExports.jsx(HabitView, {}),
       view === "리뷰" && /* @__PURE__ */ jsxRuntimeExports.jsx(ReviewView, {}),
       view === "기록" && /* @__PURE__ */ jsxRuntimeExports.jsx(RecordsView, {})
     ] }),

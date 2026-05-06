@@ -9,6 +9,9 @@ function read() {
     if (!fs.existsSync(dbPath)) return { tasks: [], settings: {} };
     const data = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
     if (!data.settings) data.settings = {};
+    for (const t of data.tasks) {
+      if (t.is_habit === void 0) t.is_habit = false;
+    }
     return data;
   } catch {
     return { tasks: [], settings: {} };
@@ -53,6 +56,7 @@ function generateRepeatInstances(data, date) {
         remind_at: tmpl.remind_at || null,
         color: tmpl.color || null,
         category: tmpl.category || null,
+        is_habit: !!tmpl.is_habit,
         parent_id: tmpl.id,
         is_template: false,
         completion_note: null,
@@ -115,8 +119,9 @@ const db = {
     const { tasks } = read();
     return tasks.filter((t) => t.date === date && t.remind_at && !t.is_template);
   },
-  createTask({ title, memo = "", date, repeat_type = "none", repeat_days = null, order_index = 0, remind_at = null, color = null, category = null }) {
+  createTask({ title, memo = "", date, repeat_type = "none", repeat_days = null, order_index = 0, remind_at = null, color = null, category = null, is_habit = false, start_time = null, end_time = null }) {
     const data = read();
+    const habit = repeat_type !== "none" && !!is_habit;
     if (repeat_type === "none") {
       const task = {
         id: generateId(),
@@ -129,6 +134,9 @@ const db = {
         remind_at,
         color,
         category,
+        is_habit: false,
+        start_time,
+        end_time,
         is_template: false,
         parent_id: null,
         completion_note: null,
@@ -154,6 +162,9 @@ const db = {
       remind_at,
       color,
       category,
+      is_habit: habit,
+      start_time,
+      end_time,
       is_template: true,
       parent_id: null,
       skipped_dates: [],
@@ -171,6 +182,9 @@ const db = {
       remind_at,
       color,
       category,
+      is_habit: habit,
+      start_time,
+      end_time,
       is_template: false,
       parent_id: templateId,
       completion_note: null,
@@ -316,6 +330,89 @@ const db = {
     data.tasks.push(...newTasks);
     write(data);
     return newTasks;
+  },
+  // ── 습관 트래커 ─────────────────────────────────────────
+  getHabitMatrix(fromDate, toDate) {
+    const data = read();
+    let changed = false;
+    for (const date of dateRange(fromDate, toDate)) {
+      if (generateRepeatInstances(data, date)) changed = true;
+    }
+    if (changed) write(data);
+    const templates = data.tasks.filter((t) => t.is_template && t.is_habit && t.repeat_type !== "none");
+    return templates.map((tmpl) => {
+      const instances = data.tasks.filter(
+        (t) => !t.is_template && t.parent_id === tmpl.id && t.date >= fromDate && t.date <= toDate
+      );
+      const byDate = {};
+      for (const inst of instances) {
+        byDate[inst.date] = {
+          id: inst.id,
+          is_completed: !!inst.is_completed,
+          completed_at: inst.completed_at || null,
+          completion_note: inst.completion_note || null
+        };
+      }
+      const skipped = new Set(tmpl.skipped_dates || []);
+      const days = [];
+      for (const date of dateRange(fromDate, toDate)) {
+        const expected = shouldRepeatOnDate(tmpl, date) || tmpl.date === date;
+        let status;
+        if (skipped.has(date)) status = "skip";
+        else if (!expected) status = "off";
+        else if (byDate[date]?.is_completed) status = "done";
+        else if (date > (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) status = "future";
+        else if (date === (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) status = "today";
+        else status = "miss";
+        days.push({ date, status, instance: byDate[date] || null });
+      }
+      return {
+        template: {
+          id: tmpl.id,
+          title: tmpl.title,
+          color: tmpl.color || null,
+          category: tmpl.category || null,
+          repeat_type: tmpl.repeat_type,
+          repeat_days: tmpl.repeat_days || null,
+          start_date: tmpl.date
+        },
+        days
+      };
+    });
+  },
+  toggleHabitOnDate(templateId, date) {
+    const data = read();
+    const tmpl = data.tasks.find((t) => t.id === templateId && t.is_template);
+    if (!tmpl) return null;
+    let inst = data.tasks.find((t) => t.parent_id === templateId && t.date === date && !t.is_template);
+    if (!inst) {
+      inst = {
+        id: generateId(),
+        title: tmpl.title,
+        memo: tmpl.memo,
+        date,
+        is_completed: true,
+        repeat_type: tmpl.repeat_type,
+        order_index: tmpl.order_index,
+        remind_at: tmpl.remind_at || null,
+        color: tmpl.color || null,
+        category: tmpl.category || null,
+        is_habit: true,
+        parent_id: templateId,
+        is_template: false,
+        completion_note: null,
+        completed_at: (/* @__PURE__ */ new Date()).toISOString(),
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      data.tasks.push(inst);
+    } else {
+      inst.is_completed = !inst.is_completed;
+      inst.completed_at = inst.is_completed ? (/* @__PURE__ */ new Date()).toISOString() : null;
+      inst.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    write(data);
+    return inst;
   },
   // ── 플래너 풀 (M:YYYY-MM, W:YYYY-MM-DD 형식) ───────────
   getPoolTasks(poolKey) {
@@ -634,6 +731,13 @@ electron.ipcMain.handle("review:getGoal", (_, ym) => db.getMonthlyGoal(ym));
 electron.ipcMain.handle("review:setGoal", (_, ym, text) => {
   db.setMonthlyGoal(ym, text);
   return true;
+});
+electron.ipcMain.handle("habits:getMatrix", (_, fromDate, toDate) => db.getHabitMatrix(fromDate, toDate));
+electron.ipcMain.handle("habits:toggle", (_, templateId, date) => {
+  const result = db.toggleHabitOnDate(templateId, date);
+  mainWindow?.webContents.send("tasks:refresh");
+  stickerWindow?.webContents.send("tasks:refresh");
+  return result;
 });
 electron.ipcMain.on("window:setSize", (event, width, height) => {
   const win = electron.BrowserWindow.fromWebContents(event.sender);

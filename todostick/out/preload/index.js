@@ -52,5 +52,9 @@ electron.contextBridge.exposeInMainWorld("api", {
     getStats: (months) => electron.ipcRenderer.invoke("review:getStats", months),
     getGoal: (ym) => electron.ipcRenderer.invoke("review:getGoal", ym),
     setGoal: (ym, text) => electron.ipcRenderer.invoke("review:setGoal", ym, text)
+  },
+  habits: {
+    getMatrix: (fromDate, toDate) => electron.ipcRenderer.invoke("habits:getMatrix", fromDate, toDate),
+    toggle: (templateId, date) => electron.ipcRenderer.invoke("habits:toggle", templateId, date)
   }
 });

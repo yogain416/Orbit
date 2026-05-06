@@ -301,6 +301,15 @@ ipcMain.handle('review:getStats', (_, months) => db.getMonthlyStats(months))
 ipcMain.handle('review:getGoal', (_, ym) => db.getMonthlyGoal(ym))
 ipcMain.handle('review:setGoal', (_, ym, text) => { db.setMonthlyGoal(ym, text); return true })
 
+// IPC: 습관 트래커
+ipcMain.handle('habits:getMatrix', (_, fromDate, toDate) => db.getHabitMatrix(fromDate, toDate))
+ipcMain.handle('habits:toggle', (_, templateId, date) => {
+  const result = db.toggleHabitOnDate(templateId, date)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  return result
+})
+
 // IPC: 창 크기 조절 (스티커 접기/펼치기)
 ipcMain.on('window:setSize', (event, width, height) => {
   const win = BrowserWindow.fromWebContents(event.sender)
