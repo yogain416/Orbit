@@ -9,6 +9,16 @@
 - 🧪 **dev 모드 시드 데이터 자동 생성** — 빈 dev DB일 때 샘플 할 일/습관/카테고리 자동 삽입
 - 🟡 **DEV 배지** — 헤더에 노란색 "DEV" 라벨 + 트레이/창 제목 `[DEV]` 표시 (hover 시 DB 경로 툴팁)
 - IPC: `env:info` (isDev + dbPath 반환)
+- 📅 **주별 뷰 — 요일 카드 접기/펴기**
+  - 카드 우측 상단 ▾/▸ 토글, 기본 펴짐, 오늘은 항상 펴짐 (토글 비활성)
+  - 접힌 카드는 "3건 (2 완료)" 요약 표시
+  - localStorage `weekview:collapsed-days`에 상태 유지
+- 📆 **월별 뷰 — 주별 행 접기/펴기**
+  - 기본은 모두 접힘(빽빽함 해소), 오늘 포함 주는 자동 펴짐
+  - 접힌 주는 7일 미니 도트 + 날짜만 / 펴진 주는 풀 사이즈 그리드
+  - 헤더에 주차/날짜 범위/완료율 표시
+  - localStorage `monthview:expanded-weeks:YYYY-MM`에 월별로 상태 유지
+- `utils/storage.js` — `usePersistedState` 훅 (localStorage 자동 저장)
 
 ## [1.2.0] — 2026-05-06
 

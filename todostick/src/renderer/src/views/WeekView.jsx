@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getWeekRange, toDateStr, getTodayStr } from '../utils/date'
+import { usePersistedState } from '../utils/storage'
 
 const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -29,6 +30,8 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
   const [dragInfo, setDragInfo] = useState(null)
   const [dragOverDate, setDragOverDate] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  // 접힌 요일 카드 — 날짜 문자열 array. 오늘은 자동 제외됨.
+  const [collapsedDays, setCollapsedDays] = usePersistedState('weekview:collapsed-days', [])
   const { start, end, monday } = getWeekRange(currentDate)
 
   const weekPoolKey = `W:${start}`
@@ -270,6 +273,16 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
               const completed = tasks.filter((t) => t.is_completed).length
               const isToday = dateStr === today
               const isWeekend = i >= 5
+              // 오늘은 강제 펴짐. collapsedDays에 있고 오늘이 아닐 때만 접힘.
+              const isCollapsed = !isToday && collapsedDays.includes(dateStr)
+
+              const toggleCollapse = (e) => {
+                e.stopPropagation()
+                if (isToday) return
+                setCollapsedDays((prev) =>
+                  prev.includes(dateStr) ? prev.filter((d) => d !== dateStr) : [...prev, dateStr]
+                )
+              }
 
               return (
                 <div
@@ -284,46 +297,77 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
                     'border-slate-200 bg-white hover:border-indigo-200'
                   }`}
                 >
-                  {/* 날짜 헤더 */}
-                  <div className={`text-center py-2 rounded-t-xl ${isToday ? 'bg-indigo-500' : 'bg-slate-50'}`}>
-                    <div className={`text-xs font-medium ${isToday ? 'text-indigo-100' : isWeekend ? 'text-red-400' : 'text-slate-500'}`}>
-                      {DAY_NAMES[i]}
-                    </div>
-                    <div className={`text-sm font-bold ${isToday ? 'text-white' : 'text-slate-700'}`}>
-                      {day.getDate()}
-                    </div>
-                  </div>
-
-                  {/* 할일 미리보기 */}
-                  <div className="flex-1 overflow-hidden p-1.5 flex flex-col gap-0.5">
-                    {tasks.slice(0, 5).map((task) => (
-                      <div
-                        key={task.id}
-                        draggable
-                        onDragStart={(e) => handleTaskDragStart(e, task.id, dateStr)}
-                        onClick={(e) => e.stopPropagation()}
-                        className={`text-xs px-1.5 py-0.5 rounded truncate border-l-2 cursor-grab active:opacity-50 ${
-                          task.is_completed
-                            ? 'bg-slate-100 text-slate-400 line-through border-slate-300'
-                            : `bg-indigo-50 text-indigo-700 ${task.color ? TASK_COLOR_LEFT[task.color] : 'border-transparent'}`
-                        }`}
-                        title={task.title}
-                      >
-                        {task.title.length > 7 ? task.title.slice(0, 7) + '…' : task.title}
+                  {/* 날짜 헤더 — 우측 토글 버튼 */}
+                  <div className={`relative py-2 rounded-t-xl ${isToday ? 'bg-indigo-500' : 'bg-slate-50'} ${isCollapsed ? 'rounded-b-xl' : ''}`}>
+                    <div className="text-center">
+                      <div className={`text-xs font-medium ${isToday ? 'text-indigo-100' : isWeekend ? 'text-red-400' : 'text-slate-500'}`}>
+                        {DAY_NAMES[i]}
                       </div>
-                    ))}
-                    {tasks.length > 5 && (
-                      <div className="text-xs text-slate-400 text-center">+{tasks.length - 5}</div>
+                      <div className={`text-sm font-bold ${isToday ? 'text-white' : 'text-slate-700'}`}>
+                        {day.getDate()}
+                      </div>
+                    </div>
+                    {!isToday && (
+                      <button
+                        onClick={toggleCollapse}
+                        title={isCollapsed ? '펴기' : '접기'}
+                        className={`absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded text-xs transition-colors ${
+                          isCollapsed
+                            ? 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                            : 'text-slate-300 hover:bg-slate-200 hover:text-slate-700'
+                        }`}
+                      >
+                        {isCollapsed ? '▸' : '▾'}
+                      </button>
                     )}
                   </div>
 
-                  {/* 완료 카운터 */}
-                  {tasks.length > 0 && (
-                    <div className={`text-xs text-center py-1 border-t ${
-                      completed === tasks.length ? 'text-green-600 border-green-100 bg-green-50 rounded-b-xl' : 'text-slate-400 border-slate-100'
-                    }`}>
-                      {completed === tasks.length ? '✓ 완료' : `${completed}/${tasks.length}`}
-                    </div>
+                  {/* 접혔을 때: 요약만 표시 */}
+                  {isCollapsed ? (
+                    tasks.length > 0 && (
+                      <div className="px-2 py-1.5 flex items-center justify-center gap-1 text-xs text-slate-500">
+                        <span className="font-medium">{tasks.length}건</span>
+                        {completed > 0 && (
+                          <span className={`text-[10px] ${completed === tasks.length ? 'text-green-600' : 'text-slate-400'}`}>
+                            ({completed} 완료)
+                          </span>
+                        )}
+                      </div>
+                    )
+                  ) : (
+                    <>
+                      {/* 할일 미리보기 */}
+                      <div className="flex-1 overflow-hidden p-1.5 flex flex-col gap-0.5">
+                        {tasks.slice(0, 5).map((task) => (
+                          <div
+                            key={task.id}
+                            draggable
+                            onDragStart={(e) => handleTaskDragStart(e, task.id, dateStr)}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`text-xs px-1.5 py-0.5 rounded truncate border-l-2 cursor-grab active:opacity-50 ${
+                              task.is_completed
+                                ? 'bg-slate-100 text-slate-400 line-through border-slate-300'
+                                : `bg-indigo-50 text-indigo-700 ${task.color ? TASK_COLOR_LEFT[task.color] : 'border-transparent'}`
+                            }`}
+                            title={task.title}
+                          >
+                            {task.title.length > 7 ? task.title.slice(0, 7) + '…' : task.title}
+                          </div>
+                        ))}
+                        {tasks.length > 5 && (
+                          <div className="text-xs text-slate-400 text-center">+{tasks.length - 5}</div>
+                        )}
+                      </div>
+
+                      {/* 완료 카운터 */}
+                      {tasks.length > 0 && (
+                        <div className={`text-xs text-center py-1 border-t ${
+                          completed === tasks.length ? 'text-green-600 border-green-100 bg-green-50 rounded-b-xl' : 'text-slate-400 border-slate-100'
+                        }`}>
+                          {completed === tasks.length ? '✓ 완료' : `${completed}/${tasks.length}`}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )

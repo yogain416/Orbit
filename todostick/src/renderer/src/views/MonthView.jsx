@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getDaysInMonth, toDateStr, getTodayStr } from '../utils/date'
+import { usePersistedState } from '../utils/storage'
 
 const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -27,6 +28,10 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
+
+  // 펴진 주(week index) — 기본은 모두 접힘. 오늘이 포함된 주는 자동 펴짐.
+  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
+  const [expandedWeeks, setExpandedWeeks] = usePersistedState(`monthview:expanded-weeks:${monthKey}`, [])
 
   const monthPoolKey = `M:${year}-${String(month + 1).padStart(2, '0')}`
   const weeksOfMonth = getWeeksOfMonth(year, month)
@@ -233,55 +238,147 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
             ))}
           </div>
 
-          {/* 날짜 그리드 */}
-          <div className="flex-1 grid grid-cols-7 gap-1">
-            {days.map((day, i) => {
-              if (!day) return <div key={`empty-${i}`} />
+          {/* 주별 행 — 각 행은 토글 가능 */}
+          <div className="flex-1 flex flex-col gap-1 overflow-y-auto">
+            {(() => {
+              // days를 7개씩 슬라이스 (한 주 단위)
+              const weekRows = []
+              for (let i = 0; i < days.length; i += 7) weekRows.push(days.slice(i, i + 7))
+              return weekRows.map((week, wIdx) => {
+                const weekContainsToday = week.some((d) => d && toDateStr(d) === today)
+                const isExpanded = weekContainsToday || expandedWeeks.includes(wIdx)
+                // 주 요약
+                const weekTasks = week.flatMap((d) => (d ? (tasksByDate[toDateStr(d)] || []) : []))
+                const weekDone = weekTasks.filter((t) => t.is_completed).length
+                // 주 라벨: 첫 유효 날짜 ~ 마지막 유효 날짜
+                const validDays = week.filter(Boolean)
+                const firstD = validDays[0], lastD = validDays[validDays.length - 1]
+                const weekLabel = firstD && lastD
+                  ? `${firstD.getMonth() + 1}/${firstD.getDate()} ~ ${lastD.getMonth() + 1}/${lastD.getDate()}`
+                  : ''
 
-              const dateStr = toDateStr(day)
-              const tasks = tasksByDate[dateStr] || []
-              const completed = tasks.filter((t) => t.is_completed).length
-              const allDone = tasks.length > 0 && completed === tasks.length
-              const isToday = dateStr === today
-              const isWeekend = getDayIndex(day) >= 5
+                const toggle = () => {
+                  if (weekContainsToday) return
+                  setExpandedWeeks((prev) =>
+                    prev.includes(wIdx) ? prev.filter((x) => x !== wIdx) : [...prev, wIdx]
+                  )
+                }
 
-              return (
-                <div
-                  key={dateStr}
-                  onClick={() => onDateClick(dateStr)}
-                  className={`group relative flex flex-col items-center justify-start py-1 px-0.5 rounded-xl cursor-pointer transition-all hover:bg-slate-100 ${
-                    isToday ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''
-                  }`}
-                >
-                  <span className={`text-xs font-semibold w-7 h-7 flex items-center justify-center rounded-full ${
-                    isToday
-                      ? 'bg-indigo-600 text-white'
-                      : isWeekend
-                      ? 'text-red-400'
-                      : 'text-slate-700'
-                  }`}>
-                    {day.getDate()}
-                  </span>
-
-                  {tasks.length > 0 && (
-                    <div className="flex flex-col items-center gap-0.5 mt-0.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${allDone ? 'bg-green-400' : 'bg-amber-400'}`} />
-                      <span className="text-xs text-slate-400 leading-none">{tasks.length}</span>
-                    </div>
-                  )}
-
-                  {onAddTask && (
+                return (
+                  <div key={wIdx} className="border border-slate-100 rounded-xl overflow-hidden bg-white">
+                    {/* 주 헤더 (토글 + 요약) */}
                     <button
-                      onClick={(e) => { e.stopPropagation(); onAddTask(dateStr) }}
-                      className="absolute top-0.5 right-0.5 w-4 h-4 opacity-0 group-hover:opacity-100 flex items-center justify-center text-indigo-400 hover:text-indigo-600 text-xs font-bold transition-opacity"
-                      title="할일 추가"
+                      onClick={toggle}
+                      disabled={weekContainsToday}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
+                        weekContainsToday
+                          ? 'bg-indigo-50 text-indigo-700 cursor-default'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-600'
+                      }`}
                     >
-                      +
+                      <span className="font-bold">{wIdx + 1}주차</span>
+                      <span className="text-slate-400 font-medium">{weekLabel}</span>
+                      {weekContainsToday && (
+                        <span className="text-[10px] bg-indigo-200 text-indigo-700 rounded-full px-1.5 py-0.5 font-medium">오늘</span>
+                      )}
+                      <span className="ml-auto flex items-center gap-2">
+                        {weekTasks.length > 0 && (
+                          <span className="text-slate-500">
+                            {weekDone}/{weekTasks.length}
+                          </span>
+                        )}
+                        {!weekContainsToday && (
+                          <span className="text-slate-400">{isExpanded ? '▾' : '▸'}</span>
+                        )}
+                      </span>
                     </button>
-                  )}
-                </div>
-              )
-            })}
+
+                    {/* 펴진 상태: 7일 풀 사이즈 그리드 */}
+                    {isExpanded && (
+                      <div className="grid grid-cols-7 gap-1 p-1">
+                        {week.map((day, di) => {
+                          if (!day) return <div key={`e-${wIdx}-${di}`} />
+                          const dateStr = toDateStr(day)
+                          const tasks = tasksByDate[dateStr] || []
+                          const completed = tasks.filter((t) => t.is_completed).length
+                          const allDone = tasks.length > 0 && completed === tasks.length
+                          const isToday = dateStr === today
+                          const isWeekend = getDayIndex(day) >= 5
+
+                          return (
+                            <div
+                              key={dateStr}
+                              onClick={() => onDateClick(dateStr)}
+                              className={`group relative flex flex-col items-center justify-start py-2 px-0.5 rounded-lg cursor-pointer transition-all hover:bg-slate-100 min-h-[60px] ${
+                                isToday ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''
+                              }`}
+                            >
+                              <span className={`text-xs font-semibold w-7 h-7 flex items-center justify-center rounded-full ${
+                                isToday
+                                  ? 'bg-indigo-600 text-white'
+                                  : isWeekend
+                                  ? 'text-red-400'
+                                  : 'text-slate-700'
+                              }`}>
+                                {day.getDate()}
+                              </span>
+
+                              {tasks.length > 0 && (
+                                <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${allDone ? 'bg-green-400' : 'bg-amber-400'}`} />
+                                  <span className="text-xs text-slate-400 leading-none">{tasks.length}</span>
+                                </div>
+                              )}
+
+                              {onAddTask && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onAddTask(dateStr) }}
+                                  className="absolute top-0.5 right-0.5 w-4 h-4 opacity-0 group-hover:opacity-100 flex items-center justify-center text-indigo-400 hover:text-indigo-600 text-xs font-bold transition-opacity"
+                                  title="할일 추가"
+                                >
+                                  +
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* 접힌 상태: 미니 7일 표시 */}
+                    {!isExpanded && (
+                      <div className="grid grid-cols-7 gap-px px-1 py-1.5 bg-slate-50/50">
+                        {week.map((day, di) => {
+                          if (!day) return <div key={`m-${wIdx}-${di}`} />
+                          const dateStr = toDateStr(day)
+                          const tasks = tasksByDate[dateStr] || []
+                          const completed = tasks.filter((t) => t.is_completed).length
+                          const allDone = tasks.length > 0 && completed === tasks.length
+                          const isToday = dateStr === today
+                          return (
+                            <div
+                              key={dateStr}
+                              onClick={(e) => { e.stopPropagation(); onDateClick(dateStr) }}
+                              className={`flex items-center justify-center gap-1 py-0.5 rounded cursor-pointer hover:bg-white ${
+                                isToday ? 'bg-indigo-100' : ''
+                              }`}
+                              title={`${dateStr}${tasks.length ? ` · ${completed}/${tasks.length}` : ''}`}
+                            >
+                              <span className={`text-[11px] font-medium ${isToday ? 'text-indigo-700' : 'text-slate-500'}`}>
+                                {day.getDate()}
+                              </span>
+                              {tasks.length > 0 && (
+                                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${allDone ? 'bg-green-400' : 'bg-amber-400'}`} />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            })()}
           </div>
 
           {/* 월간 통계 */}
