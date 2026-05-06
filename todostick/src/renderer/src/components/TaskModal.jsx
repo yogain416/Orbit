@@ -19,7 +19,7 @@ const REPEAT_OPTIONS = [
   { value: 'monthly', label: '매월' }
 ]
 
-export default function TaskModal({ task, defaultDate, onClose }) {
+export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) {
   const [title, setTitle] = useState(task?.title || '')
   const [memo, setMemo] = useState(task?.memo || '')
   const [date, setDate] = useState(task?.date || defaultDate || getTodayStr())
@@ -28,6 +28,8 @@ export default function TaskModal({ task, defaultDate, onClose }) {
   const [remindAt, setRemindAt] = useState(task?.remind_at || '')
   const [color, setColor] = useState(task?.color || null)
   const [category, setCategory] = useState(task?.category || null)
+  const [startTime, setStartTime] = useState(task?.start_time || timeDefaults?.start_time || '')
+  const [endTime, setEndTime] = useState(task?.end_time || timeDefaults?.end_time || '')
   const [completionNote, setCompletionNote] = useState(task?.completion_note || '')
   const [saving, setSaving] = useState(false)
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
@@ -50,6 +52,8 @@ export default function TaskModal({ task, defaultDate, onClose }) {
       repeat_type: repeatType,
       repeat_days: repeatType === 'daily' ? repeatDays : null,
       remind_at: remindAt || null,
+      start_time: startTime || null,
+      end_time: endTime || null,
       color: color || null,
       category: category || null,
       ...(isEdit && task.is_completed ? { completion_note: completionNote.trim() || null } : {})
@@ -114,6 +118,41 @@ export default function TaskModal({ task, defaultDate, onClose }) {
               onChange={(e) => setDate(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
             />
+          </div>
+
+          {/* 시간 (타임블록용) */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">시간 (선택 — 타임블록 뷰용)</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+              />
+              <span className="text-gray-400 text-xs flex-shrink-0">~</span>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+              />
+              {(startTime || endTime) && (
+                <button
+                  type="button"
+                  onClick={() => { setStartTime(''); setEndTime('') }}
+                  className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 flex-shrink-0"
+                >
+                  지우기
+                </button>
+              )}
+            </div>
+            {startTime && endTime && (() => {
+              const [sh, sm] = startTime.split(':').map(Number)
+              const [eh, em] = endTime.split(':').map(Number)
+              const dur = (eh * 60 + em) - (sh * 60 + sm)
+              return dur > 0 ? <p className="text-xs text-indigo-500 mt-1">⏱ {startTime} ~ {endTime} ({dur}분)</p> : null
+            })()}
           </div>
 
           {/* 카테고리 */}

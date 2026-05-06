@@ -1,9 +1,30 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getTodayStr } from '../utils/date'
 
 const STICKER_W = 280
 const STICKER_H_FULL = 360
 const STICKER_H_COLLAPSED = 46
+
+const STICKER_COLOR_DOT = {
+  red: 'bg-red-400',
+  orange: 'bg-orange-400',
+  yellow: 'bg-yellow-400',
+  green: 'bg-green-400',
+  blue: 'bg-blue-400',
+  purple: 'bg-purple-400',
+}
+
+const TABS = [
+  { id: 'today', label: '오늘' },
+  { id: 'see', label: '회고' },
+  { id: 'memo', label: '메모' },
+]
+
+const TAB_TITLES = {
+  today: '오늘 할 일',
+  see: '오늘의 회고',
+  memo: '메모장',
+}
 
 export default function StickerPopup() {
   const [tasks, setTasks] = useState([])
@@ -13,6 +34,12 @@ export default function StickerPopup() {
   const [quickTitle, setQuickTitle] = useState('')
   const [showCompleted, setShowCompleted] = useState(true)
   const [completionNoteTask, setCompletionNoteTask] = useState(null)
+  const [activeTab, setActiveTab] = useState('today')
+  const [memoText, setMemoText] = useState('')
+  const [seeGood, setSeeGood] = useState('')
+  const [seeBad, setSeeBad] = useState('')
+  const [seeNext, setSeeNext] = useState('')
+  const seeRef = useRef({ good: '', bad: '', next: '' })
   const today = getTodayStr()
 
   const load = useCallback(async () => {
@@ -20,7 +47,24 @@ export default function StickerPopup() {
     setTasks(data)
   }, [today])
 
+  const loadMemo = useCallback(async () => {
+    const text = await window.api.memo.get()
+    setMemoText(text || '')
+  }, [])
+
+  const loadSee = useCallback(async () => {
+    const obj = await window.api.see.get(today)
+    const g = obj?.good || '', b = obj?.bad || '', n = obj?.next || ''
+    setSeeGood(g); setSeeBad(b); setSeeNext(n)
+    seeRef.current = { good: g, bad: b, next: n }
+  }, [today])
+
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (activeTab === 'memo') loadMemo()
+    if (activeTab === 'see') loadSee()
+  }, [activeTab, loadMemo, loadSee])
 
   useEffect(() => {
     const handler = () => load()
@@ -54,6 +98,29 @@ export default function StickerPopup() {
     setCollapsed(next)
     window.api.window.setSize(STICKER_W, next ? STICKER_H_COLLAPSED : STICKER_H_FULL)
     if (next) setShowQuickAdd(false)
+  }
+
+  const handlePlusClick = () => {
+    if (collapsed) {
+      setCollapsed(false)
+      setActiveTab('today')
+      window.api.window.setSize(STICKER_W, STICKER_H_FULL)
+      setShowQuickAdd(true)
+      setQuickTitle('')
+    } else if (activeTab !== 'today') {
+      setActiveTab('today')
+      setShowQuickAdd(true)
+      setQuickTitle('')
+    } else {
+      setShowQuickAdd((v) => !v)
+      setQuickTitle('')
+    }
+  }
+
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId)
+    setShowQuickAdd(false)
+    setQuickTitle('')
   }
 
   const handleToggle = (task) => {
@@ -104,6 +171,14 @@ export default function StickerPopup() {
     if (e.key === 'Escape') { setShowQuickAdd(false); setQuickTitle('') }
   }
 
+  const handleMemoBlur = async () => {
+    await window.api.memo.set(memoText)
+  }
+
+  const handleSeeSave = async () => {
+    await window.api.see.set(today, seeRef.current)
+  }
+
   const completed = tasks.filter((t) => t.is_completed).length
   const total = tasks.length
   const allDone = total > 0 && completed === total
@@ -119,22 +194,20 @@ export default function StickerPopup() {
       >
         <div className="flex items-center gap-1.5">
           <span className="text-sm">📌</span>
-          <span className="text-xs font-bold text-yellow-900">오늘 할 일</span>
-          {total > 0 && (
-            <span className="text-xs text-yellow-800 font-medium">
-              {completed}/{total}
-            </span>
+          <span className="text-xs font-bold text-yellow-900">{TAB_TITLES[activeTab]}</span>
+          {activeTab === 'today' && total > 0 && (
+            <span className="text-xs text-yellow-800 font-medium">{completed}/{total}</span>
           )}
         </div>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
           <button
-            onClick={() => { if (!collapsed) { setShowQuickAdd((v) => !v); setQuickTitle('') } }}
+            onClick={handlePlusClick}
             className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 font-bold"
             title="할일 추가"
           >
             +
           </button>
-          {!collapsed && total > 0 && (
+          {!collapsed && activeTab === 'today' && total > 0 && (
             <button
               onClick={() => setShowCompleted((v) => !v)}
               className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
@@ -167,6 +240,25 @@ export default function StickerPopup() {
         </div>
       </div>
 
+      {/* 탭 바 */}
+      {!collapsed && (
+        <div className="flex bg-yellow-300 flex-shrink-0">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              className={`flex-1 text-xs py-1 font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-yellow-50 text-yellow-900'
+                  : 'text-yellow-800 hover:bg-yellow-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* 빠른 추가 입력 */}
       {!collapsed && showQuickAdd && (
         <div className="bg-yellow-100 px-2 py-1.5 flex gap-1.5 flex-shrink-0">
@@ -188,42 +280,102 @@ export default function StickerPopup() {
         </div>
       )}
 
-      {/* 할일 목록 */}
+      {/* 컨텐츠 영역 */}
       {!collapsed && (
         <>
-          <div data-scroll className="flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5">
-            {total === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                <span className="text-2xl">🎉</span>
-                <p className="text-xs">오늘은 할 일이 없어요!</p>
-                <button
-                  onClick={() => setShowQuickAdd(true)}
-                  className="text-xs text-yellow-700 bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded-full"
-                >
-                  + 할일 추가
-                </button>
+          {/* 오늘 탭 */}
+          {activeTab === 'today' && (
+            <>
+              <div data-scroll className="flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5">
+                {total === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
+                    <span className="text-2xl">🎉</span>
+                    <p className="text-xs">오늘은 할 일이 없어요!</p>
+                    <button
+                      onClick={() => setShowQuickAdd(true)}
+                      className="text-xs text-yellow-700 bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded-full"
+                    >
+                      + 할일 추가
+                    </button>
+                  </div>
+                ) : allDone ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-1">
+                    <span className="text-2xl">✅</span>
+                    <p className="text-xs text-green-600 font-medium">모두 완료!</p>
+                  </div>
+                ) : (
+                  displayTasks.map((task) => (
+                    <StickerTask key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} />
+                  ))
+                )}
               </div>
-            ) : allDone ? (
-              <div className="flex flex-col items-center justify-center h-full gap-1">
-                <span className="text-2xl">✅</span>
-                <p className="text-xs text-green-600 font-medium">모두 완료!</p>
-              </div>
-            ) : (
-              displayTasks.map((task) => (
-                <StickerTask key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} />
-              ))
-            )}
-          </div>
+              {total > 0 && !allDone && (
+                <div className="bg-yellow-50 px-2 pb-2 flex-shrink-0">
+                  <div className="h-1.5 bg-yellow-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-yellow-500 transition-all duration-300"
+                      style={{ width: `${(completed / total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
-          {/* 진행률 바 */}
-          {total > 0 && !allDone && (
-            <div className="bg-yellow-50 px-2 pb-2 flex-shrink-0">
-              <div className="h-1.5 bg-yellow-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-yellow-500 transition-all duration-300"
-                  style={{ width: `${(completed / total) * 100}%` }}
+          {/* 회고 탭 (See) */}
+          {activeTab === 'see' && (
+            <div data-scroll className="flex-1 bg-yellow-50 px-2 pt-2 pb-1 flex flex-col gap-1.5 overflow-y-auto">
+              <p className="text-xs text-yellow-700 font-semibold flex-shrink-0">📝 Plan → Do → See</p>
+              <div className="flex flex-col gap-0.5">
+                <label className="text-xs text-yellow-800 font-medium">✅ 잘된 점</label>
+                <textarea
+                  data-scroll
+                  value={seeGood}
+                  onChange={(e) => { setSeeGood(e.target.value); seeRef.current.good = e.target.value }}
+                  onBlur={handleSeeSave}
+                  rows={2}
+                  placeholder="오늘 잘한 것들..."
+                  className="resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
                 />
               </div>
+              <div className="flex flex-col gap-0.5">
+                <label className="text-xs text-amber-700 font-medium">😅 아쉬운 점</label>
+                <textarea
+                  data-scroll
+                  value={seeBad}
+                  onChange={(e) => { setSeeBad(e.target.value); seeRef.current.bad = e.target.value }}
+                  onBlur={handleSeeSave}
+                  rows={2}
+                  placeholder="오늘 아쉬웠던 것들..."
+                  className="resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
+                />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <label className="text-xs text-indigo-700 font-medium">🔜 내일 개선할 것</label>
+                <textarea
+                  data-scroll
+                  value={seeNext}
+                  onChange={(e) => { setSeeNext(e.target.value); seeRef.current.next = e.target.value }}
+                  onBlur={handleSeeSave}
+                  rows={2}
+                  placeholder="내일 개선할 점..."
+                  className="resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 메모 탭 */}
+          {activeTab === 'memo' && (
+            <div className="flex-1 bg-yellow-50 px-2 pt-2 pb-1 flex flex-col">
+              <textarea
+                data-scroll
+                value={memoText}
+                onChange={(e) => setMemoText(e.target.value)}
+                onBlur={handleMemoBlur}
+                placeholder="자유롭게 메모하세요..."
+                className="flex-1 resize-none text-xs bg-yellow-50 outline-none text-gray-700 placeholder-gray-400 leading-relaxed"
+              />
             </div>
           )}
 
@@ -247,15 +399,6 @@ export default function StickerPopup() {
       )}
     </div>
   )
-}
-
-const STICKER_COLOR_DOT = {
-  red: 'bg-red-400',
-  orange: 'bg-orange-400',
-  yellow: 'bg-yellow-400',
-  green: 'bg-green-400',
-  blue: 'bg-blue-400',
-  purple: 'bg-purple-400',
 }
 
 function StickerCompletionNote({ task, onConfirm, onClose }) {

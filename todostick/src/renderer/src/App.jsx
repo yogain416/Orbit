@@ -3,13 +3,15 @@ import DayView from './views/DayView'
 import WeekView from './views/WeekView'
 import MonthView from './views/MonthView'
 import RecordsView from './views/RecordsView'
+import TimeBlockView from './views/TimeBlockView'
+import ReviewView from './views/ReviewView'
 import TaskModal from './components/TaskModal'
 import StickerPopup from './components/StickerPopup'
 import SettingsModal from './components/SettingsModal'
 import ReminderToastContainer, { playFunSound } from './components/ReminderToast'
 import { formatDate, getTodayStr } from './utils/date'
 
-const VIEWS = ['일별', '주별', '월별', '기록']
+const VIEWS = ['일별', '주별', '월별', '타임블록', '리뷰', '기록']
 
 export default function App() {
   const isSticker = window.location.hash === '#sticker'
@@ -23,6 +25,7 @@ function MainApp() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [defaultDate, setDefaultDate] = useState(getTodayStr())
+  const [modalTimeDefaults, setModalTimeDefaults] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toasts, setToasts] = useState([])
 
@@ -43,9 +46,10 @@ function MainApp() {
 
   const isToday = getTodayStr() === getTodayStr(currentDate)
 
-  const openAddModal = useCallback((date = getTodayStr()) => {
+  const openAddModal = useCallback((date = getTodayStr(), timeDefaults = null) => {
     setEditingTask(null)
     setDefaultDate(typeof date === 'string' ? date : getTodayStr())
+    setModalTimeDefaults(timeDefaults)
     setModalOpen(true)
   }, [])
 
@@ -150,8 +154,18 @@ function MainApp() {
             currentDate={currentDate}
             onDateChange={setCurrentDate}
             onDateClick={(date) => { setCurrentDate(new Date(date + 'T00:00:00')); setView('일별') }}
+            onAddTask={openAddModal}
           />
         )}
+        {view === '타임블록' && (
+          <TimeBlockView
+            currentDate={currentDate}
+            onDateChange={setCurrentDate}
+            onAddTask={openAddModal}
+            onEditTask={openEditModal}
+          />
+        )}
+        {view === '리뷰' && <ReviewView />}
         {view === '기록' && <RecordsView />}
       </main>
 
@@ -166,6 +180,7 @@ function MainApp() {
         <TaskModal
           task={editingTask}
           defaultDate={defaultDate}
+          timeDefaults={modalTimeDefaults}
           onClose={() => setModalOpen(false)}
         />
       )}

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
     delete: (id) => ipcRenderer.invoke('tasks:delete', id),
     toggle: (id, note) => ipcRenderer.invoke('tasks:toggle', id, note),
     getCompleted: (filters) => ipcRenderer.invoke('tasks:getCompleted', filters),
+    getPool: (poolKey) => ipcRenderer.invoke('tasks:getPool', poolKey),
     getOverdue: (date) => ipcRenderer.invoke('tasks:getOverdue', date),
     rollover: (toDate) => ipcRenderer.invoke('tasks:rollover', toDate),
     rolloverSelected: (taskIds, toDate) => ipcRenderer.invoke('tasks:rolloverSelected', taskIds, toDate),
@@ -32,11 +33,24 @@ contextBridge.exposeInMainWorld('api', {
     get: () => ipcRenderer.invoke('shortcuts:get'),
     set: (shortcuts) => ipcRenderer.invoke('shortcuts:set', shortcuts)
   },
+  memo: {
+    get: () => ipcRenderer.invoke('memo:get'),
+    set: (text) => ipcRenderer.invoke('memo:set', text)
+  },
   window: {
     startDrag: () => ipcRenderer.send('window:startDrag'),
     openMain: () => ipcRenderer.send('window:openMain'),
     close: () => ipcRenderer.send('window:close'),
     setSize: (w, h) => ipcRenderer.send('window:setSize', w, h),
     setIgnoreMouseEvents: (ignore) => ipcRenderer.send('window:setIgnoreMouseEvents', ignore)
+  },
+  see: {
+    get: (date) => ipcRenderer.invoke('see:get', date),
+    set: (date, text) => ipcRenderer.invoke('see:set', date, text)
+  },
+  review: {
+    getStats: (months) => ipcRenderer.invoke('review:getStats', months),
+    getGoal: (ym) => ipcRenderer.invoke('review:getGoal', ym),
+    setGoal: (ym, text) => ipcRenderer.invoke('review:setGoal', ym, text)
   }
 })

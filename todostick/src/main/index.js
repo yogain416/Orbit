@@ -246,6 +246,13 @@ ipcMain.handle('tasks:getCompleted', (_, filters) => db.getCompletedTasks(filter
 ipcMain.handle('categories:get', () => db.getCategories())
 ipcMain.handle('categories:set', (_, categories) => db.setCategories(categories))
 
+// IPC: 플래너 풀
+ipcMain.handle('tasks:getPool', (_, poolKey) => db.getPoolTasks(poolKey))
+
+// IPC: 메모장
+ipcMain.handle('memo:get', () => db.getSetting('memo') || '')
+ipcMain.handle('memo:set', (_, text) => { db.setSetting('memo', text); return true })
+
 // IPC: 알림 테스트 (개발용)
 ipcMain.handle('reminder:test', () => {
   mainWindow?.webContents.send('reminder:notify', { title: '테스트 알림 🎉', remind_at: '지금' })
@@ -284,6 +291,15 @@ ipcMain.handle('shortcuts:set', (_, shortcuts) => {
   registerShortcuts()
   return true
 })
+
+// IPC: PDS — See 회고
+ipcMain.handle('see:get', (_, date) => db.getSeeMemo(date))
+ipcMain.handle('see:set', (_, date, text) => { db.setSeeMemo(date, text); return true })
+
+// IPC: PDS — Look Back / Look Forward
+ipcMain.handle('review:getStats', (_, months) => db.getMonthlyStats(months))
+ipcMain.handle('review:getGoal', (_, ym) => db.getMonthlyGoal(ym))
+ipcMain.handle('review:setGoal', (_, ym, text) => { db.setMonthlyGoal(ym, text); return true })
 
 // IPC: 창 크기 조절 (스티커 접기/펼치기)
 ipcMain.on('window:setSize', (event, width, height) => {

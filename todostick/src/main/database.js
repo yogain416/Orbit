@@ -124,7 +124,7 @@ export default {
     const d = new Date(date)
     d.setDate(d.getDate() - 1)
     const yesterday = d.toISOString().slice(0, 10)
-    return tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template)
+    return tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id)
   },
 
   getTodayReminders(date) {
@@ -261,7 +261,7 @@ export default {
     const d = new Date(toDate)
     d.setDate(d.getDate() - 1)
     const yesterday = d.toISOString().slice(0, 10)
-    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template)
+    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id)
     const overdueIds = new Set(overdue.map((t) => t.id))
     const maxOrder = data.tasks.filter((t) => t.date === toDate).length
     const newTasks = overdue.map((t, i) => ({
@@ -309,6 +309,14 @@ export default {
     return newTasks
   },
 
+  // ── 플래너 풀 (M:YYYY-MM, W:YYYY-MM-DD 형식) ───────────
+  getPoolTasks(poolKey) {
+    const { tasks } = read()
+    return tasks
+      .filter((t) => t.date === poolKey && !t.is_template)
+      .sort((a, b) => a.order_index - b.order_index || a.created_at.localeCompare(b.created_at))
+  },
+
   // ── Categories ─────────────────────────────────────────
   getCategories() {
     const { settings } = read()
@@ -329,6 +337,44 @@ export default {
   setSetting(key, value) {
     const data = read()
     data.settings[key] = value
+    write(data)
+  },
+
+  // ── PDS: See 회고 (날짜별) ─────────────────────────────
+  getSeeMemo(date) {
+    const { settings } = read()
+    const raw = settings[`see:${date}`]
+    if (!raw) return { good: '', bad: '', next: '' }
+    if (typeof raw === 'string') return { good: raw, bad: '', next: '' }
+    return raw
+  },
+
+  setSeeMemo(date, obj) {
+    const data = read()
+    data.settings[`see:${date}`] = obj
+    write(data)
+  },
+
+  // ── PDS: Look Back 월별 통계 ──────────────────────────
+  getMonthlyStats(months) {
+    const { tasks } = read()
+    return months.map((ym) => {
+      const monthTasks = tasks.filter((t) => t.date.startsWith(ym) && !t.is_template)
+      const total = monthTasks.length
+      const done = monthTasks.filter((t) => t.is_completed).length
+      return { ym, total, done, rate: total > 0 ? Math.round((done / total) * 100) : 0 }
+    })
+  },
+
+  // ── PDS: Look Forward 월별 목표 ───────────────────────
+  getMonthlyGoal(ym) {
+    const { settings } = read()
+    return settings[`goal:${ym}`] || ''
+  },
+
+  setMonthlyGoal(ym, text) {
+    const data = read()
+    data.settings[`goal:${ym}`] = text
     write(data)
   }
 }

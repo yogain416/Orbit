@@ -7033,6 +7033,7 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [expandedId, setExpandedId] = reactExports.useState(null);
   const [overdueTasks, setOverdueTasks] = reactExports.useState([]);
   const [rolloverDone, setRolloverDone] = reactExports.useState(false);
+  const [selectedRolloverIds, setSelectedRolloverIds] = reactExports.useState(/* @__PURE__ */ new Set());
   const [draggedId, setDraggedId] = reactExports.useState(null);
   const [dragOverId, setDragOverId] = reactExports.useState(null);
   const [deleteConfirm, setDeleteConfirm] = reactExports.useState(null);
@@ -7062,6 +7063,9 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
     loadOverdue();
     setRolloverDone(false);
   }, [load, loadOverdue]);
+  reactExports.useEffect(() => {
+    setSelectedRolloverIds(new Set(overdueTasks.map((t2) => t2.id)));
+  }, [overdueTasks]);
   reactExports.useEffect(() => {
     const handler = () => {
       load();
@@ -7117,11 +7121,19 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
     setDeleteConfirm(null);
     load();
   };
-  const handleRollover = async () => {
-    await window.api.tasks.rollover(dateStr);
+  const handleRolloverSelected = async () => {
+    if (selectedRolloverIds.size === 0) return;
+    await window.api.tasks.rolloverSelected([...selectedRolloverIds], dateStr);
     setRolloverDone(true);
     setOverdueTasks([]);
     load();
+  };
+  const toggleRolloverSelect = (id2) => {
+    setSelectedRolloverIds((prev) => {
+      const next = new Set(prev);
+      next.has(id2) ? next.delete(id2) : next.add(id2);
+      return next;
+    });
   };
   const handleDragStart = (id2) => setDraggedId(id2);
   const handleDragOver = (id2) => {
@@ -7202,72 +7214,88 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
       ) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-medium flex-shrink-0 ${allDone ? "text-green-600" : "text-slate-500"}`, children: allDone ? "🎉 모두 완료!" : `${completed}/${total} 완료` })
     ] }) }),
-    isToday && overdueTasks.length > 0 && !rolloverDone && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mx-6 mt-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-amber-700", children: [
-        "⏰ 이전 미완료 할일 ",
-        overdueTasks.length,
-        "개가 있어요"
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 flex-shrink-0", children: [
+    isToday && overdueTasks.length > 0 && !rolloverDone && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mx-6 mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mb-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-amber-700 font-medium", children: "⏰ 어제 미완료 할일" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
-            onClick: handleRollover,
-            className: "text-xs px-3 py-1 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors font-medium",
-            children: "오늘로 이월"
+            onClick: () => setOverdueTasks([]),
+            className: "text-xs text-amber-400 hover:text-amber-600 transition-colors",
+            children: "닫기"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-1 mb-2.5", children: overdueTasks.map((t2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "flex items-center gap-2 text-xs text-amber-800 cursor-pointer select-none", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
+          {
+            type: "checkbox",
+            checked: selectedRolloverIds.has(t2.id),
+            onChange: () => toggleRolloverSelect(t2.id),
+            className: "accent-amber-500"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: t2.title })
+      ] }, t2.id)) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: handleRolloverSelected,
+          disabled: selectedRolloverIds.size === 0,
+          className: "text-xs px-3 py-1 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-40 transition-colors font-medium",
+          children: [
+            "선택한 ",
+            selectedRolloverIds.size,
+            "개 오늘로 이월"
+          ]
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 overflow-y-auto px-6 py-4", children: [
+      total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(EmptyState, { onAdd: () => onAddTask(dateStr), isToday }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2", children: [
+        displayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+          TaskCard,
+          {
+            task,
+            categories,
+            onToggle: handleToggle,
+            onEdit: onEditTask,
+            onDelete: handleDelete,
+            isExpanded: expandedId === task.id,
+            onExpand: (id2) => setExpandedId(expandedId === id2 ? null : id2),
+            isDragging: draggedId === task.id,
+            isDragOver: dragOverId === task.id,
+            onDragStart: handleDragStart,
+            onDragOver: handleDragOver,
+            onDrop: handleDrop,
+            onDragEnd: handleDragEnd
+          },
+          task.id
+        )),
+        !showCompleted && completed > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            onClick: () => setShowCompleted(true),
+            className: "text-xs text-center text-slate-400 hover:text-slate-600 py-1.5 transition-colors",
+            children: [
+              "완료된 항목 ",
+              completed,
+              "개 더 보기 ↓"
+            ]
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
-            onClick: () => setOverdueTasks([]),
-            className: "text-xs px-2 py-1 text-amber-500 hover:bg-amber-100 rounded-lg transition-colors",
-            children: "닫기"
+            onClick: () => onAddTask(dateStr),
+            className: "flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-400 transition-colors text-sm mt-1",
+            children: "+ 할 일 추가"
           }
         )
-      ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(SeeMemo, { dateStr })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto px-6 py-4", children: total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(EmptyState, { onAdd: () => onAddTask(dateStr), isToday }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2", children: [
-      displayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-        TaskCard,
-        {
-          task,
-          categories,
-          onToggle: handleToggle,
-          onEdit: onEditTask,
-          onDelete: handleDelete,
-          isExpanded: expandedId === task.id,
-          onExpand: (id2) => setExpandedId(expandedId === id2 ? null : id2),
-          isDragging: draggedId === task.id,
-          isDragOver: dragOverId === task.id,
-          onDragStart: handleDragStart,
-          onDragOver: handleDragOver,
-          onDrop: handleDrop,
-          onDragEnd: handleDragEnd
-        },
-        task.id
-      )),
-      !showCompleted && completed > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          onClick: () => setShowCompleted(true),
-          className: "text-xs text-center text-slate-400 hover:text-slate-600 py-1.5 transition-colors",
-          children: [
-            "완료된 항목 ",
-            completed,
-            "개 더 보기 ↓"
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "button",
-        {
-          onClick: () => onAddTask(dateStr),
-          className: "flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-400 transition-colors text-sm mt-1",
-          children: "+ 할 일 추가"
-        }
-      )
-    ] }) }),
     deleteConfirm && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-black/30 flex items-center justify-center z-50", onClick: () => setDeleteConfirm(null), children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white rounded-2xl shadow-2xl p-6 mx-4 max-w-sm w-full", onClick: (e) => e.stopPropagation(), children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "font-bold text-slate-800 mb-1", children: "반복 할일 삭제" }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-slate-500 mb-5", children: [
@@ -7429,6 +7457,78 @@ function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, on
     }
   );
 }
+function SeeMemo({ dateStr }) {
+  const [good, setGood] = reactExports.useState("");
+  const [bad, setBad] = reactExports.useState("");
+  const [next, setNext] = reactExports.useState("");
+  const ref = reactExports.useRef({ good: "", bad: "", next: "" });
+  reactExports.useEffect(() => {
+    window.api.see.get(dateStr).then((obj) => {
+      const g = obj?.good || "", b = obj?.bad || "", n2 = obj?.next || "";
+      setGood(g);
+      setBad(b);
+      setNext(n2);
+      ref.current = { good: g, bad: b, next: n2 };
+    });
+  }, [dateStr]);
+  const save = () => window.api.see.set(dateStr, ref.current);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-5 border-t border-slate-100 pt-4", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-semibold text-slate-500 mb-3", children: "📝 오늘의 회고" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-green-600 mb-1 block", children: "✅ 잘된 점" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "textarea",
+          {
+            value: good,
+            onChange: (e) => {
+              setGood(e.target.value);
+              ref.current.good = e.target.value;
+            },
+            onBlur: save,
+            rows: 2,
+            placeholder: "오늘 잘한 것들...",
+            className: "w-full border border-green-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-400 resize-none bg-green-50"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-amber-600 mb-1 block", children: "😅 아쉬운 점" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "textarea",
+          {
+            value: bad,
+            onChange: (e) => {
+              setBad(e.target.value);
+              ref.current.bad = e.target.value;
+            },
+            onBlur: save,
+            rows: 2,
+            placeholder: "오늘 아쉬웠던 것들...",
+            className: "w-full border border-amber-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-400 resize-none bg-amber-50"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-indigo-600 mb-1 block", children: "🔜 내일 개선할 것" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "textarea",
+          {
+            value: next,
+            onChange: (e) => {
+              setNext(e.target.value);
+              ref.current.next = e.target.value;
+            },
+            onBlur: save,
+            rows: 2,
+            placeholder: "내일 개선할 점...",
+            className: "w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none bg-indigo-50"
+          }
+        )
+      ] })
+    ] })
+  ] });
+}
 function CompletionNoteModal({ task, onConfirm, onClose }) {
   const [note, setNote] = reactExports.useState("");
   const handleKeyDown = (e) => {
@@ -7494,9 +7594,32 @@ function CompletionNoteModal({ task, onConfirm, onClose }) {
   ) });
 }
 const DAY_NAMES$1 = ["월", "화", "수", "목", "금", "토", "일"];
+const TASK_COLOR_LEFT = {
+  red: "border-red-400",
+  orange: "border-orange-400",
+  yellow: "border-yellow-400",
+  green: "border-green-400",
+  blue: "border-blue-400",
+  purple: "border-purple-400"
+};
+const HABIT_COLOR_DOT = {
+  red: "bg-red-400",
+  orange: "bg-orange-400",
+  yellow: "bg-yellow-400",
+  green: "bg-green-400",
+  blue: "bg-blue-400",
+  purple: "bg-purple-400"
+};
 function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
   const [tasksByDate, setTasksByDate] = reactExports.useState({});
+  const [poolTasks, setPoolTasks] = reactExports.useState([]);
+  const [poolAddTitle, setPoolAddTitle] = reactExports.useState("");
+  const [habitOpen, setHabitOpen] = reactExports.useState(false);
+  const [dragInfo, setDragInfo] = reactExports.useState(null);
+  const [dragOverDate, setDragOverDate] = reactExports.useState(null);
+  const [sidebarOpen, setSidebarOpen] = reactExports.useState(true);
   const { start, end, monday } = getWeekRange(currentDate);
+  const weekPoolKey = `W:${start}`;
   const loadTasks = () => {
     window.api.tasks.getByWeek(start, end).then((tasks) => {
       const map = {};
@@ -7507,12 +7630,20 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
       setTasksByDate(map);
     });
   };
+  const loadPool = () => {
+    window.api.tasks.getPool(weekPoolKey).then(setPoolTasks);
+  };
   reactExports.useEffect(() => {
     loadTasks();
+    loadPool();
   }, [start, end]);
   reactExports.useEffect(() => {
-    window.api.tasks.onRefresh(loadTasks);
-    return () => window.api.tasks.offRefresh(loadTasks);
+    const handler = () => {
+      loadTasks();
+      loadPool();
+    };
+    window.api.tasks.onRefresh(handler);
+    return () => window.api.tasks.offRefresh(handler);
   }, [start, end]);
   const prevWeek = () => {
     const d = new Date(currentDate);
@@ -7534,8 +7665,81 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
   const allTasks = Object.values(tasksByDate).flat();
   const weekTotal = allTasks.length;
   const weekDone = allTasks.filter((t2) => t2.is_completed).length;
+  const habitMap = {};
+  Object.entries(tasksByDate).forEach(([date, tasks]) => {
+    tasks.filter((t2) => t2.parent_id).forEach((t2) => {
+      if (!habitMap[t2.parent_id]) {
+        habitMap[t2.parent_id] = { title: t2.title, color: t2.color, byDate: {} };
+      }
+      habitMap[t2.parent_id].byDate[date] = t2;
+    });
+  });
+  const habits = Object.values(habitMap);
+  const handlePoolAdd = async () => {
+    if (!poolAddTitle.trim()) return;
+    await window.api.tasks.create({
+      title: poolAddTitle.trim(),
+      date: weekPoolKey,
+      repeat_type: "none",
+      order_index: poolTasks.length
+    });
+    window.api.tasks.notifyChanged();
+    setPoolAddTitle("");
+    loadPool();
+  };
+  const handlePoolAddKeyDown = (e) => {
+    if (e.key === "Enter") handlePoolAdd();
+    if (e.key === "Escape") setPoolAddTitle("");
+  };
+  const handlePoolToggle = async (taskId) => {
+    await window.api.tasks.toggle(taskId, null);
+    window.api.tasks.notifyChanged();
+    loadPool();
+  };
+  const handleDayTaskToggle = async (taskId) => {
+    await window.api.tasks.toggle(taskId, null);
+    window.api.tasks.notifyChanged();
+    loadTasks();
+  };
+  const handleAssignToDay = async (taskId, dateStr) => {
+    await window.api.tasks.update(taskId, { date: dateStr });
+    window.api.tasks.notifyChanged();
+    loadPool();
+    loadTasks();
+  };
+  const handleDeletePool = async (taskId) => {
+    await window.api.tasks.delete(taskId);
+    window.api.tasks.notifyChanged();
+    loadPool();
+  };
+  const handleHabitToggle = async (taskId) => {
+    await window.api.tasks.toggle(taskId, null);
+    window.api.tasks.notifyChanged();
+  };
+  const handleTaskDragStart = (e, taskId, fromDate) => {
+    e.stopPropagation();
+    setDragInfo({ taskId, fromDate });
+  };
+  const handleDayDragOver = (e, dateStr) => {
+    e.preventDefault();
+    setDragOverDate(dateStr);
+  };
+  const handleDayDrop = async (e, toDate) => {
+    e.preventDefault();
+    if (!dragInfo || dragInfo.fromDate === toDate) {
+      setDragInfo(null);
+      setDragOverDate(null);
+      return;
+    }
+    await window.api.tasks.update(dragInfo.taskId, { date: toDate });
+    window.api.tasks.notifyChanged();
+    setDragInfo(null);
+    setDragOverDate(null);
+  };
+  const poolDone = poolTasks.filter((t2) => t2.is_completed).length;
+  const sidebarEmpty = poolTasks.length === 0 && days.every((d) => !tasksByDate[toDateStr(d)]?.length);
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: prevWeek, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "‹" }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-base font-bold text-slate-800", children: weekLabel }),
@@ -7547,76 +7751,267 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: nextWeek, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "›" })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 p-4 grid grid-cols-7 gap-2 overflow-hidden", children: days.map((day, i) => {
-      const dateStr = toDateStr(day);
-      const tasks = tasksByDate[dateStr] || [];
-      const completed = tasks.filter((t2) => t2.is_completed).length;
-      const isToday = dateStr === today;
-      const isWeekend = i >= 5;
-      return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "div",
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-1 overflow-hidden", children: [
+      !sidebarOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
         {
-          onClick: () => onDateClick(dateStr),
-          className: `flex flex-col rounded-xl border cursor-pointer transition-all hover:shadow-md ${isToday ? "border-indigo-400 bg-indigo-50 shadow-sm" : "border-slate-200 bg-white hover:border-indigo-200"}`,
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `text-center py-2 rounded-t-xl ${isToday ? "bg-indigo-500" : "bg-slate-50"}`, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs font-medium ${isToday ? "text-indigo-100" : isWeekend ? "text-red-400" : "text-slate-500"}`, children: DAY_NAMES$1[i] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-sm font-bold ${isToday ? "text-white" : "text-slate-700"}`, children: day.getDate() })
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 overflow-hidden p-1.5 flex flex-col gap-0.5", children: [
-              tasks.slice(0, 5).map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  className: `text-xs px-1.5 py-0.5 rounded truncate ${task.is_completed ? "bg-slate-100 text-slate-400 line-through" : "bg-indigo-50 text-indigo-700"}`,
-                  title: task.title,
-                  children: task.title.length > 7 ? task.title.slice(0, 7) + "…" : task.title
-                },
-                task.id
-              )),
-              tasks.length > 5 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-xs text-slate-400 text-center", children: [
-                "+",
-                tasks.length - 5
-              ] })
-            ] }),
-            tasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs text-center py-1 border-t ${completed === tasks.length ? "text-green-600 border-green-100 bg-green-50 rounded-b-xl" : "text-slate-400 border-slate-100"}`, children: completed === tasks.length ? "✓ 완료" : `${completed}/${tasks.length}` })
-          ]
-        },
-        dateStr
-      );
-    }) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-4 py-2.5 bg-white border-t border-slate-100 flex items-center gap-4", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-400 flex-shrink-0", children: "주간 완료율" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 flex gap-1.5 items-end", children: days.map((day, i) => {
-        const dateStr = toDateStr(day);
-        const dayTasks = tasksByDate[dateStr] || [];
-        const dayTotal = dayTasks.length;
-        const dayDone = dayTasks.filter((t2) => t2.is_completed).length;
-        const pct = dayTotal > 0 ? dayDone / dayTotal * 100 : 0;
-        const isWeekend = i >= 5;
-        return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col items-center gap-0.5", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-full h-1.5 bg-slate-100 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          onClick: () => setSidebarOpen(true),
+          title: "목록 열기",
+          className: "w-6 flex-shrink-0 bg-indigo-50 border-r border-indigo-100 hover:bg-indigo-100 flex items-center justify-center text-indigo-400 hover:text-indigo-700 transition-colors",
+          children: "▸"
+        }
+      ),
+      sidebarOpen && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "w-52 border-r border-slate-200 bg-indigo-50 flex flex-col flex-shrink-0", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-3 py-2 border-b border-indigo-100 flex-shrink-0", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs font-bold text-indigo-700", children: [
+            "📋 이번 주 할일",
+            poolTasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "ml-1.5 bg-indigo-200 text-indigo-700 rounded-full px-1.5 py-0.5 font-medium", children: [
+              poolDone,
+              "/",
+              poolTasks.length
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => setSidebarOpen(false),
+              title: "목록 닫기",
+              className: "text-indigo-300 hover:text-indigo-600 text-sm leading-none px-1",
+              children: "◂"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto py-1", children: sidebarEmpty ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-400 text-center py-6", children: "이번 주 할일이 없어요" }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+          poolTasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-2 mb-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-indigo-400 font-semibold mb-1 px-1", children: "미배정" }),
+            poolTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+              WeekSidebarPoolTask,
+              {
+                task,
+                days,
+                onToggle: handlePoolToggle,
+                onAssign: handleAssignToDay,
+                onDelete: handleDeletePool
+              },
+              task.id
+            ))
+          ] }),
+          days.map((day, i) => {
+            const dateStr = toDateStr(day);
+            const dayTasks = tasksByDate[dateStr] || [];
+            if (dayTasks.length === 0) return null;
+            const isToday = dateStr === today;
+            const done = dayTasks.filter((t2) => t2.is_completed).length;
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-2 mb-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: `text-[10px] font-semibold mb-1 px-1 flex items-center justify-between ${isToday ? "text-indigo-600" : "text-slate-400"}`, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                  DAY_NAMES$1[i],
+                  " ",
+                  day.getDate(),
+                  "일",
+                  isToday ? " · 오늘" : ""
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                  done,
+                  "/",
+                  dayTasks.length
+                ] })
+              ] }),
+              dayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(WeekSidebarDayTask, { task, onToggle: handleDayTaskToggle }, task.id))
+            ] }, dateStr);
+          })
+        ] }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "px-3 py-2 border-t border-indigo-100 flex-shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
+          {
+            type: "text",
+            value: poolAddTitle,
+            onChange: (e) => setPoolAddTitle(e.target.value),
+            onKeyDown: handlePoolAddKeyDown,
+            placeholder: "+ 할일 추가...",
+            className: "w-full text-xs bg-transparent outline-none text-slate-600 placeholder-indigo-300 border-b border-transparent focus:border-indigo-300 pb-0.5 transition-colors"
+          }
+        ) })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col overflow-hidden", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 p-3 grid grid-cols-7 gap-2 overflow-hidden", children: days.map((day, i) => {
+          const dateStr = toDateStr(day);
+          const tasks = tasksByDate[dateStr] || [];
+          const completed = tasks.filter((t2) => t2.is_completed).length;
+          const isToday = dateStr === today;
+          const isWeekend = i >= 5;
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs(
             "div",
             {
-              className: `h-full rounded-full transition-all ${pct === 100 && dayTotal > 0 ? "bg-green-400" : "bg-indigo-400"}`,
-              style: { width: `${pct}%` }
+              onClick: () => onDateClick(dateStr),
+              onDragOver: (e) => handleDayDragOver(e, dateStr),
+              onDrop: (e) => handleDayDrop(e, dateStr),
+              onDragLeave: () => setDragOverDate(null),
+              className: `flex flex-col rounded-xl border cursor-pointer transition-all hover:shadow-md ${dragOverDate === dateStr ? "border-indigo-400 bg-indigo-50 shadow-md" : isToday ? "border-indigo-400 bg-indigo-50 shadow-sm" : "border-slate-200 bg-white hover:border-indigo-200"}`,
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `text-center py-2 rounded-t-xl ${isToday ? "bg-indigo-500" : "bg-slate-50"}`, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs font-medium ${isToday ? "text-indigo-100" : isWeekend ? "text-red-400" : "text-slate-500"}`, children: DAY_NAMES$1[i] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-sm font-bold ${isToday ? "text-white" : "text-slate-700"}`, children: day.getDate() })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 overflow-hidden p-1.5 flex flex-col gap-0.5", children: [
+                  tasks.slice(0, 5).map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "div",
+                    {
+                      draggable: true,
+                      onDragStart: (e) => handleTaskDragStart(e, task.id, dateStr),
+                      onClick: (e) => e.stopPropagation(),
+                      className: `text-xs px-1.5 py-0.5 rounded truncate border-l-2 cursor-grab active:opacity-50 ${task.is_completed ? "bg-slate-100 text-slate-400 line-through border-slate-300" : `bg-indigo-50 text-indigo-700 ${task.color ? TASK_COLOR_LEFT[task.color] : "border-transparent"}`}`,
+                      title: task.title,
+                      children: task.title.length > 7 ? task.title.slice(0, 7) + "…" : task.title
+                    },
+                    task.id
+                  )),
+                  tasks.length > 5 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-xs text-slate-400 text-center", children: [
+                    "+",
+                    tasks.length - 5
+                  ] })
+                ] }),
+                tasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs text-center py-1 border-t ${completed === tasks.length ? "text-green-600 border-green-100 bg-green-50 rounded-b-xl" : "text-slate-400 border-slate-100"}`, children: completed === tasks.length ? "✓ 완료" : `${completed}/${tasks.length}` })
+              ]
+            },
+            dateStr
+          );
+        }) }),
+        habits.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-amber-50 border-t border-amber-100 flex-shrink-0", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              onClick: () => setHabitOpen((v2) => !v2),
+              className: "flex items-center gap-1.5 w-full px-4 py-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "🔁 습관 트래커" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-amber-200 text-amber-700 rounded-full px-1.5 text-xs", children: habits.length }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-amber-400 ml-auto", children: habitOpen ? "▲" : "▼" })
+              ]
             }
-          ) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs ${isWeekend ? "text-red-300" : "text-slate-300"}`, children: DAY_NAMES$1[i] })
-        ] }, dateStr);
-      }) }),
-      weekTotal > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-slate-500 flex-shrink-0 font-medium", children: [
-        weekDone,
-        "/",
-        weekTotal
+          ),
+          habitOpen && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "px-4 pb-2 flex flex-col gap-1 max-h-28 overflow-y-auto", children: habits.map((habit, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-2 h-2 rounded-full flex-shrink-0 ${habit.color ? HABIT_COLOR_DOT[habit.color] : "bg-slate-300"}` }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-600 truncate flex-1 min-w-0", style: { maxWidth: 90 }, children: habit.title }),
+            days.map((day) => {
+              const dateStr = toDateStr(day);
+              const task = habit.byDate[dateStr];
+              return /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => task && handleHabitToggle(task.id),
+                  className: `w-6 h-6 flex-shrink-0 rounded text-xs font-medium transition-colors ${!task ? "text-slate-200 cursor-default" : task.is_completed ? "bg-green-100 text-green-600 hover:bg-green-200" : "bg-white text-slate-300 border border-slate-200 hover:border-amber-300 hover:text-amber-600"}`,
+                  children: !task ? "−" : task.is_completed ? "✓" : "○"
+                },
+                dateStr
+              );
+            })
+          ] }, i)) })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-4 py-2.5 bg-white border-t border-slate-100 flex items-center gap-4 flex-shrink-0", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-400 flex-shrink-0", children: "주간 완료율" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 flex gap-1.5 items-end", children: days.map((day, i) => {
+            const dateStr = toDateStr(day);
+            const dayTasks = tasksByDate[dateStr] || [];
+            const dayTotal = dayTasks.length;
+            const dayDone = dayTasks.filter((t2) => t2.is_completed).length;
+            const pct = dayTotal > 0 ? dayDone / dayTotal * 100 : 0;
+            const isWeekend = i >= 5;
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col items-center gap-0.5", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-full h-1.5 bg-slate-100 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "div",
+                {
+                  className: `h-full rounded-full transition-all ${pct === 100 && dayTotal > 0 ? "bg-green-400" : "bg-indigo-400"}`,
+                  style: { width: `${pct}%` }
+                }
+              ) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs ${isWeekend ? "text-red-300" : "text-slate-300"}`, children: DAY_NAMES$1[i] })
+            ] }, dateStr);
+          }) }),
+          weekTotal > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-slate-500 flex-shrink-0 font-medium", children: [
+            weekDone,
+            "/",
+            weekTotal
+          ] })
+        ] })
       ] })
     ] })
   ] });
 }
+function WeekSidebarPoolTask({ task, days, onToggle, onAssign, onDelete }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex flex-col rounded-lg px-2 py-1.5 mb-0.5 group ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => onToggle(task.id),
+          className: `w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${task.is_completed ? "bg-green-500 border-green-500 text-white" : "border-slate-300 hover:border-indigo-400"}`,
+          children: task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[8px]", children: "✓" })
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `flex-1 text-xs truncate min-w-0 ${task.is_completed ? "line-through text-slate-400" : "text-slate-700"}`, children: task.title }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => onDelete(task.id),
+          className: "opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity",
+          children: "✕"
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-px mt-1 ml-5", children: days.map((day, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: () => onAssign(task.id, toDateStr(day)),
+        title: `${DAY_NAMES$1[i]}요일로 배정`,
+        className: "text-[10px] w-5 h-4 rounded text-slate-400 hover:bg-indigo-100 hover:text-indigo-700 font-medium transition-colors",
+        children: DAY_NAMES$1[i]
+      },
+      i
+    )) })
+  ] });
+}
+function WeekSidebarDayTask({ task, onToggle }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: () => onToggle(task.id),
+        className: `w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${task.is_completed ? "bg-green-500 border-green-500 text-white" : "border-slate-300 hover:border-indigo-400"}`,
+        children: task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[8px]", children: "✓" })
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex-1 text-xs truncate min-w-0 ${task.is_completed ? "line-through text-slate-400" : "text-slate-700"}`, children: [
+      task.title,
+      (task.parent_id || task.is_template) && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1 text-indigo-400 text-[10px]", children: "🔁" })
+    ] })
+  ] });
+}
 const DAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"];
-function MonthView({ currentDate, onDateChange, onDateClick }) {
+function getWeeksOfMonth(year, month) {
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const firstDayWeek = firstDay.getDay();
+  const firstMonday = new Date(firstDay);
+  firstMonday.setDate(firstDay.getDate() - (firstDayWeek === 0 ? 6 : firstDayWeek - 1));
+  const weeks = [];
+  let cur = new Date(firstMonday);
+  while (cur <= lastDay) {
+    weeks.push(new Date(cur));
+    cur = new Date(cur);
+    cur.setDate(cur.getDate() + 7);
+  }
+  return weeks;
+}
+function MonthView({ currentDate, onDateChange, onDateClick, onAddTask }) {
   const [tasksByDate, setTasksByDate] = reactExports.useState({});
+  const [poolTasks, setPoolTasks] = reactExports.useState([]);
+  const [poolAddTitle, setPoolAddTitle] = reactExports.useState("");
+  const [sidebarOpen, setSidebarOpen] = reactExports.useState(true);
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+  const monthPoolKey = `M:${year}-${String(month + 1).padStart(2, "0")}`;
+  const weeksOfMonth = getWeeksOfMonth(year, month);
   const load = () => {
     window.api.tasks.getByMonth(year, month + 1).then((tasks) => {
       const map = {};
@@ -7627,12 +8022,30 @@ function MonthView({ currentDate, onDateChange, onDateClick }) {
       setTasksByDate(map);
     });
   };
+  const loadPool = async () => {
+    const monthTasks = await window.api.tasks.getPool(monthPoolKey);
+    const weekResults = await Promise.all(
+      weeksOfMonth.map(async (monday, i) => {
+        const tasks = await window.api.tasks.getPool(`W:${toDateStr(monday)}`);
+        return tasks.map((t2) => ({ ...t2, _weekIdx: i }));
+      })
+    );
+    setPoolTasks([
+      ...monthTasks.map((t2) => ({ ...t2, _weekIdx: null })),
+      ...weekResults.flat()
+    ]);
+  };
   reactExports.useEffect(() => {
     load();
+    loadPool();
   }, [year, month]);
   reactExports.useEffect(() => {
-    window.api.tasks.onRefresh(load);
-    return () => window.api.tasks.offRefresh(load);
+    const handler = () => {
+      load();
+      loadPool();
+    };
+    window.api.tasks.onRefresh(handler);
+    return () => window.api.tasks.offRefresh(handler);
   }, [year, month]);
   const prevMonth = () => onDateChange(new Date(year, month - 1, 1));
   const nextMonth = () => onDateChange(new Date(year, month + 1, 1));
@@ -7643,8 +8056,41 @@ function MonthView({ currentDate, onDateChange, onDateClick }) {
   const totalDone = allTasks.filter((t2) => t2.is_completed).length;
   const totalRemaining = totalTasks - totalDone;
   const completionRate = totalTasks > 0 ? Math.round(totalDone / totalTasks * 100) : 0;
+  const poolDone = poolTasks.filter((t2) => t2.is_completed).length;
+  const handlePoolAdd = async () => {
+    if (!poolAddTitle.trim()) return;
+    await window.api.tasks.create({
+      title: poolAddTitle.trim(),
+      date: monthPoolKey,
+      repeat_type: "none",
+      order_index: poolTasks.length
+    });
+    window.api.tasks.notifyChanged();
+    setPoolAddTitle("");
+    loadPool();
+  };
+  const handlePoolAddKeyDown = (e) => {
+    if (e.key === "Enter") handlePoolAdd();
+    if (e.key === "Escape") setPoolAddTitle("");
+  };
+  const handleAssignToWeek = async (task, weekIdx, monday) => {
+    const targetKey = task._weekIdx === weekIdx ? monthPoolKey : `W:${toDateStr(monday)}`;
+    await window.api.tasks.update(task.id, { date: targetKey });
+    window.api.tasks.notifyChanged();
+    loadPool();
+  };
+  const handlePoolToggle = async (taskId) => {
+    await window.api.tasks.toggle(taskId, null);
+    window.api.tasks.notifyChanged();
+    loadPool();
+  };
+  const handleDeletePool = async (taskId) => {
+    await window.api.tasks.delete(taskId);
+    window.api.tasks.notifyChanged();
+    loadPool();
+  };
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: prevMonth, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "‹" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-base font-bold text-slate-800", children: [
         year,
@@ -7654,61 +8100,204 @@ function MonthView({ currentDate, onDateChange, onDateClick }) {
       ] }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: nextMonth, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "›" })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col p-4 gap-1 overflow-hidden", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-7 gap-1 mb-1", children: DAY_NAMES.map((d, i) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs text-center font-semibold py-1 ${i >= 5 ? "text-red-400" : "text-slate-400"}`, children: d }, d)) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 grid grid-cols-7 gap-1", children: days.map((day, i) => {
-        if (!day) return /* @__PURE__ */ jsxRuntimeExports.jsx("div", {}, `empty-${i}`);
-        const dateStr = toDateStr(day);
-        const tasks = tasksByDate[dateStr] || [];
-        const completed = tasks.filter((t2) => t2.is_completed).length;
-        const allDone = tasks.length > 0 && completed === tasks.length;
-        const isToday = dateStr === today;
-        const isWeekend = getDayIndex(day) >= 5;
-        return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "div",
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-1 overflow-hidden", children: [
+      !sidebarOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => setSidebarOpen(true),
+          title: "목록 열기",
+          className: "w-6 flex-shrink-0 bg-violet-50 border-r border-violet-100 hover:bg-violet-100 flex items-center justify-center text-violet-400 hover:text-violet-700 transition-colors",
+          children: "▸"
+        }
+      ),
+      sidebarOpen && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "w-52 border-r border-slate-200 bg-violet-50 flex flex-col flex-shrink-0", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-3 py-2 border-b border-violet-100 flex-shrink-0", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs font-bold text-violet-700", children: [
+            "📋 이번 달 할일",
+            poolTasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "ml-1.5 bg-violet-200 text-violet-700 rounded-full px-1.5 py-0.5 font-medium", children: [
+              poolDone,
+              "/",
+              poolTasks.length
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => setSidebarOpen(false),
+              title: "목록 닫기",
+              className: "text-violet-300 hover:text-violet-600 text-sm leading-none px-1",
+              children: "◂"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto py-1", children: poolTasks.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-violet-400 text-center py-6", children: [
+          "아래에서 할일을 추가하고",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("br", {}),
+          "주차별로 배정해보세요"
+        ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+          poolTasks.filter((t2) => t2._weekIdx === null).length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-2 mb-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-violet-400 font-semibold mb-1 px-1", children: "미배정" }),
+            poolTasks.filter((t2) => t2._weekIdx === null).map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+              MonthPoolTask,
+              {
+                task,
+                weeks: weeksOfMonth,
+                onAssign: handleAssignToWeek,
+                onToggle: handlePoolToggle,
+                onDelete: handleDeletePool
+              },
+              task.id
+            ))
+          ] }),
+          weeksOfMonth.map((monday, i) => {
+            const weekTasks = poolTasks.filter((t2) => t2._weekIdx === i);
+            if (weekTasks.length === 0) return null;
+            const weekDone = weekTasks.filter((t2) => t2.is_completed).length;
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-2 mb-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[10px] text-violet-500 font-semibold mb-1 px-1 flex items-center justify-between", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                  i + 1,
+                  "주차"
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                  weekDone,
+                  "/",
+                  weekTasks.length
+                ] })
+              ] }),
+              weekTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                MonthPoolTask,
+                {
+                  task,
+                  weeks: weeksOfMonth,
+                  onAssign: handleAssignToWeek,
+                  onToggle: handlePoolToggle,
+                  onDelete: handleDeletePool
+                },
+                task.id
+              ))
+            ] }, i);
+          })
+        ] }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "px-3 py-2.5 border-t border-violet-100 flex-shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
           {
-            onClick: () => onDateClick(dateStr),
-            className: `flex flex-col items-center justify-start py-1 px-0.5 rounded-xl cursor-pointer transition-all hover:bg-slate-100 ${isToday ? "ring-2 ring-indigo-400 bg-indigo-50" : ""}`,
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-semibold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? "bg-indigo-600 text-white" : isWeekend ? "text-red-400" : "text-slate-700"}`, children: day.getDate() }),
-              tasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center gap-0.5 mt-0.5", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-1.5 h-1.5 rounded-full ${allDone ? "bg-green-400" : "bg-amber-400"}` }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-400 leading-none", children: tasks.length })
-              ] })
-            ]
-          },
-          dateStr
-        );
-      }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-2 border-t border-slate-100 flex items-center justify-center gap-6", children: totalTasks > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
-          "완료 ",
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-green-600", children: totalDone }),
-          "개"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
-          "미완료 ",
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-amber-500", children: totalRemaining }),
-          "개"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
-          "완료율 ",
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-semibold text-indigo-600", children: [
-            completionRate,
-            "%"
+            type: "text",
+            value: poolAddTitle,
+            onChange: (e) => setPoolAddTitle(e.target.value),
+            onKeyDown: handlePoolAddKeyDown,
+            placeholder: "+ 할일 추가 (Enter)",
+            className: "w-full text-xs bg-transparent outline-none text-slate-600 placeholder-violet-300 border-b border-transparent focus:border-violet-400 pb-0.5 transition-colors"
+          }
+        ) })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col p-4 gap-1 overflow-hidden", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-7 gap-1 mb-1", children: DAY_NAMES.map((d, i) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs text-center font-semibold py-1 ${i >= 5 ? "text-red-400" : "text-slate-400"}`, children: d }, d)) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 grid grid-cols-7 gap-1", children: days.map((day, i) => {
+          if (!day) return /* @__PURE__ */ jsxRuntimeExports.jsx("div", {}, `empty-${i}`);
+          const dateStr = toDateStr(day);
+          const tasks = tasksByDate[dateStr] || [];
+          const completed = tasks.filter((t2) => t2.is_completed).length;
+          const allDone = tasks.length > 0 && completed === tasks.length;
+          const isToday = dateStr === today;
+          const isWeekend = getDayIndex(day) >= 5;
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "div",
+            {
+              onClick: () => onDateClick(dateStr),
+              className: `group relative flex flex-col items-center justify-start py-1 px-0.5 rounded-xl cursor-pointer transition-all hover:bg-slate-100 ${isToday ? "ring-2 ring-indigo-400 bg-indigo-50" : ""}`,
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-semibold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? "bg-indigo-600 text-white" : isWeekend ? "text-red-400" : "text-slate-700"}`, children: day.getDate() }),
+                tasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center gap-0.5 mt-0.5", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-1.5 h-1.5 rounded-full ${allDone ? "bg-green-400" : "bg-amber-400"}` }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-400 leading-none", children: tasks.length })
+                ] }),
+                onAddTask && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      onAddTask(dateStr);
+                    },
+                    className: "absolute top-0.5 right-0.5 w-4 h-4 opacity-0 group-hover:opacity-100 flex items-center justify-center text-indigo-400 hover:text-indigo-600 text-xs font-bold transition-opacity",
+                    title: "할일 추가",
+                    children: "+"
+                  }
+                )
+              ]
+            },
+            dateStr
+          );
+        }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-2 border-t border-slate-100 flex items-center justify-center gap-6", children: totalTasks > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
+            "완료 ",
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-green-600", children: totalDone }),
+            "개"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
+            "미완료 ",
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-amber-500", children: totalRemaining }),
+            "개"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
+            "완료율 ",
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-semibold text-indigo-600", children: [
+              completionRate,
+              "%"
+            ] })
           ] })
-        ] })
-      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-400", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-green-400" }),
-          " 전체 완료"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-400", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-amber-400" }),
-          " 미완료 있음"
-        ] })
-      ] }) })
+        ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-400", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-green-400" }),
+            " 전체 완료"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-400", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "w-2 h-2 rounded-full bg-amber-400" }),
+            " 미완료 있음"
+          ] })
+        ] }) })
+      ] })
     ] })
+  ] });
+}
+function MonthPoolTask({ task, weeks, onAssign, onToggle, onDelete }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex flex-col rounded-lg px-2 py-1.5 mb-0.5 group ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => onToggle(task.id),
+          className: `w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${task.is_completed ? "bg-green-500 border-green-500 text-white" : "border-slate-300 hover:border-violet-500"}`,
+          children: task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[8px]", children: "✓" })
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `flex-1 text-xs truncate min-w-0 ${task.is_completed ? "line-through text-slate-400" : "text-slate-700"}`, children: task.title }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => onDelete(task.id),
+          className: "opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity",
+          children: "✕"
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-px mt-1 ml-5", children: weeks.map((monday, i) => {
+      const isActive = task._weekIdx === i;
+      return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: () => onAssign(task, i, monday),
+          title: isActive ? "클릭하면 미배정으로 되돌리기" : `${i + 1}주에 배정`,
+          className: `text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap transition-colors ${isActive ? "bg-violet-500 text-white" : "text-slate-300 hover:bg-violet-100 hover:text-violet-700"}`,
+          children: [
+            i + 1,
+            "주"
+          ]
+        },
+        i
+      );
+    }) })
   ] });
 }
 function getDayIndex(date) {
@@ -7950,6 +8539,542 @@ function EmptyRecords({ search }) {
     ] })
   ] });
 }
+const HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
+const PX_PER_HOUR = 64;
+const PX_PER_MIN = PX_PER_HOUR / 60;
+const BLOCK_COLORS = {
+  red: "bg-red-200 border-red-400 text-red-800",
+  orange: "bg-orange-200 border-orange-400 text-orange-800",
+  yellow: "bg-yellow-200 border-yellow-400 text-yellow-800",
+  green: "bg-green-200 border-green-400 text-green-800",
+  blue: "bg-blue-200 border-blue-400 text-blue-800",
+  purple: "bg-purple-200 border-purple-400 text-purple-800"
+};
+const DEFAULT_BLOCK = "bg-indigo-100 border-indigo-300 text-indigo-800";
+function timeToMinutes(t2) {
+  if (!t2) return null;
+  const [h, m2] = t2.split(":").map(Number);
+  return h * 60 + m2;
+}
+function pxToMinutes(px) {
+  return Math.max(6 * 60, Math.min(24 * 60, Math.round(px / PX_PER_MIN) + 6 * 60));
+}
+function snapMinutes(m2, step = 15) {
+  return Math.round(m2 / step) * step;
+}
+function minutesToStr(m2) {
+  return `${String(Math.floor(m2 / 60)).padStart(2, "0")}:${String(m2 % 60).padStart(2, "0")}`;
+}
+function minutesToPx(m2) {
+  return (m2 - 6 * 60) * PX_PER_MIN;
+}
+function TimeBlockView({ currentDate, onDateChange, onAddTask, onEditTask }) {
+  const [tasks, setTasks] = reactExports.useState([]);
+  const [nowMinutes, setNowMinutes] = reactExports.useState(() => {
+    const n2 = /* @__PURE__ */ new Date();
+    return n2.getHours() * 60 + n2.getMinutes();
+  });
+  const [dragState, setDragState] = reactExports.useState(null);
+  const [moveTask, setMoveTask] = reactExports.useState(null);
+  const [resizeTask, setResizeTask] = reactExports.useState(null);
+  const gridRef = reactExports.useRef(null);
+  const moveRef = reactExports.useRef(null);
+  const resizeRef = reactExports.useRef(null);
+  const tasksRef = reactExports.useRef([]);
+  const onEditRef = reactExports.useRef(onEditTask);
+  const onAddRef = reactExports.useRef(onAddTask);
+  const dateStrRef = reactExports.useRef("");
+  reactExports.useEffect(() => {
+    onEditRef.current = onEditTask;
+  }, [onEditTask]);
+  reactExports.useEffect(() => {
+    onAddRef.current = onAddTask;
+  }, [onAddTask]);
+  reactExports.useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+  const today = getTodayStr();
+  const dateStr = toDateStr(currentDate);
+  dateStrRef.current = dateStr;
+  reactExports.useEffect(() => {
+    const timer = setInterval(() => {
+      const n2 = /* @__PURE__ */ new Date();
+      setNowMinutes(n2.getHours() * 60 + n2.getMinutes());
+    }, 6e4);
+    return () => clearInterval(timer);
+  }, []);
+  const loadTasks = reactExports.useCallback(() => {
+    window.api.tasks.getByDate(dateStr).then(setTasks);
+  }, [dateStr]);
+  reactExports.useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
+  reactExports.useEffect(() => {
+    const handler = () => loadTasks();
+    window.api.tasks.onRefresh(handler);
+    return () => window.api.tasks.offRefresh(handler);
+  }, [loadTasks]);
+  reactExports.useEffect(() => {
+    const getGPx = (clientY) => {
+      if (!gridRef.current) return 0;
+      const rect = gridRef.current.getBoundingClientRect();
+      return Math.max(0, Math.min(clientY - rect.top, HOURS.length * PX_PER_HOUR));
+    };
+    const onMouseMove = (e) => {
+      const mt = moveRef.current;
+      const rt = resizeRef.current;
+      if (!mt && !rt) return;
+      const px = getGPx(e.clientY);
+      const curMin = pxToMinutes(px);
+      if (mt) {
+        const moved = mt.moved || Math.abs(e.clientY - mt.startY) > 4;
+        const raw = snapMinutes(curMin - mt.grabOffsetMin);
+        const newStart = Math.max(6 * 60, Math.min(23 * 60 - mt.duration, raw));
+        const updated = { ...mt, moved, previewStart: newStart, previewEnd: newStart + mt.duration };
+        moveRef.current = updated;
+        setMoveTask(updated);
+      }
+      if (rt) {
+        const newEnd = Math.max(rt.startMin + 15, snapMinutes(curMin));
+        const updated = { ...rt, previewEnd: newEnd };
+        resizeRef.current = updated;
+        setResizeTask(updated);
+      }
+    };
+    const onMouseUp = async () => {
+      const mt = moveRef.current;
+      const rt = resizeRef.current;
+      setDragState(null);
+      if (mt) {
+        moveRef.current = null;
+        setMoveTask(null);
+        if (mt.moved && mt.previewStart !== mt.origStart) {
+          await window.api.tasks.update(mt.taskId, {
+            start_time: minutesToStr(mt.previewStart),
+            end_time: minutesToStr(mt.previewEnd)
+          });
+          window.api.tasks.notifyChanged();
+        } else if (!mt.moved) {
+          const task = tasksRef.current.find((t2) => t2.id === mt.taskId);
+          if (task) onEditRef.current(task);
+        }
+      }
+      if (rt) {
+        resizeRef.current = null;
+        setResizeTask(null);
+        await window.api.tasks.update(rt.taskId, {
+          end_time: minutesToStr(rt.previewEnd)
+        });
+        window.api.tasks.notifyChanged();
+      }
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+  const prevDay = () => {
+    const d = new Date(currentDate);
+    d.setDate(d.getDate() - 1);
+    onDateChange(d);
+  };
+  const nextDay = () => {
+    const d = new Date(currentDate);
+    d.setDate(d.getDate() + 1);
+    onDateChange(d);
+  };
+  const getGridPx = (clientY) => {
+    if (!gridRef.current) return 0;
+    const rect = gridRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min(clientY - rect.top, HOURS.length * PX_PER_HOUR));
+  };
+  const handleGridMouseDown = (e) => {
+    if (e.button !== 0) return;
+    if (moveRef.current || resizeRef.current) return;
+    e.preventDefault();
+    const px = getGridPx(e.clientY);
+    setDragState({ startPx: px, endPx: px });
+  };
+  const handleGridMouseMove = (e) => {
+    if (!dragState) return;
+    setDragState((prev) => ({ ...prev, endPx: getGridPx(e.clientY) }));
+  };
+  const handleGridMouseUp = (e) => {
+    if (moveRef.current || resizeRef.current) return;
+    if (!dragState) return;
+    const { startPx, endPx } = dragState;
+    const minPx = Math.min(startPx, endPx);
+    const maxPx = Math.max(startPx, endPx);
+    setDragState(null);
+    if (maxPx - minPx < 8) {
+      onAddTask(dateStr);
+      return;
+    }
+    const startMin = snapMinutes(pxToMinutes(minPx));
+    const endMin = snapMinutes(pxToMinutes(maxPx));
+    onAddTask(dateStr, {
+      start_time: minutesToStr(startMin),
+      end_time: minutesToStr(Math.max(startMin + 15, endMin))
+    });
+  };
+  const handleGridDragOver = (e) => e.preventDefault();
+  const handleGridDrop = async (e) => {
+    e.preventDefault();
+    const taskId = parseInt(e.dataTransfer.getData("text/plain"));
+    if (!taskId) return;
+    const dropMin = snapMinutes(pxToMinutes(getGridPx(e.clientY)));
+    await window.api.tasks.update(taskId, {
+      start_time: minutesToStr(dropMin),
+      end_time: minutesToStr(dropMin + 60)
+    });
+    window.api.tasks.notifyChanged();
+  };
+  const startMove = (task, e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startMin = timeToMinutes(task.start_time);
+    const endMin = timeToMinutes(task.end_time) || startMin + 60;
+    const duration = endMin - startMin;
+    const grabMin = pxToMinutes(getGridPx(e.clientY));
+    const grabOffsetMin = Math.max(0, Math.min(duration - 15, grabMin - startMin));
+    const newTask = {
+      taskId: task.id,
+      origStart: startMin,
+      duration,
+      grabOffsetMin,
+      previewStart: startMin,
+      previewEnd: endMin,
+      startY: e.clientY,
+      moved: false
+    };
+    moveRef.current = newTask;
+    setMoveTask(newTask);
+  };
+  const startResize = (task, e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startMin = timeToMinutes(task.start_time);
+    const endMin = timeToMinutes(task.end_time) || startMin + 60;
+    const newTask = { taskId: task.id, startMin, previewEnd: endMin };
+    resizeRef.current = newTask;
+    setResizeTask(newTask);
+  };
+  const timedTasks = tasks.filter((t2) => t2.start_time);
+  const untimedTasks = tasks.filter((t2) => !t2.start_time);
+  const totalHeight = HOURS.length * PX_PER_HOUR;
+  const preview = dragState && (() => {
+    const minPx = Math.min(dragState.startPx, dragState.endPx);
+    const maxPx = Math.max(dragState.startPx, dragState.endPx);
+    const startMin = snapMinutes(pxToMinutes(minPx));
+    const endMin = snapMinutes(pxToMinutes(maxPx));
+    return {
+      top: minPx,
+      height: Math.max(maxPx - minPx, 4),
+      startStr: minutesToStr(startMin),
+      endStr: minutesToStr(Math.max(startMin + 15, endMin))
+    };
+  })();
+  const isAnyDragging = !!moveTask || !!resizeTask;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: prevDay, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "‹" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center flex items-center gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-base font-bold text-slate-800", children: dateStr }),
+        dateStr === today && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full", children: "오늘" })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: nextDay, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "›" })
+    ] }),
+    untimedTasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-4 py-2 bg-slate-50 border-b border-slate-100 flex-shrink-0", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs font-semibold text-slate-400 mb-1.5", children: [
+        "⏳ 시간 미배정 (",
+        untimedTasks.length,
+        ") · 아래로 드래그해서 시간 배정"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-1", children: untimedTasks.map((t2) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "div",
+        {
+          draggable: true,
+          onDragStart: (e) => {
+            e.dataTransfer.setData("text/plain", String(t2.id));
+            e.dataTransfer.effectAllowed = "move";
+          },
+          onClick: () => onEditTask(t2),
+          title: "드래그: 시간 배정 · 클릭: 편집",
+          className: `text-xs px-2 py-0.5 rounded-full border cursor-grab active:cursor-grabbing select-none transition-colors ${t2.is_completed ? "bg-slate-100 text-slate-400 line-through border-slate-200" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-700"}`,
+          children: t2.title.length > 14 ? t2.title.slice(0, 14) + "…" : t2.title
+        },
+        t2.id
+      )) })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto select-none", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "relative flex", style: { height: totalHeight }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-14 flex-shrink-0 relative", children: HOURS.map((h) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          className: "absolute w-full text-right pr-2 text-xs text-slate-400",
+          style: { top: (h - 6) * PX_PER_HOUR - 8 },
+          children: [
+            h,
+            ":00"
+          ]
+        },
+        h
+      )) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          ref: gridRef,
+          className: `flex-1 relative border-l border-slate-200 ${isAnyDragging ? "cursor-grabbing" : "cursor-crosshair"}`,
+          onMouseDown: handleGridMouseDown,
+          onMouseMove: handleGridMouseMove,
+          onMouseUp: handleGridMouseUp,
+          onDragOver: handleGridDragOver,
+          onDrop: handleGridDrop,
+          children: [
+            HOURS.map((h) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "absolute w-full border-t border-slate-100 pointer-events-none",
+                style: { top: (h - 6) * PX_PER_HOUR }
+              },
+              h
+            )),
+            HOURS.map((h) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "absolute w-full border-t border-dashed border-slate-50 pointer-events-none",
+                style: { top: (h - 6) * PX_PER_HOUR + PX_PER_HOUR / 2 }
+              },
+              `${h}-half`
+            )),
+            dateStr === today && nowMinutes >= 6 * 60 && nowMinutes < 24 * 60 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "absolute w-full z-20 pointer-events-none",
+                style: { top: (nowMinutes - 6 * 60) * PX_PER_MIN },
+                children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-full border-t-2 border-red-400 relative", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "absolute -left-1 -top-1.5 w-2.5 h-2.5 bg-red-400 rounded-full" }) })
+              }
+            ),
+            preview && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "absolute left-1 right-3 bg-indigo-200 border-l-4 border-indigo-400 rounded-md px-2 py-0.5 opacity-75 z-30 pointer-events-none",
+                style: { top: preview.top, height: preview.height },
+                children: /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-indigo-800 font-semibold leading-tight truncate", children: [
+                  preview.startStr,
+                  " ~ ",
+                  preview.endStr
+                ] })
+              }
+            ),
+            moveTask && moveTask.moved && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "absolute left-1 right-3 bg-indigo-300 border-l-4 border-indigo-500 rounded-md px-2 py-0.5 opacity-80 z-30 pointer-events-none",
+                style: {
+                  top: minutesToPx(moveTask.previewStart),
+                  height: Math.max(moveTask.duration * PX_PER_MIN, 22)
+                },
+                children: /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-indigo-900 font-semibold leading-tight", children: [
+                  minutesToStr(moveTask.previewStart),
+                  " ~ ",
+                  minutesToStr(moveTask.previewEnd)
+                ] })
+              }
+            ),
+            timedTasks.map((task) => {
+              const startMin = timeToMinutes(task.start_time);
+              const taskIsMoving = moveTask?.taskId === task.id;
+              const taskIsResizing = resizeTask?.taskId === task.id;
+              const endMin = taskIsResizing ? resizeTask.previewEnd : timeToMinutes(task.end_time) || startMin + 60;
+              const top = minutesToPx(startMin);
+              const height = Math.max((endMin - startMin) * PX_PER_MIN, 22);
+              if (top < 0 || top > totalHeight) return null;
+              const colorClass = task.color ? BLOCK_COLORS[task.color] : DEFAULT_BLOCK;
+              return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "div",
+                {
+                  onMouseDown: (e) => startMove(task, e),
+                  className: `absolute left-1 right-3 rounded-md border-l-4 px-2 py-0.5 overflow-hidden z-10 select-none ${colorClass} ${task.is_completed ? "opacity-50" : ""} ${taskIsMoving && moveTask.moved ? "opacity-25 pointer-events-none" : "cursor-grab active:cursor-grabbing hover:brightness-95 transition-all"}`,
+                  style: { top, height },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-semibold truncate leading-tight", children: task.title }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs opacity-60 leading-tight", children: [
+                      task.start_time,
+                      task.end_time ? ` ~ ${taskIsResizing ? minutesToStr(resizeTask.previewEnd) : task.end_time}` : ""
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "div",
+                      {
+                        onMouseDown: (e) => startResize(task, e),
+                        title: "드래그로 종료 시간 조절",
+                        className: "absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-end justify-center pb-0.5",
+                        children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-8 h-0.5 bg-current opacity-25 rounded-full" })
+                      }
+                    )
+                  ]
+                },
+                task.id
+              );
+            })
+          ]
+        }
+      )
+    ] }) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-4 py-2 bg-white border-t border-slate-100 flex items-center gap-3 flex-shrink-0", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-slate-400", children: [
+        "총 ",
+        tasks.length,
+        "개 · 완료 ",
+        tasks.filter((t2) => t2.is_completed).length,
+        "개 · 시간블록 ",
+        timedTasks.length,
+        "개"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-300", children: "· 드래그로 생성 · 블록 이동/크기조절" })
+    ] })
+  ] });
+}
+const MONTH_KR = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
+function getLastNMonths(n2) {
+  const months = [];
+  const now = /* @__PURE__ */ new Date();
+  for (let i = n2 - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return months;
+}
+function getNextNMonths(n2) {
+  const months = [];
+  const now = /* @__PURE__ */ new Date();
+  for (let i = 0; i < n2; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return months;
+}
+function ymLabel(ym) {
+  const [year, mon] = ym.split("-");
+  return `${year}년 ${MONTH_KR[parseInt(mon) - 1]}`;
+}
+function ReviewView() {
+  const [stats, setStats] = reactExports.useState([]);
+  const [goals, setGoals] = reactExports.useState({});
+  const [editingGoal, setEditingGoal] = reactExports.useState(null);
+  const [goalText, setGoalText] = reactExports.useState("");
+  const lookBackMonths = reactExports.useMemo(() => getLastNMonths(6), []);
+  const lookForwardMonths = reactExports.useMemo(() => getNextNMonths(3), []);
+  reactExports.useEffect(() => {
+    window.api.review.getStats(lookBackMonths).then(setStats);
+  }, []);
+  reactExports.useEffect(() => {
+    const allMonths = [.../* @__PURE__ */ new Set([...lookBackMonths, ...lookForwardMonths])];
+    Promise.all(allMonths.map((ym) => window.api.review.getGoal(ym).then((text) => [ym, text]))).then(
+      (entries) => setGoals(Object.fromEntries(entries))
+    );
+  }, []);
+  const handleSaveGoal = async (ym) => {
+    await window.api.review.setGoal(ym, goalText);
+    setGoals((prev) => ({ ...prev, [ym]: goalText }));
+    setEditingGoal(null);
+    setGoalText("");
+  };
+  Math.max(...stats.map((s) => s.total), 1);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-full overflow-y-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-3xl mx-auto px-6 py-5 flex flex-col gap-8", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-lg font-bold text-slate-800 mb-0.5", children: "📊 Look Back" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-400 mb-5", children: "지난 6개월간 할일 완료율을 돌아보세요" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-6 gap-4", children: stats.map((s) => {
+        const [, mon] = s.ym.split("-");
+        const barColor = s.rate >= 80 ? "bg-green-400" : s.rate >= 50 ? "bg-indigo-400" : s.rate > 0 ? "bg-slate-300" : "bg-slate-200";
+        return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center gap-1.5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-full bg-slate-100 rounded-lg h-24 flex items-end overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              className: `w-full transition-all duration-500 ${barColor}`,
+              style: { height: `${Math.max(s.rate, s.total > 0 ? 4 : 0)}%` }
+            }
+          ) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-sm font-bold ${s.rate >= 80 ? "text-green-600" : s.rate >= 50 ? "text-indigo-600" : "text-slate-400"}`, children: s.total > 0 ? `${s.rate}%` : "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-500 font-medium", children: MONTH_KR[parseInt(mon) - 1] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-slate-300", children: [
+            s.done,
+            "/",
+            s.total
+          ] }),
+          goals[s.ym] && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-full text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-slate-400 truncate", title: goals[s.ym], children: [
+            "🎯 ",
+            goals[s.ym].slice(0, 8),
+            goals[s.ym].length > 8 ? "…" : ""
+          ] }) })
+        ] }, s.ym);
+      }) })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-lg font-bold text-slate-800 mb-0.5", children: "🎯 Look Forward" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-400 mb-5", children: "앞으로 3개월의 목표를 미리 세워보세요" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col gap-3", children: lookForwardMonths.map((ym) => {
+        const isEditing = editingGoal === ym;
+        const hasGoal = !!goals[ym];
+        return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white rounded-xl p-4 border border-slate-100 shadow-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mb-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-bold text-slate-700", children: ymLabel(ym) }),
+            !isEditing && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: () => {
+                  setEditingGoal(ym);
+                  setGoalText(goals[ym] || "");
+                },
+                className: "text-xs text-indigo-500 hover:text-indigo-700 transition-colors",
+                children: hasGoal ? "편집" : "+ 목표 추가"
+              }
+            )
+          ] }),
+          isEditing ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "textarea",
+              {
+                autoFocus: true,
+                value: goalText,
+                onChange: (e) => setGoalText(e.target.value),
+                onKeyDown: (e) => {
+                  if (e.key === "Escape") setEditingGoal(null);
+                  if (e.key === "Enter" && e.ctrlKey) handleSaveGoal(ym);
+                },
+                rows: 3,
+                placeholder: "이달의 목표를 적어보세요... (Ctrl+Enter로 저장)",
+                className: "w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none"
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 justify-end", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => setEditingGoal(null),
+                  className: "text-xs text-slate-400 hover:text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50",
+                  children: "취소"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => handleSaveGoal(ym),
+                  className: "text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700",
+                  children: "저장"
+                }
+              )
+            ] })
+          ] }) : hasGoal ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-slate-600 whitespace-pre-wrap leading-relaxed", children: goals[ym] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-300 italic", children: "목표를 입력해보세요 — 쓰면 실현될 확률이 높아집니다" })
+        ] }, ym);
+      }) })
+    ] })
+  ] }) });
+}
 const COLORS = [
   { value: null, bg: "bg-slate-200", label: "없음" },
   { value: "red", bg: "bg-red-400", label: "빨강" },
@@ -7965,7 +9090,7 @@ const REPEAT_OPTIONS = [
   { value: "weekly", label: "매주" },
   { value: "monthly", label: "매월" }
 ];
-function TaskModal({ task, defaultDate, onClose }) {
+function TaskModal({ task, defaultDate, timeDefaults, onClose }) {
   const [title, setTitle] = reactExports.useState(task?.title || "");
   const [memo, setMemo] = reactExports.useState(task?.memo || "");
   const [date, setDate] = reactExports.useState(task?.date || defaultDate || getTodayStr());
@@ -7974,6 +9099,8 @@ function TaskModal({ task, defaultDate, onClose }) {
   const [remindAt, setRemindAt] = reactExports.useState(task?.remind_at || "");
   const [color, setColor] = reactExports.useState(task?.color || null);
   const [category, setCategory] = reactExports.useState(task?.category || null);
+  const [startTime, setStartTime] = reactExports.useState(task?.start_time || timeDefaults?.start_time || "");
+  const [endTime, setEndTime] = reactExports.useState(task?.end_time || timeDefaults?.end_time || "");
   const [completionNote, setCompletionNote] = reactExports.useState(task?.completion_note || "");
   const [saving, setSaving] = reactExports.useState(false);
   const [categories, setCategories] = reactExports.useState(DEFAULT_CATEGORIES);
@@ -7995,6 +9122,8 @@ function TaskModal({ task, defaultDate, onClose }) {
       repeat_type: repeatType,
       repeat_days: repeatType === "daily" ? repeatDays : null,
       remind_at: remindAt || null,
+      start_time: startTime || null,
+      end_time: endTime || null,
       color: color || null,
       category: category || null,
       ...isEdit && task.is_completed ? { completion_note: completionNote.trim() || null } : {}
@@ -8057,6 +9186,56 @@ function TaskModal({ task, defaultDate, onClose }) {
                 className: "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
               }
             )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-1 block", children: "시간 (선택 — 타임블록 뷰용)" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "time",
+                  value: startTime,
+                  onChange: (e) => setStartTime(e.target.value),
+                  className: "flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-400 text-xs flex-shrink-0", children: "~" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "time",
+                  value: endTime,
+                  onChange: (e) => setEndTime(e.target.value),
+                  className: "flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                }
+              ),
+              (startTime || endTime) && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => {
+                    setStartTime("");
+                    setEndTime("");
+                  },
+                  className: "text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 flex-shrink-0",
+                  children: "지우기"
+                }
+              )
+            ] }),
+            startTime && endTime && (() => {
+              const [sh2, sm] = startTime.split(":").map(Number);
+              const [eh2, em] = endTime.split(":").map(Number);
+              const dur = eh2 * 60 + em - (sh2 * 60 + sm);
+              return dur > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-indigo-500 mt-1", children: [
+                "⏱ ",
+                startTime,
+                " ~ ",
+                endTime,
+                " (",
+                dur,
+                "분)"
+              ] }) : null;
+            })()
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs font-medium text-gray-500 mb-2 block", children: "카테고리" }),
@@ -8227,6 +9406,24 @@ function TaskModal({ task, defaultDate, onClose }) {
 const STICKER_W = 280;
 const STICKER_H_FULL = 360;
 const STICKER_H_COLLAPSED = 46;
+const STICKER_COLOR_DOT = {
+  red: "bg-red-400",
+  orange: "bg-orange-400",
+  yellow: "bg-yellow-400",
+  green: "bg-green-400",
+  blue: "bg-blue-400",
+  purple: "bg-purple-400"
+};
+const TABS = [
+  { id: "today", label: "오늘" },
+  { id: "see", label: "회고" },
+  { id: "memo", label: "메모" }
+];
+const TAB_TITLES = {
+  today: "오늘 할 일",
+  see: "오늘의 회고",
+  memo: "메모장"
+};
 function StickerPopup() {
   const [tasks, setTasks] = reactExports.useState([]);
   const [collapsed, setCollapsed] = reactExports.useState(false);
@@ -8235,14 +9432,36 @@ function StickerPopup() {
   const [quickTitle, setQuickTitle] = reactExports.useState("");
   const [showCompleted, setShowCompleted] = reactExports.useState(true);
   const [completionNoteTask, setCompletionNoteTask] = reactExports.useState(null);
+  const [activeTab, setActiveTab] = reactExports.useState("today");
+  const [memoText, setMemoText] = reactExports.useState("");
+  const [seeGood, setSeeGood] = reactExports.useState("");
+  const [seeBad, setSeeBad] = reactExports.useState("");
+  const [seeNext, setSeeNext] = reactExports.useState("");
+  const seeRef = reactExports.useRef({ good: "", bad: "", next: "" });
   const today = getTodayStr();
   const load = reactExports.useCallback(async () => {
     const data = await window.api.tasks.getByDate(today);
     setTasks(data);
   }, [today]);
+  const loadMemo = reactExports.useCallback(async () => {
+    const text = await window.api.memo.get();
+    setMemoText(text || "");
+  }, []);
+  const loadSee = reactExports.useCallback(async () => {
+    const obj = await window.api.see.get(today);
+    const g = obj?.good || "", b = obj?.bad || "", n2 = obj?.next || "";
+    setSeeGood(g);
+    setSeeBad(b);
+    setSeeNext(n2);
+    seeRef.current = { good: g, bad: b, next: n2 };
+  }, [today]);
   reactExports.useEffect(() => {
     load();
   }, [load]);
+  reactExports.useEffect(() => {
+    if (activeTab === "memo") loadMemo();
+    if (activeTab === "see") loadSee();
+  }, [activeTab, loadMemo, loadSee]);
   reactExports.useEffect(() => {
     const handler = () => load();
     window.api.tasks.onRefresh(handler);
@@ -8269,6 +9488,27 @@ function StickerPopup() {
     setCollapsed(next);
     window.api.window.setSize(STICKER_W, next ? STICKER_H_COLLAPSED : STICKER_H_FULL);
     if (next) setShowQuickAdd(false);
+  };
+  const handlePlusClick = () => {
+    if (collapsed) {
+      setCollapsed(false);
+      setActiveTab("today");
+      window.api.window.setSize(STICKER_W, STICKER_H_FULL);
+      setShowQuickAdd(true);
+      setQuickTitle("");
+    } else if (activeTab !== "today") {
+      setActiveTab("today");
+      setShowQuickAdd(true);
+      setQuickTitle("");
+    } else {
+      setShowQuickAdd((v2) => !v2);
+      setQuickTitle("");
+    }
+  };
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    setShowQuickAdd(false);
+    setQuickTitle("");
   };
   const handleToggle = (task) => {
     if (!task.is_completed) {
@@ -8319,6 +9559,12 @@ function StickerPopup() {
       setQuickTitle("");
     }
   };
+  const handleMemoBlur = async () => {
+    await window.api.memo.set(memoText);
+  };
+  const handleSeeSave = async () => {
+    await window.api.see.set(today, seeRef.current);
+  };
   const completed = tasks.filter((t2) => t2.is_completed).length;
   const total = tasks.length;
   const allDone = total > 0 && completed === total;
@@ -8333,8 +9579,8 @@ function StickerPopup() {
         children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm", children: "📌" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs font-bold text-yellow-900", children: "오늘 할 일" }),
-            total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-yellow-800 font-medium", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs font-bold text-yellow-900", children: TAB_TITLES[activeTab] }),
+            activeTab === "today" && total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-yellow-800 font-medium", children: [
               completed,
               "/",
               total
@@ -8344,18 +9590,13 @@ function StickerPopup() {
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               "button",
               {
-                onClick: () => {
-                  if (!collapsed) {
-                    setShowQuickAdd((v2) => !v2);
-                    setQuickTitle("");
-                  }
-                },
+                onClick: handlePlusClick,
                 className: "text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 font-bold",
                 title: "할일 추가",
                 children: "+"
               }
             ),
-            !collapsed && total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+            !collapsed && activeTab === "today" && total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
               "button",
               {
                 onClick: () => setShowCompleted((v2) => !v2),
@@ -8395,6 +9636,15 @@ function StickerPopup() {
         ]
       }
     ),
+    !collapsed && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex bg-yellow-300 flex-shrink-0", children: TABS.map((tab) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: () => handleTabChange(tab.id),
+        className: `flex-1 text-xs py-1 font-medium transition-colors ${activeTab === tab.id ? "bg-yellow-50 text-yellow-900" : "text-yellow-800 hover:bg-yellow-200"}`,
+        children: tab.label
+      },
+      tab.id
+    )) }),
     !collapsed && showQuickAdd && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-yellow-100 px-2 py-1.5 flex gap-1.5 flex-shrink-0", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "input",
@@ -8418,28 +9668,98 @@ function StickerPopup() {
       )
     ] }),
     !collapsed && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { "data-scroll": true, className: "flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5", children: total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full text-gray-400 gap-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl", children: "🎉" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs", children: "오늘은 할 일이 없어요!" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "button",
+      activeTab === "today" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { "data-scroll": true, className: "flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5", children: total === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full text-gray-400 gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl", children: "🎉" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs", children: "오늘은 할 일이 없어요!" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => setShowQuickAdd(true),
+              className: "text-xs text-yellow-700 bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded-full",
+              children: "+ 할일 추가"
+            }
+          )
+        ] }) : allDone ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full gap-1", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl", children: "✅" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-green-600 font-medium", children: "모두 완료!" })
+        ] }) : displayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(StickerTask, { task, onToggle: handleToggle, onDelete: handleDelete }, task.id)) }),
+        total > 0 && !allDone && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-yellow-50 px-2 pb-2 flex-shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-1.5 bg-yellow-200 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
           {
-            onClick: () => setShowQuickAdd(true),
-            className: "text-xs text-yellow-700 bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded-full",
-            children: "+ 할일 추가"
+            className: "h-full bg-yellow-500 transition-all duration-300",
+            style: { width: `${completed / total * 100}%` }
           }
-        )
-      ] }) : allDone ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full gap-1", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl", children: "✅" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-green-600 font-medium", children: "모두 완료!" })
-      ] }) : displayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(StickerTask, { task, onToggle: handleToggle, onDelete: handleDelete }, task.id)) }),
-      total > 0 && !allDone && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-yellow-50 px-2 pb-2 flex-shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-1.5 bg-yellow-200 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "div",
+        ) }) })
+      ] }),
+      activeTab === "see" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { "data-scroll": true, className: "flex-1 bg-yellow-50 px-2 pt-2 pb-1 flex flex-col gap-1.5 overflow-y-auto", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-yellow-700 font-semibold flex-shrink-0", children: "📝 Plan → Do → See" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-0.5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-yellow-800 font-medium", children: "✅ 잘된 점" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "textarea",
+            {
+              "data-scroll": true,
+              value: seeGood,
+              onChange: (e) => {
+                setSeeGood(e.target.value);
+                seeRef.current.good = e.target.value;
+              },
+              onBlur: handleSeeSave,
+              rows: 2,
+              placeholder: "오늘 잘한 것들...",
+              className: "resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-0.5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-amber-700 font-medium", children: "😅 아쉬운 점" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "textarea",
+            {
+              "data-scroll": true,
+              value: seeBad,
+              onChange: (e) => {
+                setSeeBad(e.target.value);
+                seeRef.current.bad = e.target.value;
+              },
+              onBlur: handleSeeSave,
+              rows: 2,
+              placeholder: "오늘 아쉬웠던 것들...",
+              className: "resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-0.5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-indigo-700 font-medium", children: "🔜 내일 개선할 것" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "textarea",
+            {
+              "data-scroll": true,
+              value: seeNext,
+              onChange: (e) => {
+                setSeeNext(e.target.value);
+                seeRef.current.next = e.target.value;
+              },
+              onBlur: handleSeeSave,
+              rows: 2,
+              placeholder: "내일 개선할 점...",
+              className: "resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
+            }
+          )
+        ] })
+      ] }),
+      activeTab === "memo" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 bg-yellow-50 px-2 pt-2 pb-1 flex flex-col", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "textarea",
         {
-          className: "h-full bg-yellow-500 transition-all duration-300",
-          style: { width: `${completed / total * 100}%` }
+          "data-scroll": true,
+          value: memoText,
+          onChange: (e) => setMemoText(e.target.value),
+          onBlur: handleMemoBlur,
+          placeholder: "자유롭게 메모하세요...",
+          className: "flex-1 resize-none text-xs bg-yellow-50 outline-none text-gray-700 placeholder-gray-400 leading-relaxed"
         }
-      ) }) }),
+      ) }),
       toast && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-gray-800 text-white text-xs px-2 py-1.5 flex items-center justify-between gap-2 flex-shrink-0", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: toast.msg }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: toast.undo, className: "text-yellow-300 hover:text-yellow-200 flex-shrink-0", children: "취소" })
@@ -8458,14 +9778,6 @@ function StickerPopup() {
     )
   ] });
 }
-const STICKER_COLOR_DOT = {
-  red: "bg-red-400",
-  orange: "bg-orange-400",
-  yellow: "bg-yellow-400",
-  green: "bg-green-400",
-  blue: "bg-blue-400",
-  purple: "bg-purple-400"
-};
 function StickerCompletionNote({ task, onConfirm, onClose }) {
   const [note, setNote] = reactExports.useState("");
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "absolute inset-0 bg-black/40 flex items-center justify-center z-50 rounded-xl", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white rounded-xl shadow-xl mx-2 w-full", onClick: (e) => e.stopPropagation(), children: [
@@ -8827,7 +10139,7 @@ function ReminderToastContainer({ toasts, onDismiss }) {
   if (toasts.length === 0) return null;
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-6 right-6 flex flex-col gap-3 z-[9999] pointer-events-none", children: toasts.map((t2) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pointer-events-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Toast, { ...t2, onDismiss }) }, t2.id)) });
 }
-const VIEWS = ["일별", "주별", "월별", "기록"];
+const VIEWS = ["일별", "주별", "월별", "타임블록", "리뷰", "기록"];
 function App() {
   const isSticker = window.location.hash === "#sticker";
   if (isSticker) return /* @__PURE__ */ jsxRuntimeExports.jsx(StickerPopup, {});
@@ -8839,6 +10151,7 @@ function MainApp() {
   const [modalOpen, setModalOpen] = reactExports.useState(false);
   const [editingTask, setEditingTask] = reactExports.useState(null);
   const [defaultDate, setDefaultDate] = reactExports.useState(getTodayStr());
+  const [modalTimeDefaults, setModalTimeDefaults] = reactExports.useState(null);
   const [settingsOpen, setSettingsOpen] = reactExports.useState(false);
   const [toasts, setToasts] = reactExports.useState([]);
   const dismissToast = reactExports.useCallback((id2) => {
@@ -8855,9 +10168,10 @@ function MainApp() {
     return () => window.api.reminders.offNotify(handler);
   }, [dismissToast]);
   const isToday = getTodayStr() === getTodayStr(currentDate);
-  const openAddModal = reactExports.useCallback((date = getTodayStr()) => {
+  const openAddModal = reactExports.useCallback((date = getTodayStr(), timeDefaults = null) => {
     setEditingTask(null);
     setDefaultDate(typeof date === "string" ? date : getTodayStr());
+    setModalTimeDefaults(timeDefaults);
     setModalOpen(true);
   }, []);
   const openEditModal = reactExports.useCallback((task) => {
@@ -8955,9 +10269,20 @@ function MainApp() {
           onDateClick: (date) => {
             setCurrentDate(/* @__PURE__ */ new Date(date + "T00:00:00"));
             setView("일별");
-          }
+          },
+          onAddTask: openAddModal
         }
       ),
+      view === "타임블록" && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        TimeBlockView,
+        {
+          currentDate,
+          onDateChange: setCurrentDate,
+          onAddTask: openAddModal,
+          onEditTask: openEditModal
+        }
+      ),
+      view === "리뷰" && /* @__PURE__ */ jsxRuntimeExports.jsx(ReviewView, {}),
       view === "기록" && /* @__PURE__ */ jsxRuntimeExports.jsx(RecordsView, {})
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-5 py-1.5 bg-white border-t border-slate-100 flex gap-4", children: [
@@ -8975,6 +10300,7 @@ function MainApp() {
       {
         task: editingTask,
         defaultDate,
+        timeDefaults: modalTimeDefaults,
         onClose: () => setModalOpen(false)
       }
     ),

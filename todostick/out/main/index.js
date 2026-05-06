@@ -106,7 +106,10 @@ const db = {
   },
   getOverdueTasks(date) {
     const { tasks } = read();
-    return tasks.filter((t) => t.date < date && !t.is_completed && !t.is_template);
+    const d = new Date(date);
+    d.setDate(d.getDate() - 1);
+    const yesterday = d.toISOString().slice(0, 10);
+    return tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id);
   },
   getTodayReminders(date) {
     const { tasks } = read();
@@ -257,7 +260,10 @@ const db = {
   },
   rolloverTasks(toDate) {
     const data = read();
-    const overdue = data.tasks.filter((t) => t.date < toDate && !t.is_completed && !t.is_template);
+    const d = new Date(toDate);
+    d.setDate(d.getDate() - 1);
+    const yesterday = d.toISOString().slice(0, 10);
+    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id);
     const overdueIds = new Set(overdue.map((t) => t.id));
     const maxOrder = data.tasks.filter((t) => t.date === toDate).length;
     const newTasks = overdue.map((t, i) => ({
@@ -283,6 +289,40 @@ const db = {
     write(data);
     return newTasks;
   },
+  rolloverSelectedTasks(taskIds, toDate) {
+    const data = read();
+    const idSet = new Set(taskIds);
+    const selected = data.tasks.filter((t) => idSet.has(t.id));
+    const maxOrder = data.tasks.filter((t) => t.date === toDate).length;
+    const newTasks = selected.map((t, i) => ({
+      id: generateId(),
+      title: t.title,
+      memo: t.memo,
+      date: toDate,
+      is_completed: false,
+      repeat_type: "none",
+      order_index: maxOrder + i,
+      remind_at: null,
+      color: t.color || null,
+      category: t.category || null,
+      is_template: false,
+      parent_id: null,
+      completion_note: null,
+      completed_at: null,
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    }));
+    data.tasks = data.tasks.filter((t) => !idSet.has(t.id));
+    data.tasks.push(...newTasks);
+    write(data);
+    return newTasks;
+  },
+  // ── 플래너 풀 (M:YYYY-MM, W:YYYY-MM-DD 형식) ───────────
+  getPoolTasks(poolKey) {
+    const { tasks } = read();
+    return tasks.filter((t) => t.date === poolKey && !t.is_template).sort((a, b) => a.order_index - b.order_index || a.created_at.localeCompare(b.created_at));
+  },
+  // ── Categories ─────────────────────────────────────────
   getCategories() {
     const { settings } = read();
     return settings.categories || [];
@@ -299,6 +339,39 @@ const db = {
   setSetting(key, value) {
     const data = read();
     data.settings[key] = value;
+    write(data);
+  },
+  // ── PDS: See 회고 (날짜별) ─────────────────────────────
+  getSeeMemo(date) {
+    const { settings } = read();
+    const raw = settings[`see:${date}`];
+    if (!raw) return { good: "", bad: "", next: "" };
+    if (typeof raw === "string") return { good: raw, bad: "", next: "" };
+    return raw;
+  },
+  setSeeMemo(date, obj) {
+    const data = read();
+    data.settings[`see:${date}`] = obj;
+    write(data);
+  },
+  // ── PDS: Look Back 월별 통계 ──────────────────────────
+  getMonthlyStats(months) {
+    const { tasks } = read();
+    return months.map((ym) => {
+      const monthTasks = tasks.filter((t) => t.date.startsWith(ym) && !t.is_template);
+      const total = monthTasks.length;
+      const done = monthTasks.filter((t) => t.is_completed).length;
+      return { ym, total, done, rate: total > 0 ? Math.round(done / total * 100) : 0 };
+    });
+  },
+  // ── PDS: Look Forward 월별 목표 ───────────────────────
+  getMonthlyGoal(ym) {
+    const { settings } = read();
+    return settings[`goal:${ym}`] || "";
+  },
+  setMonthlyGoal(ym, text) {
+    const data = read();
+    data.settings[`goal:${ym}`] = text;
     write(data);
   }
 };
@@ -507,11 +580,23 @@ electron.ipcMain.handle("tasks:rollover", (_, toDate) => {
   stickerWindow?.webContents.send("tasks:refresh");
   return result;
 });
+electron.ipcMain.handle("tasks:rolloverSelected", (_, taskIds, toDate) => {
+  const result = db.rolloverSelectedTasks(taskIds, toDate);
+  mainWindow?.webContents.send("tasks:refresh");
+  stickerWindow?.webContents.send("tasks:refresh");
+  return result;
+});
 electron.ipcMain.handle("tasks:reorder", (_, date, orderedIds) => db.reorderTasks(date, orderedIds));
 electron.ipcMain.handle("tasks:deleteAndFuture", (_, id, fromDate) => db.deleteTaskAndFuture(id, fromDate));
 electron.ipcMain.handle("tasks:getCompleted", (_, filters) => db.getCompletedTasks(filters));
 electron.ipcMain.handle("categories:get", () => db.getCategories());
 electron.ipcMain.handle("categories:set", (_, categories) => db.setCategories(categories));
+electron.ipcMain.handle("tasks:getPool", (_, poolKey) => db.getPoolTasks(poolKey));
+electron.ipcMain.handle("memo:get", () => db.getSetting("memo") || "");
+electron.ipcMain.handle("memo:set", (_, text) => {
+  db.setSetting("memo", text);
+  return true;
+});
 electron.ipcMain.handle("reminder:test", () => {
   mainWindow?.webContents.send("reminder:notify", { title: "테스트 알림 🎉", remind_at: "지금" });
 });
@@ -537,6 +622,17 @@ electron.ipcMain.handle("shortcuts:get", () => {
 electron.ipcMain.handle("shortcuts:set", (_, shortcuts) => {
   db.setSetting("shortcuts", shortcuts);
   registerShortcuts();
+  return true;
+});
+electron.ipcMain.handle("see:get", (_, date) => db.getSeeMemo(date));
+electron.ipcMain.handle("see:set", (_, date, text) => {
+  db.setSeeMemo(date, text);
+  return true;
+});
+electron.ipcMain.handle("review:getStats", (_, months) => db.getMonthlyStats(months));
+electron.ipcMain.handle("review:getGoal", (_, ym) => db.getMonthlyGoal(ym));
+electron.ipcMain.handle("review:setGoal", (_, ym, text) => {
+  db.setMonthlyGoal(ym, text);
   return true;
 });
 electron.ipcMain.on("window:setSize", (event, width, height) => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { toDateStr, getTodayStr } from '../utils/date'
 import { DEFAULT_CATEGORIES, getCategoryById } from '../utils/categories'
 
@@ -269,6 +269,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
             </button>
           </div>
         )}
+        <SeeMemo dateStr={dateStr} />
       </div>
 
       {/* 반복 할일 삭제 확인 */}
@@ -460,6 +461,64 @@ function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, on
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function SeeMemo({ dateStr }) {
+  const [good, setGood] = useState('')
+  const [bad, setBad] = useState('')
+  const [next, setNext] = useState('')
+  const ref = useRef({ good: '', bad: '', next: '' })
+
+  useEffect(() => {
+    window.api.see.get(dateStr).then((obj) => {
+      const g = obj?.good || '', b = obj?.bad || '', n = obj?.next || ''
+      setGood(g); setBad(b); setNext(n)
+      ref.current = { good: g, bad: b, next: n }
+    })
+  }, [dateStr])
+
+  const save = () => window.api.see.set(dateStr, ref.current)
+
+  return (
+    <div className="mt-5 border-t border-slate-100 pt-4">
+      <p className="text-xs font-semibold text-slate-500 mb-3">📝 오늘의 회고</p>
+      <div className="flex flex-col gap-3">
+        <div>
+          <label className="text-xs font-medium text-green-600 mb-1 block">✅ 잘된 점</label>
+          <textarea
+            value={good}
+            onChange={(e) => { setGood(e.target.value); ref.current.good = e.target.value }}
+            onBlur={save}
+            rows={2}
+            placeholder="오늘 잘한 것들..."
+            className="w-full border border-green-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-400 resize-none bg-green-50"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-amber-600 mb-1 block">😅 아쉬운 점</label>
+          <textarea
+            value={bad}
+            onChange={(e) => { setBad(e.target.value); ref.current.bad = e.target.value }}
+            onBlur={save}
+            rows={2}
+            placeholder="오늘 아쉬웠던 것들..."
+            className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-400 resize-none bg-amber-50"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-indigo-600 mb-1 block">🔜 내일 개선할 것</label>
+          <textarea
+            value={next}
+            onChange={(e) => { setNext(e.target.value); ref.current.next = e.target.value }}
+            onBlur={save}
+            rows={2}
+            placeholder="내일 개선할 점..."
+            className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none bg-indigo-50"
+          />
+        </div>
+      </div>
     </div>
   )
 }
