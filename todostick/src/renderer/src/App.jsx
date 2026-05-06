@@ -29,6 +29,11 @@ function MainApp() {
   const [modalTimeDefaults, setModalTimeDefaults] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toasts, setToasts] = useState([])
+  const [envInfo, setEnvInfo] = useState({ isDev: false, dbPath: '' })
+
+  useEffect(() => {
+    window.api.env?.info().then(setEnvInfo).catch(() => {})
+  }, [])
 
   const dismissToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
@@ -83,6 +88,14 @@ function MainApp() {
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className="text-lg">📌</span>
           <span className="font-bold text-indigo-600 text-base tracking-tight">TodoStick</span>
+          {envInfo.isDev && (
+            <span
+              title={`개발 모드 — DB: ${envInfo.dbPath}`}
+              className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded border border-amber-300 cursor-help"
+            >
+              DEV
+            </span>
+          )}
         </div>
 
         {/* 날짜 네비게이션 */}

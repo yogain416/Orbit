@@ -10407,6 +10407,11 @@ function MainApp() {
   const [modalTimeDefaults, setModalTimeDefaults] = reactExports.useState(null);
   const [settingsOpen, setSettingsOpen] = reactExports.useState(false);
   const [toasts, setToasts] = reactExports.useState([]);
+  const [envInfo, setEnvInfo] = reactExports.useState({ isDev: false, dbPath: "" });
+  reactExports.useEffect(() => {
+    window.api.env?.info().then(setEnvInfo).catch(() => {
+    });
+  }, []);
   const dismissToast = reactExports.useCallback((id2) => {
     setToasts((prev) => prev.filter((t2) => t2.id !== id2));
   }, []);
@@ -10448,7 +10453,15 @@ function MainApp() {
     /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { className: "flex items-center gap-4 px-5 py-2.5 bg-white border-b border-slate-200 shadow-sm", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5 flex-shrink-0", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-lg", children: "📌" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-bold text-indigo-600 text-base tracking-tight", children: "TodoStick" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-bold text-indigo-600 text-base tracking-tight", children: "TodoStick" }),
+        envInfo.isDev && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "span",
+          {
+            title: `개발 모드 — DB: ${envInfo.dbPath}`,
+            className: "ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded border border-amber-300 cursor-help",
+            children: "DEV"
+          }
+        )
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 flex-1", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-medium text-slate-600", children: formatDate(currentDate) }),

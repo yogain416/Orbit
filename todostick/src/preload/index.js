@@ -56,5 +56,8 @@ contextBridge.exposeInMainWorld('api', {
   habits: {
     getMatrix: (fromDate, toDate) => ipcRenderer.invoke('habits:getMatrix', fromDate, toDate),
     toggle: (templateId, date) => ipcRenderer.invoke('habits:toggle', templateId, date)
+  },
+  env: {
+    info: () => ipcRenderer.invoke('env:info')
   }
 })

@@ -2,12 +2,16 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 
-const dbPath = join(app.getPath('userData'), 'todostick.json')
+// lazy: setup-paths.js의 setPath가 적용된 후 호출됨
+function dbPath() {
+  return join(app.getPath('userData'), 'todostick.json')
+}
 
 function read() {
   try {
-    if (!existsSync(dbPath)) return { tasks: [], settings: {} }
-    const data = JSON.parse(readFileSync(dbPath, 'utf-8'))
+    const path = dbPath()
+    if (!existsSync(path)) return { tasks: [], settings: {} }
+    const data = JSON.parse(readFileSync(path, 'utf-8'))
     if (!data.settings) data.settings = {}
     // lazy migration: is_habit 필드 보정
     for (const t of data.tasks) {
@@ -20,7 +24,86 @@ function read() {
 }
 
 function write(data) {
-  writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf-8')
+  writeFileSync(dbPath(), JSON.stringify(data, null, 2), 'utf-8')
+}
+
+// dev 모드에서 빈 DB일 때 시드 데이터 자동 생성
+function seedIfEmpty() {
+  const path = dbPath()
+  if (existsSync(path)) return false
+  const today = new Date().toISOString().slice(0, 10)
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  const lastWeek = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
+
+  const seed = {
+    tasks: [],
+    settings: {
+      categories: [
+        { id: 'work', label: '업무', color: 'blue' },
+        { id: 'personal', label: '개인', color: 'green' },
+        { id: 'health', label: '운동', color: 'orange' }
+      ]
+    }
+  }
+
+  const mk = (overrides) => ({
+    id: generateId(),
+    title: '', memo: '', date: today,
+    is_completed: false, repeat_type: 'none', order_index: 0,
+    remind_at: null, color: null, category: null, is_habit: false,
+    start_time: null, end_time: null,
+    is_template: false, parent_id: null,
+    completion_note: null, completed_at: null,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    ...overrides
+  })
+
+  // 일반 할 일 (오늘)
+  seed.tasks.push(mk({ title: '🧪 [DEV] 회의 준비', category: 'work', color: 'blue', start_time: '10:00', end_time: '11:00', order_index: 0 }))
+  seed.tasks.push(mk({ title: '🧪 [DEV] 점심 약속', category: 'personal', color: 'green', start_time: '12:30', end_time: '13:30', order_index: 1 }))
+  seed.tasks.push(mk({ title: '🧪 [DEV] 코드 리뷰', category: 'work', color: 'blue', order_index: 2 }))
+
+  // 어제 미완료 (이월 테스트용)
+  seed.tasks.push(mk({ title: '🧪 [DEV] 어제 못 끝낸 일', date: yesterday, order_index: 99 }))
+
+  // 매일 반복 + 습관 (스트레칭)
+  const stretchT = mk({
+    title: '🌱 [DEV] 스트레칭 10분', date: lastWeek,
+    repeat_type: 'daily', is_template: true, is_habit: true,
+    color: 'orange', category: 'health', skipped_dates: []
+  })
+  seed.tasks.push(stretchT)
+  // 지난 7일 중 5일 완료한 척
+  for (let i = 7; i >= 1; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+    if (i % 3 === 0) continue // 일부는 건너뜀(miss)
+    seed.tasks.push(mk({
+      title: stretchT.title, date: d,
+      repeat_type: 'daily', is_habit: true, color: 'orange', category: 'health',
+      parent_id: stretchT.id,
+      is_completed: true, completed_at: new Date(Date.now() - i * 86400000).toISOString()
+    }))
+  }
+
+  // 평일 반복 + 습관 (물 8잔)
+  const waterT = mk({
+    title: '🌱 [DEV] 물 8잔 마시기', date: lastWeek,
+    repeat_type: 'daily', repeat_days: [1, 2, 3, 4, 5],
+    is_template: true, is_habit: true,
+    color: 'blue', category: 'health', skipped_dates: []
+  })
+  seed.tasks.push(waterT)
+
+  // 매주 회의 (반복만, 습관 아님)
+  const meetingT = mk({
+    title: '🧪 [DEV] 주간 팀 미팅', date: lastWeek,
+    repeat_type: 'weekly', is_template: true,
+    color: 'purple', category: 'work', skipped_dates: []
+  })
+  seed.tasks.push(meetingT)
+
+  writeFileSync(path, JSON.stringify(seed, null, 2), 'utf-8')
+  return true
 }
 
 function generateId() {
@@ -87,6 +170,9 @@ function dateRange(startDate, endDate) {
 }
 
 export default {
+  seedIfEmpty,
+  getDbPath: () => dbPath(),
+
   getTasksByDate(date) {
     const data = read()
     const changed = generateRepeatInstances(data, date)

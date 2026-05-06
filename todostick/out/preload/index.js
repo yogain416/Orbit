@@ -56,5 +56,8 @@ electron.contextBridge.exposeInMainWorld("api", {
   habits: {
     getMatrix: (fromDate, toDate) => electron.ipcRenderer.invoke("habits:getMatrix", fromDate, toDate),
     toggle: (templateId, date) => electron.ipcRenderer.invoke("habits:toggle", templateId, date)
+  },
+  env: {
+    info: () => electron.ipcRenderer.invoke("env:info")
   }
 });

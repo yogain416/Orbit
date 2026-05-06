@@ -1,3 +1,5 @@
+// ⚠️ setup-paths가 가장 먼저 평가되어야 함 (database.js 평가 전에 setPath 호출 필요)
+import { isDev } from './setup-paths.js'
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, Notification, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -16,6 +18,7 @@ function createMainWindow() {
     minHeight: 500,
     show: false,
     autoHideMenuBar: true,
+    title: isDev ? 'TodoStick [DEV]' : 'TodoStick',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -109,7 +112,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(iconPath)
 
   tray = new Tray(icon)
-  tray.setToolTip('TodoStick')
+  tray.setToolTip(isDev ? 'TodoStick [DEV]' : 'TodoStick')
   updateTrayMenu()
   tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus() })
 }
@@ -175,7 +178,13 @@ function scheduleMidnightRefresh() {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.todostick')
+  electronApp.setAppUserModelId(isDev ? 'com.todostick.dev' : 'com.todostick')
+
+  // dev 모드 + 빈 DB일 때 시드 데이터 자동 생성
+  if (isDev) {
+    const seeded = db.seedIfEmpty()
+    if (seeded) console.log('[DEV] 시드 데이터 생성됨 →', db.getDbPath())
+  }
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -300,6 +309,9 @@ ipcMain.handle('see:set', (_, date, text) => { db.setSeeMemo(date, text); return
 ipcMain.handle('review:getStats', (_, months) => db.getMonthlyStats(months))
 ipcMain.handle('review:getGoal', (_, ym) => db.getMonthlyGoal(ym))
 ipcMain.handle('review:setGoal', (_, ym, text) => { db.setMonthlyGoal(ym, text); return true })
+
+// IPC: 환경 정보 (dev/prod 구분)
+ipcMain.handle('env:info', () => ({ isDev, dbPath: db.getDbPath() }))
 
 // IPC: 습관 트래커
 ipcMain.handle('habits:getMatrix', (_, fromDate, toDate) => db.getHabitMatrix(fromDate, toDate))

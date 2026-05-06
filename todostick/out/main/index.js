@@ -1,13 +1,22 @@
 "use strict";
 const electron = require("electron");
-const path = require("path");
 const utils = require("@electron-toolkit/utils");
+const path = require("path");
 const fs = require("fs");
-const dbPath = path.join(electron.app.getPath("userData"), "todostick.json");
+if (utils.is.dev) {
+  const devUserData = path.join(electron.app.getPath("appData"), "todostick-dev");
+  electron.app.setPath("userData", devUserData);
+  console.log("[DEV] userData →", devUserData);
+}
+const isDev = utils.is.dev;
+function dbPath() {
+  return path.join(electron.app.getPath("userData"), "todostick.json");
+}
 function read() {
   try {
-    if (!fs.existsSync(dbPath)) return { tasks: [], settings: {} };
-    const data = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
+    const path2 = dbPath();
+    if (!fs.existsSync(path2)) return { tasks: [], settings: {} };
+    const data = JSON.parse(fs.readFileSync(path2, "utf-8"));
     if (!data.settings) data.settings = {};
     for (const t of data.tasks) {
       if (t.is_habit === void 0) t.is_habit = false;
@@ -18,7 +27,100 @@ function read() {
   }
 }
 function write(data) {
-  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), "utf-8");
+  fs.writeFileSync(dbPath(), JSON.stringify(data, null, 2), "utf-8");
+}
+function seedIfEmpty() {
+  const path2 = dbPath();
+  if (fs.existsSync(path2)) return false;
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const lastWeek = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const seed = {
+    tasks: [],
+    settings: {
+      categories: [
+        { id: "work", label: "업무", color: "blue" },
+        { id: "personal", label: "개인", color: "green" },
+        { id: "health", label: "운동", color: "orange" }
+      ]
+    }
+  };
+  const mk = (overrides) => ({
+    id: generateId(),
+    title: "",
+    memo: "",
+    date: today,
+    is_completed: false,
+    repeat_type: "none",
+    order_index: 0,
+    remind_at: null,
+    color: null,
+    category: null,
+    is_habit: false,
+    start_time: null,
+    end_time: null,
+    is_template: false,
+    parent_id: null,
+    completion_note: null,
+    completed_at: null,
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+    ...overrides
+  });
+  seed.tasks.push(mk({ title: "🧪 [DEV] 회의 준비", category: "work", color: "blue", start_time: "10:00", end_time: "11:00", order_index: 0 }));
+  seed.tasks.push(mk({ title: "🧪 [DEV] 점심 약속", category: "personal", color: "green", start_time: "12:30", end_time: "13:30", order_index: 1 }));
+  seed.tasks.push(mk({ title: "🧪 [DEV] 코드 리뷰", category: "work", color: "blue", order_index: 2 }));
+  seed.tasks.push(mk({ title: "🧪 [DEV] 어제 못 끝낸 일", date: yesterday, order_index: 99 }));
+  const stretchT = mk({
+    title: "🌱 [DEV] 스트레칭 10분",
+    date: lastWeek,
+    repeat_type: "daily",
+    is_template: true,
+    is_habit: true,
+    color: "orange",
+    category: "health",
+    skipped_dates: []
+  });
+  seed.tasks.push(stretchT);
+  for (let i = 7; i >= 1; i--) {
+    const d = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
+    if (i % 3 === 0) continue;
+    seed.tasks.push(mk({
+      title: stretchT.title,
+      date: d,
+      repeat_type: "daily",
+      is_habit: true,
+      color: "orange",
+      category: "health",
+      parent_id: stretchT.id,
+      is_completed: true,
+      completed_at: new Date(Date.now() - i * 864e5).toISOString()
+    }));
+  }
+  const waterT = mk({
+    title: "🌱 [DEV] 물 8잔 마시기",
+    date: lastWeek,
+    repeat_type: "daily",
+    repeat_days: [1, 2, 3, 4, 5],
+    is_template: true,
+    is_habit: true,
+    color: "blue",
+    category: "health",
+    skipped_dates: []
+  });
+  seed.tasks.push(waterT);
+  const meetingT = mk({
+    title: "🧪 [DEV] 주간 팀 미팅",
+    date: lastWeek,
+    repeat_type: "weekly",
+    is_template: true,
+    color: "purple",
+    category: "work",
+    skipped_dates: []
+  });
+  seed.tasks.push(meetingT);
+  fs.writeFileSync(path2, JSON.stringify(seed, null, 2), "utf-8");
+  return true;
 }
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -80,6 +182,8 @@ function dateRange(startDate, endDate) {
   return dates;
 }
 const db = {
+  seedIfEmpty,
+  getDbPath: () => dbPath(),
   getTasksByDate(date) {
     const data = read();
     const changed = generateRepeatInstances(data, date);
@@ -484,6 +588,7 @@ function createMainWindow() {
     minHeight: 500,
     show: false,
     autoHideMenuBar: true,
+    title: isDev ? "TodoStick [DEV]" : "TodoStick",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       sandbox: false
@@ -572,7 +677,7 @@ function createTray() {
   const iconPath = path.join(__dirname, "../../resources/icon.png");
   const icon = electron.nativeImage.createFromPath(iconPath);
   tray = new electron.Tray(icon);
-  tray.setToolTip("TodoStick");
+  tray.setToolTip(isDev ? "TodoStick [DEV]" : "TodoStick");
   updateTrayMenu();
   tray.on("double-click", () => {
     mainWindow?.show();
@@ -635,7 +740,11 @@ function scheduleMidnightRefresh() {
   }, msToMidnight + 500);
 }
 electron.app.whenReady().then(() => {
-  utils.electronApp.setAppUserModelId("com.todostick");
+  utils.electronApp.setAppUserModelId(isDev ? "com.todostick.dev" : "com.todostick");
+  if (isDev) {
+    const seeded = db.seedIfEmpty();
+    if (seeded) console.log("[DEV] 시드 데이터 생성됨 →", db.getDbPath());
+  }
   electron.app.on("browser-window-created", (_, window) => {
     utils.optimizer.watchWindowShortcuts(window);
   });
@@ -732,6 +841,7 @@ electron.ipcMain.handle("review:setGoal", (_, ym, text) => {
   db.setMonthlyGoal(ym, text);
   return true;
 });
+electron.ipcMain.handle("env:info", () => ({ isDev, dbPath: db.getDbPath() }));
 electron.ipcMain.handle("habits:getMatrix", (_, fromDate, toDate) => db.getHabitMatrix(fromDate, toDate));
 electron.ipcMain.handle("habits:toggle", (_, templateId, date) => {
   const result = db.toggleHabitOnDate(templateId, date);
