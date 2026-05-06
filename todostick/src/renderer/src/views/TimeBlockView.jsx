@@ -46,6 +46,7 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
   const [dragState, setDragState] = useState(null)   // 빈 그리드 드래그 → 새 블록 생성
   const [moveTask, setMoveTask] = useState(null)      // 블록 이동 미리보기
   const [resizeTask, setResizeTask] = useState(null)  // 블록 리사이즈 미리보기
+  const [chipDropMin, setChipDropMin] = useState(null) // 미배정 칩 드래그 중 드롭 미리보기
 
   const gridRef = useRef(null)
   // ref는 setMove/setResize보다 먼저 동기적으로 갱신 → 이벤트 타이밍 문제 방지
@@ -201,16 +202,31 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
   }
 
   // 미배정 할일 칩 → 그리드에 드롭
-  const handleGridDragOver = (e) => e.preventDefault()
+  // 1시간 블록을 드롭 위치에 배치 (23:00 이후로는 시작 시간 clamp)
+  const computeChipDrop = (clientY) => {
+    const raw = snapMinutes(pxToMinutes(getGridPx(clientY)))
+    const start = Math.min(23 * 60, raw)
+    return { start, end: start + 60 }
+  }
+
+  const handleGridDragOver = (e) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const { start } = computeChipDrop(e.clientY)
+    if (start !== chipDropMin) setChipDropMin(start)
+  }
+
+  const handleGridDragLeave = () => setChipDropMin(null)
 
   const handleGridDrop = async (e) => {
     e.preventDefault()
-    const taskId = parseInt(e.dataTransfer.getData('text/plain'))
+    setChipDropMin(null)
+    const taskId = e.dataTransfer.getData('text/plain') // ID는 문자열 (Date.toString(36)+random)
     if (!taskId) return
-    const dropMin = snapMinutes(pxToMinutes(getGridPx(e.clientY)))
+    const { start, end } = computeChipDrop(e.clientY)
     await window.api.tasks.update(taskId, {
-      start_time: minutesToStr(dropMin),
-      end_time: minutesToStr(dropMin + 60)
+      start_time: minutesToStr(start),
+      end_time: minutesToStr(end)
     })
     window.api.tasks.notifyChanged()
   }
@@ -336,6 +352,7 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
             onMouseMove={handleGridMouseMove}
             onMouseUp={handleGridMouseUp}
             onDragOver={handleGridDragOver}
+            onDragLeave={handleGridDragLeave}
             onDrop={handleGridDrop}
           >
             {/* 정각선 */}
@@ -365,6 +382,18 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
                 <div className="w-full border-t-2 border-red-400 relative">
                   <span className="absolute -left-1 -top-1.5 w-2.5 h-2.5 bg-red-400 rounded-full" />
                 </div>
+              </div>
+            )}
+
+            {/* 미배정 칩 드롭 미리보기 (1시간 블록) */}
+            {chipDropMin !== null && (
+              <div
+                className="absolute left-1 right-3 bg-emerald-200 border-2 border-dashed border-emerald-500 rounded-md px-2 py-1 z-30 pointer-events-none"
+                style={{ top: minutesToPx(chipDropMin), height: 60 * PX_PER_MIN }}
+              >
+                <p className="text-xs font-bold text-emerald-800 leading-tight">
+                  📌 여기에 배치 → {minutesToStr(chipDropMin)} ~ {minutesToStr(chipDropMin + 60)}
+                </p>
               </div>
             )}
 

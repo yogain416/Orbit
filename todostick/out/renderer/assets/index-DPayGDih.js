@@ -8577,6 +8577,7 @@ function TimeBlockView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [dragState, setDragState] = reactExports.useState(null);
   const [moveTask, setMoveTask] = reactExports.useState(null);
   const [resizeTask, setResizeTask] = reactExports.useState(null);
+  const [chipDropMin, setChipDropMin] = reactExports.useState(null);
   const gridRef = reactExports.useRef(null);
   const moveRef = reactExports.useRef(null);
   const resizeRef = reactExports.useRef(null);
@@ -8719,15 +8720,27 @@ function TimeBlockView({ currentDate, onDateChange, onAddTask, onEditTask }) {
       end_time: minutesToStr(Math.max(startMin + 15, endMin))
     });
   };
-  const handleGridDragOver = (e) => e.preventDefault();
+  const computeChipDrop = (clientY) => {
+    const raw = snapMinutes(pxToMinutes(getGridPx(clientY)));
+    const start = Math.min(23 * 60, raw);
+    return { start, end: start + 60 };
+  };
+  const handleGridDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const { start } = computeChipDrop(e.clientY);
+    if (start !== chipDropMin) setChipDropMin(start);
+  };
+  const handleGridDragLeave = () => setChipDropMin(null);
   const handleGridDrop = async (e) => {
     e.preventDefault();
-    const taskId = parseInt(e.dataTransfer.getData("text/plain"));
+    setChipDropMin(null);
+    const taskId = e.dataTransfer.getData("text/plain");
     if (!taskId) return;
-    const dropMin = snapMinutes(pxToMinutes(getGridPx(e.clientY)));
+    const { start, end } = computeChipDrop(e.clientY);
     await window.api.tasks.update(taskId, {
-      start_time: minutesToStr(dropMin),
-      end_time: minutesToStr(dropMin + 60)
+      start_time: minutesToStr(start),
+      end_time: minutesToStr(end)
     });
     window.api.tasks.notifyChanged();
   };
@@ -8832,6 +8845,7 @@ function TimeBlockView({ currentDate, onDateChange, onAddTask, onEditTask }) {
           onMouseMove: handleGridMouseMove,
           onMouseUp: handleGridMouseUp,
           onDragOver: handleGridDragOver,
+          onDragLeave: handleGridDragLeave,
           onDrop: handleGridDrop,
           children: [
             HOURS.map((h) => /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -8856,6 +8870,19 @@ function TimeBlockView({ currentDate, onDateChange, onAddTask, onEditTask }) {
                 className: "absolute w-full z-20 pointer-events-none",
                 style: { top: (nowMinutes - 6 * 60) * PX_PER_MIN },
                 children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-full border-t-2 border-red-400 relative", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "absolute -left-1 -top-1.5 w-2.5 h-2.5 bg-red-400 rounded-full" }) })
+              }
+            ),
+            chipDropMin !== null && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "absolute left-1 right-3 bg-emerald-200 border-2 border-dashed border-emerald-500 rounded-md px-2 py-1 z-30 pointer-events-none",
+                style: { top: minutesToPx(chipDropMin), height: 60 * PX_PER_MIN },
+                children: /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs font-bold text-emerald-800 leading-tight", children: [
+                  "📌 여기에 배치 → ",
+                  minutesToStr(chipDropMin),
+                  " ~ ",
+                  minutesToStr(chipDropMin + 60)
+                ] })
               }
             ),
             preview && /* @__PURE__ */ jsxRuntimeExports.jsx(
