@@ -13,10 +13,11 @@ function read() {
     if (!existsSync(path)) return { tasks: [], settings: {} }
     const data = JSON.parse(readFileSync(path, 'utf-8'))
     if (!data.settings) data.settings = {}
-    // lazy migration: is_habit / is_in_progress 필드 보정
+    // lazy migration: is_habit / is_in_progress / is_starred 필드 보정
     for (const t of data.tasks) {
       if (t.is_habit === undefined) t.is_habit = false
       if (t.is_in_progress === undefined) t.is_in_progress = false
+      if (t.is_starred === undefined) t.is_starred = false
     }
     return data
   } catch {
@@ -180,7 +181,11 @@ export default {
     if (changed) write(data)
     return data.tasks
       .filter((t) => t.date === date && !t.is_template)
-      .sort((a, b) => a.order_index - b.order_index || a.created_at.localeCompare(b.created_at))
+      .sort((a, b) => {
+        const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
+        if (star) return star
+        return a.order_index - b.order_index || a.created_at.localeCompare(b.created_at)
+      })
   },
 
   getTasksByMonth(year, month) {
@@ -196,7 +201,12 @@ export default {
     if (changed) write(data)
     return data.tasks
       .filter((t) => t.date.startsWith(prefix) && !t.is_template)
-      .sort((a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index)
+      .sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date)
+        const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
+        if (star) return star
+        return a.order_index - b.order_index
+      })
   },
 
   getTasksByRange(startDate, endDate) {
@@ -208,7 +218,12 @@ export default {
     if (changed) write(data)
     return data.tasks
       .filter((t) => t.date >= startDate && t.date <= endDate && !t.is_template)
-      .sort((a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index)
+      .sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date)
+        const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
+        if (star) return star
+        return a.order_index - b.order_index
+      })
   },
 
   getOverdueTasks(date) {
@@ -318,6 +333,16 @@ export default {
     if (!task) return null
     task.is_in_progress = !!value
     if (task.is_in_progress) task.is_completed = false
+    task.updated_at = new Date().toISOString()
+    write(data)
+    return task
+  },
+
+  setStarred(id, value) {
+    const data = read()
+    const task = data.tasks.find((t) => t.id === id)
+    if (!task) return null
+    task.is_starred = !!value
     task.updated_at = new Date().toISOString()
     write(data)
     return task

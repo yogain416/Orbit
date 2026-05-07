@@ -227,6 +227,7 @@ ipcMain.handle('tasks:update', (_, id, fields) => {
 ipcMain.handle('tasks:delete', (_, id) => db.deleteTask(id))
 ipcMain.handle('tasks:toggle', (_, id, note) => db.toggleTask(id, note))
 ipcMain.handle('tasks:setInProgress', (_, id, value) => db.setInProgress(id, value))
+ipcMain.handle('tasks:setStarred', (_, id, value) => db.setStarred(id, value))
 ipcMain.handle('tasks:autoRolloverInProgress', (_, toDate) => {
   const result = db.autoRolloverInProgress(toDate)
   if (result.length > 0) {

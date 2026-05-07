@@ -1839,6 +1839,10 @@ video {
   --tw-text-opacity: 1;
   color: rgb(253 224 71 / var(--tw-text-opacity, 1));
 }
+.text-yellow-500 {
+  --tw-text-opacity: 1;
+  color: rgb(234 179 8 / var(--tw-text-opacity, 1));
+}
 .text-yellow-700 {
   --tw-text-opacity: 1;
   color: rgb(161 98 7 / var(--tw-text-opacity, 1));
@@ -1951,6 +1955,10 @@ video {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(129 140 248 / var(--tw-ring-opacity, 1));
 }
+.ring-yellow-300 {
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(253 224 71 / var(--tw-ring-opacity, 1));
+}
 .ring-yellow-400 {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(250 204 21 / var(--tw-ring-opacity, 1));
@@ -2060,6 +2068,10 @@ html, body { height: 100%; }
 .hover\:border-violet-500:hover {
   --tw-border-opacity: 1;
   border-color: rgb(139 92 246 / var(--tw-border-opacity, 1));
+}
+.hover\:border-yellow-300:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(253 224 71 / var(--tw-border-opacity, 1));
 }
 .hover\:border-yellow-400:hover {
   --tw-border-opacity: 1;
@@ -2207,6 +2219,14 @@ html, body { height: 100%; }
 .hover\:text-yellow-200:hover {
   --tw-text-opacity: 1;
   color: rgb(254 240 138 / var(--tw-text-opacity, 1));
+}
+.hover\:text-yellow-400:hover {
+  --tw-text-opacity: 1;
+  color: rgb(250 204 21 / var(--tw-text-opacity, 1));
+}
+.hover\:text-yellow-600:hover {
+  --tw-text-opacity: 1;
+  color: rgb(202 138 4 / var(--tw-text-opacity, 1));
 }
 .hover\:text-yellow-900:hover {
   --tw-text-opacity: 1;

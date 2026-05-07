@@ -7180,6 +7180,11 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
     window.api.tasks.notifyChanged();
     load();
   };
+  const handleToggleStarred = async (task) => {
+    await window.api.tasks.setStarred(task.id, !task.is_starred);
+    window.api.tasks.notifyChanged();
+    load();
+  };
   const handleDelete = (task) => {
     if (task.parent_id || task.is_template) {
       setDeleteConfirm({ task });
@@ -7362,6 +7367,7 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
             categories,
             onToggle: handleToggle,
             onToggleInProgress: handleToggleInProgress,
+            onToggleStarred: handleToggleStarred,
             onEdit: onEditTask,
             onDelete: handleDelete,
             isExpanded: expandedId === task.id,
@@ -7480,12 +7486,13 @@ const COLOR_BORDER = {
   blue: "border-l-blue-400",
   purple: "border-l-purple-400"
 };
-function TaskCard({ task, categories, onToggle, onToggleInProgress, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr();
   const isOverdue = !task.is_completed && task.date < today;
   const isRepeat = task.parent_id || task.is_template;
   const colorBorder = task.color ? COLOR_BORDER[task.color] : null;
   const catInfo = task.category ? getCategoryById(task.category, categories) : null;
+  const isStarred = !!task.is_starred && !task.is_completed;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "div",
     {
@@ -7497,7 +7504,7 @@ function TaskCard({ task, categories, onToggle, onToggleInProgress, onEdit, onDe
       },
       onDrop: () => onDrop(task.id),
       onDragEnd,
-      className: `group flex flex-col rounded-xl border transition-all ${isDragging ? "opacity-40" : ""} ${isDragOver ? "border-indigo-400 shadow-md scale-[1.01]" : ""} ${colorBorder ? `border-l-4 ${colorBorder}` : ""} ${task.is_completed ? "bg-slate-50 border-slate-100" : task.is_in_progress ? "bg-blue-50 border-blue-200 hover:border-blue-300" : isOverdue ? "bg-red-50 border-red-100 hover:border-red-200" : "bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm"}`,
+      className: `group flex flex-col rounded-xl border transition-all ${isDragging ? "opacity-40" : ""} ${isDragOver ? "border-indigo-400 shadow-md scale-[1.01]" : ""} ${colorBorder ? `border-l-4 ${colorBorder}` : ""} ${isStarred ? "ring-1 ring-yellow-300 shadow-sm" : ""} ${task.is_completed ? "bg-slate-50 border-slate-100" : task.is_in_progress ? "bg-blue-50 border-blue-200 hover:border-blue-300" : isStarred ? "bg-yellow-50 border-yellow-200 hover:border-yellow-300" : isOverdue ? "bg-red-50 border-red-100 hover:border-red-200" : "bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm"}`,
       children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3 p-3.5", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-slate-200 group-hover:text-slate-300 cursor-grab mt-0.5 text-sm leading-none select-none flex-shrink-0", children: "⠿" }),
@@ -7516,6 +7523,15 @@ function TaskCard({ task, categories, onToggle, onToggleInProgress, onEdit, onDe
               title: task.is_in_progress ? "진행중 해제" : "진행중으로 표시 — 다음날 자동 복사",
               className: `mt-0.5 w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-bold transition-all ${task.is_in_progress ? "bg-blue-500 text-white shadow-sm" : "bg-slate-100 text-slate-400 hover:bg-blue-100 hover:text-blue-500"}`,
               children: "▶"
+            }
+          ),
+          !task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => onToggleStarred(task),
+              title: task.is_starred ? "중요 해제" : "오늘 중요로 표시 — 목록 상단 고정",
+              className: `mt-0.5 w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-sm leading-none transition-all ${task.is_starred ? "text-yellow-500 hover:text-yellow-600" : "text-slate-300 hover:text-yellow-400"}`,
+              children: task.is_starred ? "★" : "☆"
             }
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0 cursor-pointer", onClick: () => (task.memo || task.completion_note) && onExpand(task.id), children: [

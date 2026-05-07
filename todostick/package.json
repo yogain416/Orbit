@@ -1,6 +1,6 @@
 {
   "name": "todostick",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "스티커처럼 붙어있는 오늘의 할 일 앱",
   "main": "out/main/index.js",
   "scripts": {

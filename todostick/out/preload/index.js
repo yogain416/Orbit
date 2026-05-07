@@ -10,6 +10,7 @@ electron.contextBridge.exposeInMainWorld("api", {
     delete: (id) => electron.ipcRenderer.invoke("tasks:delete", id),
     toggle: (id, note) => electron.ipcRenderer.invoke("tasks:toggle", id, note),
     setInProgress: (id, value) => electron.ipcRenderer.invoke("tasks:setInProgress", id, value),
+    setStarred: (id, value) => electron.ipcRenderer.invoke("tasks:setStarred", id, value),
     autoRolloverInProgress: (toDate) => electron.ipcRenderer.invoke("tasks:autoRolloverInProgress", toDate),
     getCompleted: (filters) => electron.ipcRenderer.invoke("tasks:getCompleted", filters),
     getPool: (poolKey) => electron.ipcRenderer.invoke("tasks:getPool", poolKey),

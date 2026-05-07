@@ -21,6 +21,7 @@ function read() {
     for (const t of data.tasks) {
       if (t.is_habit === void 0) t.is_habit = false;
       if (t.is_in_progress === void 0) t.is_in_progress = false;
+      if (t.is_starred === void 0) t.is_starred = false;
     }
     return data;
   } catch {
@@ -189,7 +190,11 @@ const db = {
     const data = read();
     const changed = generateRepeatInstances(data, date);
     if (changed) write(data);
-    return data.tasks.filter((t) => t.date === date && !t.is_template).sort((a, b) => a.order_index - b.order_index || a.created_at.localeCompare(b.created_at));
+    return data.tasks.filter((t) => t.date === date && !t.is_template).sort((a, b) => {
+      const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
+      if (star) return star;
+      return a.order_index - b.order_index || a.created_at.localeCompare(b.created_at);
+    });
   },
   getTasksByMonth(year, month) {
     const prefix = `${year}-${String(month).padStart(2, "0")}`;
@@ -202,7 +207,12 @@ const db = {
       if (generateRepeatInstances(data, date)) changed = true;
     }
     if (changed) write(data);
-    return data.tasks.filter((t) => t.date.startsWith(prefix) && !t.is_template).sort((a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index);
+    return data.tasks.filter((t) => t.date.startsWith(prefix) && !t.is_template).sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
+      if (star) return star;
+      return a.order_index - b.order_index;
+    });
   },
   getTasksByRange(startDate, endDate) {
     const data = read();
@@ -211,7 +221,12 @@ const db = {
       if (generateRepeatInstances(data, date)) changed = true;
     }
     if (changed) write(data);
-    return data.tasks.filter((t) => t.date >= startDate && t.date <= endDate && !t.is_template).sort((a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index);
+    return data.tasks.filter((t) => t.date >= startDate && t.date <= endDate && !t.is_template).sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
+      if (star) return star;
+      return a.order_index - b.order_index;
+    });
   },
   getOverdueTasks(date) {
     const { tasks } = read();
@@ -344,6 +359,15 @@ const db = {
     if (!task) return null;
     task.is_in_progress = !!value;
     if (task.is_in_progress) task.is_completed = false;
+    task.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+    write(data);
+    return task;
+  },
+  setStarred(id, value) {
+    const data = read();
+    const task = data.tasks.find((t) => t.id === id);
+    if (!task) return null;
+    task.is_starred = !!value;
     task.updated_at = (/* @__PURE__ */ new Date()).toISOString();
     write(data);
     return task;
@@ -855,6 +879,7 @@ electron.ipcMain.handle("tasks:update", (_, id, fields) => {
 electron.ipcMain.handle("tasks:delete", (_, id) => db.deleteTask(id));
 electron.ipcMain.handle("tasks:toggle", (_, id, note) => db.toggleTask(id, note));
 electron.ipcMain.handle("tasks:setInProgress", (_, id, value) => db.setInProgress(id, value));
+electron.ipcMain.handle("tasks:setStarred", (_, id, value) => db.setStarred(id, value));
 electron.ipcMain.handle("tasks:autoRolloverInProgress", (_, toDate) => {
   const result = db.autoRolloverInProgress(toDate);
   if (result.length > 0) {

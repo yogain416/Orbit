@@ -84,6 +84,12 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     load()
   }
 
+  const handleToggleStarred = async (task) => {
+    await window.api.tasks.setStarred(task.id, !task.is_starred)
+    window.api.tasks.notifyChanged()
+    load()
+  }
+
   const handleDelete = (task) => {
     if (task.parent_id || task.is_template) {
       setDeleteConfirm({ task })
@@ -277,6 +283,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
                 categories={categories}
                 onToggle={handleToggle}
                 onToggleInProgress={handleToggleInProgress}
+                onToggleStarred={handleToggleStarred}
                 onEdit={onEditTask}
                 onDelete={handleDelete}
                 isExpanded={expandedId === task.id}
@@ -392,12 +399,13 @@ const COLOR_BORDER = {
   purple: 'border-l-purple-400',
 }
 
-function TaskCard({ task, categories, onToggle, onToggleInProgress, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr()
   const isOverdue = !task.is_completed && task.date < today
   const isRepeat = task.parent_id || task.is_template
   const colorBorder = task.color ? COLOR_BORDER[task.color] : null
   const catInfo = task.category ? getCategoryById(task.category, categories) : null
+  const isStarred = !!task.is_starred && !task.is_completed
 
   return (
     <div
@@ -409,10 +417,14 @@ function TaskCard({ task, categories, onToggle, onToggleInProgress, onEdit, onDe
       className={`group flex flex-col rounded-xl border transition-all ${isDragging ? 'opacity-40' : ''} ${
         isDragOver ? 'border-indigo-400 shadow-md scale-[1.01]' : ''
       } ${colorBorder ? `border-l-4 ${colorBorder}` : ''} ${
+        isStarred ? 'ring-1 ring-yellow-300 shadow-sm' : ''
+      } ${
         task.is_completed
           ? 'bg-slate-50 border-slate-100'
           : task.is_in_progress
           ? 'bg-blue-50 border-blue-200 hover:border-blue-300'
+          : isStarred
+          ? 'bg-yellow-50 border-yellow-200 hover:border-yellow-300'
           : isOverdue
           ? 'bg-red-50 border-red-100 hover:border-red-200'
           : 'bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm'
@@ -454,6 +466,21 @@ function TaskCard({ task, categories, onToggle, onToggleInProgress, onEdit, onDe
             }`}
           >
             ▶
+          </button>
+        )}
+
+        {/* 우선순위(별표) 토글 — 완료된 task에는 숨김 */}
+        {!task.is_completed && (
+          <button
+            onClick={() => onToggleStarred(task)}
+            title={task.is_starred ? '중요 해제' : '오늘 중요로 표시 — 목록 상단 고정'}
+            className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-sm leading-none transition-all ${
+              task.is_starred
+                ? 'text-yellow-500 hover:text-yellow-600'
+                : 'text-slate-300 hover:text-yellow-400'
+            }`}
+          >
+            {task.is_starred ? '★' : '☆'}
           </button>
         )}
 
