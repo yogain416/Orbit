@@ -7026,6 +7026,80 @@ function categoryStyle(color, selected = false) {
     borderColor: selected ? color : "transparent"
   };
 }
+const HOLIDAYS = {
+  // ── 2025 ──────────────────────────────
+  "2025-01-01": "신정",
+  "2025-01-28": "설날 연휴",
+  "2025-01-29": "설날",
+  "2025-01-30": "설날 연휴",
+  "2025-03-01": "삼일절",
+  "2025-03-03": "대체공휴일",
+  "2025-05-05": "어린이날·부처님오신날",
+  "2025-05-06": "대체공휴일",
+  "2025-06-06": "현충일",
+  "2025-08-15": "광복절",
+  "2025-10-03": "개천절",
+  "2025-10-05": "추석 연휴",
+  "2025-10-06": "추석",
+  "2025-10-07": "추석 연휴",
+  "2025-10-08": "대체공휴일",
+  "2025-10-09": "한글날",
+  "2025-12-25": "성탄절",
+  // ── 2026 ──────────────────────────────
+  "2026-01-01": "신정",
+  "2026-02-16": "설날 연휴",
+  "2026-02-17": "설날",
+  "2026-02-18": "설날 연휴",
+  "2026-03-01": "삼일절",
+  "2026-03-02": "대체공휴일",
+  "2026-05-05": "어린이날",
+  "2026-05-24": "부처님오신날",
+  "2026-05-25": "대체공휴일",
+  "2026-06-06": "현충일",
+  "2026-08-15": "광복절",
+  "2026-08-17": "대체공휴일",
+  "2026-09-24": "추석 연휴",
+  "2026-09-25": "추석",
+  "2026-09-26": "추석 연휴",
+  "2026-09-28": "대체공휴일",
+  "2026-10-03": "개천절",
+  "2026-10-05": "대체공휴일",
+  "2026-10-09": "한글날",
+  "2026-12-25": "성탄절",
+  // ── 2027 ──────────────────────────────
+  "2027-01-01": "신정",
+  "2027-02-06": "설날 연휴",
+  "2027-02-07": "설날",
+  "2027-02-08": "설날 연휴",
+  "2027-02-09": "대체공휴일",
+  "2027-03-01": "삼일절",
+  "2027-05-05": "어린이날",
+  "2027-05-13": "부처님오신날",
+  "2027-06-06": "현충일",
+  "2027-06-07": "대체공휴일",
+  "2027-08-15": "광복절",
+  "2027-08-16": "대체공휴일",
+  "2027-09-14": "추석 연휴",
+  "2027-09-15": "추석",
+  "2027-09-16": "추석 연휴",
+  "2027-10-03": "개천절",
+  "2027-10-04": "대체공휴일",
+  "2027-10-09": "한글날",
+  "2027-10-11": "대체공휴일",
+  "2027-12-25": "성탄절"
+};
+function isKoreanHoliday(dateStr) {
+  return Object.prototype.hasOwnProperty.call(HOLIDAYS, dateStr);
+}
+function getHolidayName(dateStr) {
+  return HOLIDAYS[dateStr] || null;
+}
+function getDayColorClass(dateStr, dayOfWeek) {
+  const isHoliday = isKoreanHoliday(dateStr);
+  if (isHoliday || dayOfWeek === 0) return "red";
+  if (dayOfWeek === 6) return "blue";
+  return "normal";
+}
 function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [tasks, setTasks] = reactExports.useState([]);
   const [toast, setToast] = reactExports.useState(null);
@@ -7059,10 +7133,25 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
     setOverdueTasks(data);
   }, [dateStr, isToday]);
   reactExports.useEffect(() => {
-    load();
-    loadOverdue();
-    setRolloverDone(false);
-  }, [load, loadOverdue]);
+    let cancelled = false;
+    const run = async () => {
+      if (isToday) {
+        const created = await window.api.tasks.autoRolloverInProgress(dateStr);
+        if (cancelled) return;
+        if (created && created.length > 0) {
+          window.api.tasks.notifyChanged();
+        }
+      }
+      if (cancelled) return;
+      load();
+      loadOverdue();
+      setRolloverDone(false);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [load, loadOverdue, isToday, dateStr]);
   reactExports.useEffect(() => {
     setSelectedRolloverIds(new Set(overdueTasks.map((t2) => t2.id)));
   }, [overdueTasks]);
@@ -7083,6 +7172,11 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   };
   const doToggle = async (id2, note) => {
     await window.api.tasks.toggle(id2, note);
+    window.api.tasks.notifyChanged();
+    load();
+  };
+  const handleToggleInProgress = async (task) => {
+    await window.api.tasks.setInProgress(task.id, !task.is_in_progress);
     window.api.tasks.notifyChanged();
     load();
   };
@@ -7179,19 +7273,26 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: prevDay, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors", children: "‹" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-base font-bold text-slate-800", children: [
-          currentDate.getMonth() + 1,
-          "월 ",
-          currentDate.getDate(),
-          "일"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-sm text-slate-500", children: [
-          DAY_KO[currentDate.getDay()],
-          "요일"
-        ] }),
-        isToday && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold", children: "오늘" })
-      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center gap-2", children: (() => {
+        const dayColor = getDayColorClass(dateStr, currentDate.getDay());
+        const titleColor = dayColor === "red" ? "text-red-500" : dayColor === "blue" ? "text-blue-500" : "text-slate-800";
+        const subColor = dayColor === "red" ? "text-red-400" : dayColor === "blue" ? "text-blue-400" : "text-slate-500";
+        const holidayName = getHolidayName(dateStr);
+        return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `text-base font-bold ${titleColor}`, children: [
+            currentDate.getMonth() + 1,
+            "월 ",
+            currentDate.getDate(),
+            "일"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `text-sm ${subColor}`, children: [
+            DAY_KO[currentDate.getDay()],
+            "요일"
+          ] }),
+          holidayName && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium border border-red-100", children: holidayName }),
+          isToday && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold", children: "오늘" })
+        ] });
+      })() }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1", children: [
         total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
@@ -7260,6 +7361,7 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
             task,
             categories,
             onToggle: handleToggle,
+            onToggleInProgress: handleToggleInProgress,
             onEdit: onEditTask,
             onDelete: handleDelete,
             isExpanded: expandedId === task.id,
@@ -7378,7 +7480,7 @@ const COLOR_BORDER = {
   blue: "border-l-blue-400",
   purple: "border-l-purple-400"
 };
-function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function TaskCard({ task, categories, onToggle, onToggleInProgress, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr();
   const isOverdue = !task.is_completed && task.date < today;
   const isRepeat = task.parent_id || task.is_template;
@@ -7395,7 +7497,7 @@ function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, on
       },
       onDrop: () => onDrop(task.id),
       onDragEnd,
-      className: `group flex flex-col rounded-xl border transition-all ${isDragging ? "opacity-40" : ""} ${isDragOver ? "border-indigo-400 shadow-md scale-[1.01]" : ""} ${colorBorder ? `border-l-4 ${colorBorder}` : ""} ${task.is_completed ? "bg-slate-50 border-slate-100" : isOverdue ? "bg-red-50 border-red-100 hover:border-red-200" : "bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm"}`,
+      className: `group flex flex-col rounded-xl border transition-all ${isDragging ? "opacity-40" : ""} ${isDragOver ? "border-indigo-400 shadow-md scale-[1.01]" : ""} ${colorBorder ? `border-l-4 ${colorBorder}` : ""} ${task.is_completed ? "bg-slate-50 border-slate-100" : task.is_in_progress ? "bg-blue-50 border-blue-200 hover:border-blue-300" : isOverdue ? "bg-red-50 border-red-100 hover:border-red-200" : "bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm"}`,
       children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3 p-3.5", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-slate-200 group-hover:text-slate-300 cursor-grab mt-0.5 text-sm leading-none select-none flex-shrink-0", children: "⠿" }),
@@ -7407,9 +7509,19 @@ function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, on
               children: task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { className: "w-2.5 h-2.5", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 3, children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", d: "M5 13l4 4L19 7" }) })
             }
           ),
+          !task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => onToggleInProgress(task),
+              title: task.is_in_progress ? "진행중 해제" : "진행중으로 표시 — 다음날 자동 복사",
+              className: `mt-0.5 w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-bold transition-all ${task.is_in_progress ? "bg-blue-500 text-white shadow-sm" : "bg-slate-100 text-slate-400 hover:bg-blue-100 hover:text-blue-500"}`,
+              children: "▶"
+            }
+          ),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0 cursor-pointer", onClick: () => (task.memo || task.completion_note) && onExpand(task.id), children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: `text-sm font-medium leading-snug ${task.is_completed ? "line-through text-slate-400" : isOverdue ? "text-red-700" : "text-slate-700"}`, children: [
               task.title,
+              task.is_in_progress && !task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-blue-500 font-normal", children: "진행중" }),
               isOverdue && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-red-400 font-normal", children: "기한 초과" }),
               isRepeat && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1.5 text-xs text-indigo-400 font-normal", children: "🔁" }),
               catInfo && /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -7862,7 +7974,8 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
           const tasks = tasksByDate[dateStr] || [];
           const completed = tasks.filter((t2) => t2.is_completed).length;
           const isToday = dateStr === today;
-          const isWeekend = i >= 5;
+          const dayColor = getDayColorClass(dateStr, day.getDay());
+          const holidayName = getHolidayName(dateStr);
           const isCollapsed = !isToday && collapsedDays.includes(dateStr);
           const toggleCollapse = (e) => {
             e.stopPropagation();
@@ -7882,8 +7995,15 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
               children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `relative py-2 rounded-t-xl ${isToday ? "bg-indigo-500" : "bg-slate-50"} ${isCollapsed ? "rounded-b-xl" : ""}`, children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs font-medium ${isToday ? "text-indigo-100" : isWeekend ? "text-red-400" : "text-slate-500"}`, children: DAY_NAMES$1[i] }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-sm font-bold ${isToday ? "text-white" : "text-slate-700"}`, children: day.getDate() })
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs font-medium ${isToday ? "text-indigo-100" : dayColor === "red" ? "text-red-400" : dayColor === "blue" ? "text-blue-400" : "text-slate-500"}`, children: DAY_NAMES$1[i] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "div",
+                      {
+                        title: holidayName || void 0,
+                        className: `text-sm font-bold ${isToday ? "text-white" : dayColor === "red" ? "text-red-500" : dayColor === "blue" ? "text-blue-500" : "text-slate-700"}`,
+                        children: day.getDate()
+                      }
+                    )
                   ] }),
                   !isToday && /* @__PURE__ */ jsxRuntimeExports.jsx(
                     "button",
@@ -8042,6 +8162,17 @@ function WeekSidebarDayTask({ task, onToggle }) {
   ] });
 }
 const DAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"];
+const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
+function getWeekIdxOfDate(dateStr, weeksOfMonth) {
+  const d = /* @__PURE__ */ new Date(dateStr + "T00:00:00");
+  for (let i = 0; i < weeksOfMonth.length; i++) {
+    const monday = weeksOfMonth[i];
+    const next = new Date(monday);
+    next.setDate(monday.getDate() + 7);
+    if (d >= monday && d < next) return i;
+  }
+  return -1;
+}
 function getWeeksOfMonth(year, month) {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
@@ -8065,7 +8196,10 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask }) {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
-  const [expandedWeeks, setExpandedWeeks] = usePersistedState(`monthview:expanded-weeks:${monthKey}`, []);
+  const [collapsedSidebarWeeks, setCollapsedSidebarWeeks] = usePersistedState(
+    `monthview:sidebar-collapsed-weeks:${monthKey}`,
+    []
+  );
   const monthPoolKey = `M:${year}-${String(month + 1).padStart(2, "0")}`;
   const weeksOfMonth = getWeeksOfMonth(year, month);
   const load = () => {
@@ -8145,6 +8279,20 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask }) {
     window.api.tasks.notifyChanged();
     loadPool();
   };
+  const handleScheduledToggle = async (taskId) => {
+    await window.api.tasks.toggle(taskId, null);
+    window.api.tasks.notifyChanged();
+    load();
+  };
+  const scheduledTasksByWeek = {};
+  for (const [dateStr, tasks] of Object.entries(tasksByDate)) {
+    const wi2 = getWeekIdxOfDate(dateStr, weeksOfMonth);
+    if (wi2 < 0) continue;
+    if (!scheduledTasksByWeek[wi2]) scheduledTasksByWeek[wi2] = [];
+    for (const t2 of tasks) scheduledTasksByWeek[wi2].push(t2);
+  }
+  const sidebarTotalCount = poolTasks.length + allTasks.length;
+  const sidebarDoneCount = poolDone + allTasks.filter((t2) => t2.is_completed).length;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-full", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: prevMonth, className: "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500", children: "‹" }),
@@ -8170,10 +8318,10 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask }) {
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between px-3 py-2 border-b border-violet-100 flex-shrink-0", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs font-bold text-violet-700", children: [
             "📋 이번 달 할일",
-            poolTasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "ml-1.5 bg-violet-200 text-violet-700 rounded-full px-1.5 py-0.5 font-medium", children: [
-              poolDone,
+            sidebarTotalCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "ml-1.5 bg-violet-200 text-violet-700 rounded-full px-1.5 py-0.5 font-medium", children: [
+              sidebarDoneCount,
               "/",
-              poolTasks.length
+              sidebarTotalCount
             ] })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -8186,13 +8334,13 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask }) {
             }
           )
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto py-1", children: poolTasks.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-violet-400 text-center py-6", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto py-1", children: sidebarTotalCount === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-violet-400 text-center py-6", children: [
           "아래에서 할일을 추가하고",
           /* @__PURE__ */ jsxRuntimeExports.jsx("br", {}),
           "주차별로 배정해보세요"
         ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
           poolTasks.filter((t2) => t2._weekIdx === null).length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-2 mb-2", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-violet-400 font-semibold mb-1 px-1", children: "미배정" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] text-violet-400 font-semibold mb-1 px-1", children: "미배정 (풀)" }),
             poolTasks.filter((t2) => t2._weekIdx === null).map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
               MonthPoolTask,
               {
@@ -8206,32 +8354,91 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask }) {
             ))
           ] }),
           weeksOfMonth.map((monday, i) => {
-            const weekTasks = poolTasks.filter((t2) => t2._weekIdx === i);
-            if (weekTasks.length === 0) return null;
-            const weekDone = weekTasks.filter((t2) => t2.is_completed).length;
-            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-2 mb-2", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[10px] text-violet-500 font-semibold mb-1 px-1 flex items-center justify-between", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
-                  i + 1,
-                  "주차"
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
-                  weekDone,
-                  "/",
-                  weekTasks.length
-                ] })
-              ] }),
-              weekTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-                MonthPoolTask,
+            const weekPool = poolTasks.filter((t2) => t2._weekIdx === i);
+            const weekScheduled = (scheduledTasksByWeek[i] || []).slice().sort(
+              (a, b) => a.date.localeCompare(b.date) || a.order_index - b.order_index
+            );
+            if (weekPool.length === 0 && weekScheduled.length === 0) return null;
+            const wkAll = [...weekPool, ...weekScheduled];
+            const wkDone = wkAll.filter((t2) => t2.is_completed).length;
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            const weekRange = `${monday.getMonth() + 1}/${monday.getDate()}~${sunday.getMonth() + 1}/${sunday.getDate()}`;
+            const scheduledByDate = {};
+            for (const t2 of weekScheduled) {
+              if (!scheduledByDate[t2.date]) scheduledByDate[t2.date] = [];
+              scheduledByDate[t2.date].push(t2);
+            }
+            const isSidebarCollapsed = collapsedSidebarWeeks.includes(i);
+            const toggleSidebarWeek = () => setCollapsedSidebarWeeks(
+              (prev) => prev.includes(i) ? prev.filter((x2) => x2 !== i) : [...prev, i]
+            );
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-2 mb-3", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
                 {
-                  task,
-                  weeks: weeksOfMonth,
-                  onAssign: handleAssignToWeek,
-                  onToggle: handlePoolToggle,
-                  onDelete: handleDeletePool
-                },
-                task.id
-              ))
+                  type: "button",
+                  onClick: toggleSidebarWeek,
+                  className: "w-full text-[10px] text-violet-500 font-semibold mb-1 px-1 flex items-center justify-between hover:text-violet-700 transition-colors",
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                      i + 1,
+                      "주차 ",
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-normal text-violet-300", children: [
+                        "(",
+                        weekRange,
+                        ")"
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5", children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                        wkDone,
+                        "/",
+                        wkAll.length
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-violet-300", children: isSidebarCollapsed ? "▸" : "▾" })
+                    ] })
+                  ]
+                }
+              ),
+              !isSidebarCollapsed && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                weekPool.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  MonthPoolTask,
+                  {
+                    task,
+                    weeks: weeksOfMonth,
+                    onAssign: handleAssignToWeek,
+                    onToggle: handlePoolToggle,
+                    onDelete: handleDeletePool
+                  },
+                  task.id
+                )),
+                Object.keys(scheduledByDate).sort().map((dateStr) => {
+                  const d = /* @__PURE__ */ new Date(dateStr + "T00:00:00");
+                  const dayLabel = `${d.getMonth() + 1}/${d.getDate()} ${WEEKDAY_KO[d.getDay()]}`;
+                  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-1", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "p",
+                      {
+                        onClick: () => onDateClick(dateStr),
+                        className: "text-[9px] text-slate-400 ml-1 mb-0.5 cursor-pointer hover:text-violet-600",
+                        children: [
+                          "📅 ",
+                          dayLabel
+                        ]
+                      }
+                    ),
+                    scheduledByDate[dateStr].map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      MonthScheduledTask,
+                      {
+                        task,
+                        onToggle: handleScheduledToggle
+                      },
+                      task.id
+                    ))
+                  ] }, dateStr);
+                })
+              ] })
             ] }, i);
           })
         ] }) }),
@@ -8248,111 +8455,55 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask }) {
         ) })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col p-4 gap-1 overflow-hidden", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-7 gap-1 mb-1", children: DAY_NAMES.map((d, i) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `text-xs text-center font-semibold py-1 ${i >= 5 ? "text-red-400" : "text-slate-400"}`, children: d }, d)) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-7 gap-1 mb-1", children: DAY_NAMES.map((d, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            className: `text-xs text-center font-semibold py-1 ${i === 6 ? "text-red-400" : i === 5 ? "text-blue-400" : "text-slate-400"}`,
+            children: d
+          },
+          d
+        )) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 flex flex-col gap-1 overflow-y-auto", children: (() => {
           const weekRows = [];
           for (let i = 0; i < days.length; i += 7) weekRows.push(days.slice(i, i + 7));
-          return weekRows.map((week, wIdx) => {
-            const weekContainsToday = week.some((d) => d && toDateStr(d) === today);
-            const isExpanded = weekContainsToday || expandedWeeks.includes(wIdx);
-            const weekTasks = week.flatMap((d) => d ? tasksByDate[toDateStr(d)] || [] : []);
-            const weekDone = weekTasks.filter((t2) => t2.is_completed).length;
-            const validDays = week.filter(Boolean);
-            const firstD = validDays[0], lastD = validDays[validDays.length - 1];
-            const weekLabel = firstD && lastD ? `${firstD.getMonth() + 1}/${firstD.getDate()} ~ ${lastD.getMonth() + 1}/${lastD.getDate()}` : "";
-            const toggle = () => {
-              if (weekContainsToday) return;
-              setExpandedWeeks(
-                (prev) => prev.includes(wIdx) ? prev.filter((x2) => x2 !== wIdx) : [...prev, wIdx]
-              );
-            };
-            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "border border-slate-100 rounded-xl overflow-hidden bg-white", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "button",
-                {
-                  onClick: toggle,
-                  disabled: weekContainsToday,
-                  className: `w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${weekContainsToday ? "bg-indigo-50 text-indigo-700 cursor-default" : "bg-slate-50 hover:bg-slate-100 text-slate-600"}`,
-                  children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-bold", children: [
-                      wIdx + 1,
-                      "주차"
-                    ] }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-slate-400 font-medium", children: weekLabel }),
-                    weekContainsToday && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] bg-indigo-200 text-indigo-700 rounded-full px-1.5 py-0.5 font-medium", children: "오늘" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "ml-auto flex items-center gap-2", children: [
-                      weekTasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-slate-500", children: [
-                        weekDone,
-                        "/",
-                        weekTasks.length
-                      ] }),
-                      !weekContainsToday && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-slate-400", children: isExpanded ? "▾" : "▸" })
-                    ] })
-                  ]
-                }
-              ),
-              isExpanded && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-7 gap-1 p-1", children: week.map((day, di2) => {
-                if (!day) return /* @__PURE__ */ jsxRuntimeExports.jsx("div", {}, `e-${wIdx}-${di2}`);
-                const dateStr = toDateStr(day);
-                const tasks = tasksByDate[dateStr] || [];
-                const completed = tasks.filter((t2) => t2.is_completed).length;
-                const allDone = tasks.length > 0 && completed === tasks.length;
-                const isToday = dateStr === today;
-                const isWeekend = getDayIndex(day) >= 5;
-                return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "div",
-                  {
-                    onClick: () => onDateClick(dateStr),
-                    className: `group relative flex flex-col items-center justify-start py-2 px-0.5 rounded-lg cursor-pointer transition-all hover:bg-slate-100 min-h-[60px] ${isToday ? "ring-2 ring-indigo-400 bg-indigo-50" : ""}`,
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-semibold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? "bg-indigo-600 text-white" : isWeekend ? "text-red-400" : "text-slate-700"}`, children: day.getDate() }),
-                      tasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center gap-0.5 mt-0.5", children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-1.5 h-1.5 rounded-full ${allDone ? "bg-green-400" : "bg-amber-400"}` }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-400 leading-none", children: tasks.length })
-                      ] }),
-                      onAddTask && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                        "button",
-                        {
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            onAddTask(dateStr);
-                          },
-                          className: "absolute top-0.5 right-0.5 w-4 h-4 opacity-0 group-hover:opacity-100 flex items-center justify-center text-indigo-400 hover:text-indigo-600 text-xs font-bold transition-opacity",
-                          title: "할일 추가",
-                          children: "+"
-                        }
-                      )
-                    ]
-                  },
-                  dateStr
-                );
-              }) }),
-              !isExpanded && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-7 gap-px px-1 py-1.5 bg-slate-50/50", children: week.map((day, di2) => {
-                if (!day) return /* @__PURE__ */ jsxRuntimeExports.jsx("div", {}, `m-${wIdx}-${di2}`);
-                const dateStr = toDateStr(day);
-                const tasks = tasksByDate[dateStr] || [];
-                const completed = tasks.filter((t2) => t2.is_completed).length;
-                const allDone = tasks.length > 0 && completed === tasks.length;
-                const isToday = dateStr === today;
-                return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "div",
-                  {
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      onDateClick(dateStr);
-                    },
-                    className: `flex items-center justify-center gap-1 py-0.5 rounded cursor-pointer hover:bg-white ${isToday ? "bg-indigo-100" : ""}`,
-                    title: `${dateStr}${tasks.length ? ` · ${completed}/${tasks.length}` : ""}`,
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-[11px] font-medium ${isToday ? "text-indigo-700" : "text-slate-500"}`, children: day.getDate() }),
-                      tasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${allDone ? "bg-green-400" : "bg-amber-400"}` })
-                    ]
-                  },
-                  dateStr
-                );
-              }) })
-            ] }, wIdx);
-          });
+          return weekRows.map((week, wIdx) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "border border-slate-100 rounded-xl overflow-hidden bg-white", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-7 gap-1 p-1", children: week.map((day, di2) => {
+            if (!day) return /* @__PURE__ */ jsxRuntimeExports.jsx("div", {}, `e-${wIdx}-${di2}`);
+            const dateStr = toDateStr(day);
+            const tasks = tasksByDate[dateStr] || [];
+            const completed = tasks.filter((t2) => t2.is_completed).length;
+            const allDone = tasks.length > 0 && completed === tasks.length;
+            const isToday = dateStr === today;
+            const dayColor = getDayColorClass(dateStr, day.getDay());
+            const holidayName = getHolidayName(dateStr);
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "div",
+              {
+                onClick: () => onDateClick(dateStr),
+                title: holidayName || void 0,
+                className: `group relative flex flex-col items-center justify-start py-2 px-0.5 rounded-lg cursor-pointer transition-all hover:bg-slate-100 min-h-[60px] ${isToday ? "ring-2 ring-indigo-400 bg-indigo-50" : ""}`,
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-semibold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? "bg-indigo-600 text-white" : dayColor === "red" ? "text-red-500" : dayColor === "blue" ? "text-blue-500" : "text-slate-700"}`, children: day.getDate() }),
+                  tasks.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center gap-0.5 mt-0.5", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-1.5 h-1.5 rounded-full ${allDone ? "bg-green-400" : "bg-amber-400"}` }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-400 leading-none", children: tasks.length })
+                  ] }),
+                  onAddTask && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "button",
+                    {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        onAddTask(dateStr);
+                      },
+                      className: "absolute top-0.5 right-0.5 w-4 h-4 opacity-0 group-hover:opacity-100 flex items-center justify-center text-indigo-400 hover:text-indigo-600 text-xs font-bold transition-opacity",
+                      title: "할일 추가",
+                      children: "+"
+                    }
+                  )
+                ]
+              },
+              dateStr
+            );
+          }) }) }, wIdx));
         })() }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-2 border-t border-slate-100 flex items-center justify-center gap-6", children: totalTasks > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1.5 text-xs text-slate-500", children: [
@@ -8425,9 +8576,22 @@ function MonthPoolTask({ task, weeks, onAssign, onToggle, onDelete }) {
     }) })
   ] });
 }
-function getDayIndex(date) {
-  const day = date.getDay();
-  return day === 0 ? 6 : day - 1;
+function MonthScheduledTask({ task, onToggle }) {
+  const isRepeat = task.parent_id || task.is_template;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: () => onToggle(task.id),
+        className: `w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${task.is_completed ? "bg-green-500 border-green-500 text-white" : "border-slate-300 hover:border-violet-500"}`,
+        children: task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[8px]", children: "✓" })
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex-1 text-xs truncate min-w-0 ${task.is_completed ? "line-through text-slate-400" : "text-slate-700"}`, children: [
+      task.title,
+      isRepeat && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1 text-violet-400 text-[10px]", children: "🔁" })
+    ] })
+  ] });
 }
 function RecordsView() {
   const [tasks, setTasks] = reactExports.useState([]);

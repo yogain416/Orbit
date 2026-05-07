@@ -226,6 +226,15 @@ ipcMain.handle('tasks:update', (_, id, fields) => {
 })
 ipcMain.handle('tasks:delete', (_, id) => db.deleteTask(id))
 ipcMain.handle('tasks:toggle', (_, id, note) => db.toggleTask(id, note))
+ipcMain.handle('tasks:setInProgress', (_, id, value) => db.setInProgress(id, value))
+ipcMain.handle('tasks:autoRolloverInProgress', (_, toDate) => {
+  const result = db.autoRolloverInProgress(toDate)
+  if (result.length > 0) {
+    mainWindow?.webContents.send('tasks:refresh')
+    stickerWindow?.webContents.send('tasks:refresh')
+  }
+  return result
+})
 
 // IPC: 미완료 이월
 ipcMain.handle('tasks:getOverdue', (_, date) => db.getOverdueTasks(date))

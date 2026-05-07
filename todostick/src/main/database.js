@@ -13,9 +13,10 @@ function read() {
     if (!existsSync(path)) return { tasks: [], settings: {} }
     const data = JSON.parse(readFileSync(path, 'utf-8'))
     if (!data.settings) data.settings = {}
-    // lazy migration: is_habit 필드 보정
+    // lazy migration: is_habit / is_in_progress 필드 보정
     for (const t of data.tasks) {
       if (t.is_habit === undefined) t.is_habit = false
+      if (t.is_in_progress === undefined) t.is_in_progress = false
     }
     return data
   } catch {
@@ -274,6 +275,21 @@ export default {
     const task = data.tasks.find((t) => t.id === id)
     if (!task) return null
     Object.assign(task, fields, { updated_at: new Date().toISOString() })
+
+    // is_habit 변경은 템플릿/인스턴스 전체에 전파 (HabitView는 템플릿만 보므로 부모도 맞춰야 잔디에 반영됨)
+    if (Object.prototype.hasOwnProperty.call(fields, 'is_habit')) {
+      const templateId = task.is_template ? task.id : task.parent_id
+      if (templateId) {
+        const now = new Date().toISOString()
+        for (const t of data.tasks) {
+          if (t.id === templateId || t.parent_id === templateId) {
+            t.is_habit = !!fields.is_habit
+            t.updated_at = now
+          }
+        }
+      }
+    }
+
     write(data)
     return task
   },
@@ -287,10 +303,22 @@ export default {
     if (task.is_completed) {
       task.completed_at = new Date().toISOString()
       task.completion_note = completionNote || null
+      task.is_in_progress = false
     } else {
       task.completed_at = null
       task.completion_note = null
     }
+    write(data)
+    return task
+  },
+
+  setInProgress(id, value) {
+    const data = read()
+    const task = data.tasks.find((t) => t.id === id)
+    if (!task) return null
+    task.is_in_progress = !!value
+    if (task.is_in_progress) task.is_completed = false
+    task.updated_at = new Date().toISOString()
     write(data)
     return task
   },
@@ -361,14 +389,20 @@ export default {
     d.setDate(d.getDate() - 1)
     const yesterday = d.toISOString().slice(0, 10)
     const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id)
-    const overdueIds = new Set(overdue.map((t) => t.id))
+    // 멱등: 같은 원본을 이미 toDate에 복사한 게 있으면 스킵
+    const existingSources = new Set(
+      data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
+    )
+    const toCopy = overdue.filter((t) => !existingSources.has(t.id))
     const maxOrder = data.tasks.filter((t) => t.date === toDate).length
-    const newTasks = overdue.map((t, i) => ({
+    const now = new Date().toISOString()
+    const newTasks = toCopy.map((t, i) => ({
       id: generateId(),
       title: t.title,
       memo: t.memo,
       date: toDate,
       is_completed: false,
+      is_in_progress: !!t.is_in_progress,
       repeat_type: 'none',
       order_index: maxOrder + i,
       remind_at: null,
@@ -376,13 +410,13 @@ export default {
       category: t.category || null,
       is_template: false,
       parent_id: null,
+      rollover_source_id: t.id,
       completion_note: null,
       completed_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      created_at: now,
+      updated_at: now
     }))
-    // 원본 삭제 후 오늘 날짜로 이동
-    data.tasks = data.tasks.filter((t) => !overdueIds.has(t.id))
+    // 원본은 그대로 유지 — 어제 기록 보존
     data.tasks.push(...newTasks)
     write(data)
     return newTasks
@@ -392,17 +426,65 @@ export default {
     const data = read()
     const idSet = new Set(taskIds)
     const selected = data.tasks.filter((t) => idSet.has(t.id))
+    const existingSources = new Set(
+      data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
+    )
+    const toCopy = selected.filter((t) => !existingSources.has(t.id))
     const maxOrder = data.tasks.filter((t) => t.date === toDate).length
-    const newTasks = selected.map((t, i) => ({
+    const now = new Date().toISOString()
+    const newTasks = toCopy.map((t, i) => ({
       id: generateId(), title: t.title, memo: t.memo, date: toDate,
-      is_completed: false, repeat_type: 'none', order_index: maxOrder + i,
+      is_completed: false, is_in_progress: !!t.is_in_progress,
+      repeat_type: 'none', order_index: maxOrder + i,
       remind_at: null, color: t.color || null,
       category: t.category || null,
       is_template: false, parent_id: null,
+      rollover_source_id: t.id,
       completion_note: null, completed_at: null,
-      created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+      created_at: now, updated_at: now
     }))
-    data.tasks = data.tasks.filter((t) => !idSet.has(t.id))
+    // 원본은 그대로 유지
+    data.tasks.push(...newTasks)
+    write(data)
+    return newTasks
+  },
+
+  autoRolloverInProgress(toDate) {
+    const data = read()
+    const d = new Date(toDate)
+    d.setDate(d.getDate() - 1)
+    const yesterday = d.toISOString().slice(0, 10)
+    const candidates = data.tasks.filter(
+      (t) => t.date === yesterday && t.is_in_progress && !t.is_completed && !t.is_template && !t.parent_id
+    )
+    if (candidates.length === 0) return []
+    const existingSources = new Set(
+      data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
+    )
+    const toCopy = candidates.filter((t) => !existingSources.has(t.id))
+    if (toCopy.length === 0) return []
+    const maxOrder = data.tasks.filter((t) => t.date === toDate).length
+    const now = new Date().toISOString()
+    const newTasks = toCopy.map((t, i) => ({
+      id: generateId(),
+      title: t.title,
+      memo: t.memo,
+      date: toDate,
+      is_completed: false,
+      is_in_progress: true,
+      repeat_type: 'none',
+      order_index: maxOrder + i,
+      remind_at: null,
+      color: t.color || null,
+      category: t.category || null,
+      is_template: false,
+      parent_id: null,
+      rollover_source_id: t.id,
+      completion_note: null,
+      completed_at: null,
+      created_at: now,
+      updated_at: now
+    }))
     data.tasks.push(...newTasks)
     write(data)
     return newTasks

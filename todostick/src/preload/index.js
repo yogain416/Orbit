@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('api', {
     update: (id, fields) => ipcRenderer.invoke('tasks:update', id, fields),
     delete: (id) => ipcRenderer.invoke('tasks:delete', id),
     toggle: (id, note) => ipcRenderer.invoke('tasks:toggle', id, note),
+    setInProgress: (id, value) => ipcRenderer.invoke('tasks:setInProgress', id, value),
+    autoRolloverInProgress: (toDate) => ipcRenderer.invoke('tasks:autoRolloverInProgress', toDate),
     getCompleted: (filters) => ipcRenderer.invoke('tasks:getCompleted', filters),
     getPool: (poolKey) => ipcRenderer.invoke('tasks:getPool', poolKey),
     getOverdue: (date) => ipcRenderer.invoke('tasks:getOverdue', date),

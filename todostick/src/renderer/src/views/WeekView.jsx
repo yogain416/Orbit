@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getWeekRange, toDateStr, getTodayStr } from '../utils/date'
 import { usePersistedState } from '../utils/storage'
+import { getHolidayName, getDayColorClass } from '../utils/holidays'
 
 const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -272,7 +273,8 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
               const tasks = tasksByDate[dateStr] || []
               const completed = tasks.filter((t) => t.is_completed).length
               const isToday = dateStr === today
-              const isWeekend = i >= 5
+              const dayColor = getDayColorClass(dateStr, day.getDay())
+              const holidayName = getHolidayName(dateStr)
               // 오늘은 강제 펴짐. collapsedDays에 있고 오늘이 아닐 때만 접힘.
               const isCollapsed = !isToday && collapsedDays.includes(dateStr)
 
@@ -300,10 +302,23 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
                   {/* 날짜 헤더 — 우측 토글 버튼 */}
                   <div className={`relative py-2 rounded-t-xl ${isToday ? 'bg-indigo-500' : 'bg-slate-50'} ${isCollapsed ? 'rounded-b-xl' : ''}`}>
                     <div className="text-center">
-                      <div className={`text-xs font-medium ${isToday ? 'text-indigo-100' : isWeekend ? 'text-red-400' : 'text-slate-500'}`}>
+                      <div className={`text-xs font-medium ${
+                        isToday ? 'text-indigo-100' :
+                        dayColor === 'red' ? 'text-red-400' :
+                        dayColor === 'blue' ? 'text-blue-400' :
+                        'text-slate-500'
+                      }`}>
                         {DAY_NAMES[i]}
                       </div>
-                      <div className={`text-sm font-bold ${isToday ? 'text-white' : 'text-slate-700'}`}>
+                      <div
+                        title={holidayName || undefined}
+                        className={`text-sm font-bold ${
+                          isToday ? 'text-white' :
+                          dayColor === 'red' ? 'text-red-500' :
+                          dayColor === 'blue' ? 'text-blue-500' :
+                          'text-slate-700'
+                        }`}
+                      >
                         {day.getDate()}
                       </div>
                     </div>

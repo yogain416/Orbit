@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toDateStr, getTodayStr } from '../utils/date'
 import { DEFAULT_CATEGORIES, getCategoryById } from '../utils/categories'
+import { getHolidayName, getDayColorClass } from '../utils/holidays'
 
 export default function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [tasks, setTasks] = useState([])
@@ -35,10 +36,23 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
   }, [dateStr, isToday])
 
   useEffect(() => {
-    load()
-    loadOverdue()
-    setRolloverDone(false)
-  }, [load, loadOverdue])
+    let cancelled = false
+    const run = async () => {
+      if (isToday) {
+        const created = await window.api.tasks.autoRolloverInProgress(dateStr)
+        if (cancelled) return
+        if (created && created.length > 0) {
+          window.api.tasks.notifyChanged()
+        }
+      }
+      if (cancelled) return
+      load()
+      loadOverdue()
+      setRolloverDone(false)
+    }
+    run()
+    return () => { cancelled = true }
+  }, [load, loadOverdue, isToday, dateStr])
 
   useEffect(() => {
     setSelectedRolloverIds(new Set(overdueTasks.map((t) => t.id)))
@@ -60,6 +74,12 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
 
   const doToggle = async (id, note) => {
     await window.api.tasks.toggle(id, note)
+    window.api.tasks.notifyChanged()
+    load()
+  }
+
+  const handleToggleInProgress = async (task) => {
+    await window.api.tasks.setInProgress(task.id, !task.is_in_progress)
     window.api.tasks.notifyChanged()
     load()
   }
@@ -156,13 +176,28 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
       <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100">
         <button onClick={prevDay} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">‹</button>
         <div className="flex items-center gap-2">
-          <span className="text-base font-bold text-slate-800">
-            {currentDate.getMonth() + 1}월 {currentDate.getDate()}일
-          </span>
-          <span className="text-sm text-slate-500">{DAY_KO[currentDate.getDay()]}요일</span>
-          {isToday && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold">오늘</span>
-          )}
+          {(() => {
+            const dayColor = getDayColorClass(dateStr, currentDate.getDay())
+            const titleColor = dayColor === 'red' ? 'text-red-500' : dayColor === 'blue' ? 'text-blue-500' : 'text-slate-800'
+            const subColor = dayColor === 'red' ? 'text-red-400' : dayColor === 'blue' ? 'text-blue-400' : 'text-slate-500'
+            const holidayName = getHolidayName(dateStr)
+            return (
+              <>
+                <span className={`text-base font-bold ${titleColor}`}>
+                  {currentDate.getMonth() + 1}월 {currentDate.getDate()}일
+                </span>
+                <span className={`text-sm ${subColor}`}>{DAY_KO[currentDate.getDay()]}요일</span>
+                {holidayName && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium border border-red-100">
+                    {holidayName}
+                  </span>
+                )}
+                {isToday && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-semibold">오늘</span>
+                )}
+              </>
+            )
+          })()}
         </div>
         <div className="flex items-center gap-1">
           {total > 0 && (
@@ -241,6 +276,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
                 task={task}
                 categories={categories}
                 onToggle={handleToggle}
+                onToggleInProgress={handleToggleInProgress}
                 onEdit={onEditTask}
                 onDelete={handleDelete}
                 isExpanded={expandedId === task.id}
@@ -356,7 +392,7 @@ const COLOR_BORDER = {
   purple: 'border-l-purple-400',
 }
 
-function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function TaskCard({ task, categories, onToggle, onToggleInProgress, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr()
   const isOverdue = !task.is_completed && task.date < today
   const isRepeat = task.parent_id || task.is_template
@@ -375,6 +411,8 @@ function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, on
       } ${colorBorder ? `border-l-4 ${colorBorder}` : ''} ${
         task.is_completed
           ? 'bg-slate-50 border-slate-100'
+          : task.is_in_progress
+          ? 'bg-blue-50 border-blue-200 hover:border-blue-300'
           : isOverdue
           ? 'bg-red-50 border-red-100 hover:border-red-200'
           : 'bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm'
@@ -404,12 +442,30 @@ function TaskCard({ task, categories, onToggle, onEdit, onDelete, isExpanded, on
           )}
         </button>
 
+        {/* 진행중 토글 (완료된 task에는 숨김) */}
+        {!task.is_completed && (
+          <button
+            onClick={() => onToggleInProgress(task)}
+            title={task.is_in_progress ? '진행중 해제' : '진행중으로 표시 — 다음날 자동 복사'}
+            className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-bold transition-all ${
+              task.is_in_progress
+                ? 'bg-blue-500 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-400 hover:bg-blue-100 hover:text-blue-500'
+            }`}
+          >
+            ▶
+          </button>
+        )}
+
         {/* 내용 (클릭 시 메모 펼치기) */}
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => (task.memo || task.completion_note) && onExpand(task.id)}>
           <p className={`text-sm font-medium leading-snug ${
             task.is_completed ? 'line-through text-slate-400' : isOverdue ? 'text-red-700' : 'text-slate-700'
           }`}>
             {task.title}
+            {task.is_in_progress && !task.is_completed && (
+              <span className="ml-1.5 text-xs text-blue-500 font-normal">진행중</span>
+            )}
             {isOverdue && <span className="ml-1.5 text-xs text-red-400 font-normal">기한 초과</span>}
             {isRepeat && <span className="ml-1.5 text-xs text-indigo-400 font-normal">🔁</span>}
             {catInfo && (
