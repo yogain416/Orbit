@@ -180,7 +180,10 @@ export default {
     const changed = generateRepeatInstances(data, date)
     if (changed) write(data)
     return data.tasks
-      .filter((t) => t.date === date && !t.is_template)
+      .filter((t) => !t.is_template && (
+        t.date === date ||
+        (t.end_date && t.date <= date && date <= t.end_date)
+      ))
       .sort((a, b) => {
         const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
         if (star) return star
@@ -200,7 +203,10 @@ export default {
     }
     if (changed) write(data)
     return data.tasks
-      .filter((t) => t.date.startsWith(prefix) && !t.is_template)
+      .filter((t) => !t.is_template && (
+        t.date.startsWith(prefix) ||
+        (t.end_date && t.date <= endDate && t.end_date >= startDate)
+      ))
       .sort((a, b) => {
         if (a.date !== b.date) return a.date.localeCompare(b.date)
         const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
@@ -217,7 +223,10 @@ export default {
     }
     if (changed) write(data)
     return data.tasks
-      .filter((t) => t.date >= startDate && t.date <= endDate && !t.is_template)
+      .filter((t) => !t.is_template && (
+        (t.date >= startDate && t.date <= endDate) ||
+        (t.end_date && t.date <= endDate && t.end_date >= startDate)
+      ))
       .sort((a, b) => {
         if (a.date !== b.date) return a.date.localeCompare(b.date)
         const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
@@ -231,7 +240,14 @@ export default {
     const d = new Date(date)
     d.setDate(d.getDate() - 1)
     const yesterday = d.toISOString().slice(0, 10)
-    return tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id)
+    // 이미 오늘로 이월된 원본은 제외 (rolloverTasks가 원본 보존하므로 멱등 보장 필요)
+    const rolledSources = new Set(
+      tasks.filter((t) => t.date === date && t.rollover_source_id).map((t) => t.rollover_source_id)
+    )
+    // 다일 이벤트(end_date 보유)는 이미 오늘 셀에 자연 표시되므로 이월 대상 아님
+    return tasks.filter((t) =>
+      t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date && !rolledSources.has(t.id)
+    )
   },
 
   getTodayReminders(date) {
@@ -239,13 +255,16 @@ export default {
     return tasks.filter((t) => t.date === date && t.remind_at && !t.is_template)
   },
 
-  createTask({ title, memo = '', date, repeat_type = 'none', repeat_days = null, order_index = 0, remind_at = null, color = null, category = null, is_habit = false, start_time = null, end_time = null }) {
+  createTask({ title, memo = '', date, end_date = null, repeat_type = 'none', repeat_days = null, order_index = 0, remind_at = null, color = null, category = null, is_habit = false, start_time = null, end_time = null }) {
     const data = read()
     // 습관은 반복 일정일 때만 의미가 있음
     const habit = repeat_type !== 'none' && !!is_habit
+    // 다일 이벤트는 비반복 + 일반 날짜(M:/W: 풀 키 아님)일 때만 의미 있음
+    const isPoolKey = typeof date === 'string' && (date.startsWith('M:') || date.startsWith('W:'))
+    const resolvedEndDate = (repeat_type === 'none' && !isPoolKey && end_date && end_date > date) ? end_date : null
     if (repeat_type === 'none') {
       const task = {
-        id: generateId(), title, memo, date,
+        id: generateId(), title, memo, date, end_date: resolvedEndDate,
         is_completed: false, repeat_type, order_index,
         remind_at, color, category, is_habit: false,
         start_time, end_time,
@@ -413,7 +432,8 @@ export default {
     const d = new Date(toDate)
     d.setDate(d.getDate() - 1)
     const yesterday = d.toISOString().slice(0, 10)
-    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id)
+    // 다일 이벤트는 이월 대상에서 제외 (이미 오늘 표시됨)
+    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date)
     // 멱등: 같은 원본을 이미 toDate에 복사한 게 있으면 스킵
     const existingSources = new Set(
       data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
@@ -450,7 +470,8 @@ export default {
   rolloverSelectedTasks(taskIds, toDate) {
     const data = read()
     const idSet = new Set(taskIds)
-    const selected = data.tasks.filter((t) => idSet.has(t.id))
+    // 다일 이벤트는 이미 오늘 표시되므로 선택 들어와도 복사 안 함 (방어)
+    const selected = data.tasks.filter((t) => idSet.has(t.id) && !t.end_date)
     const existingSources = new Set(
       data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
     )
@@ -479,8 +500,9 @@ export default {
     const d = new Date(toDate)
     d.setDate(d.getDate() - 1)
     const yesterday = d.toISOString().slice(0, 10)
+    // 다일 이벤트는 자동 복사 대상 아님 (이미 오늘 셀에 자연 표시되므로 이중 표시 방지)
     const candidates = data.tasks.filter(
-      (t) => t.date === yesterday && t.is_in_progress && !t.is_completed && !t.is_template && !t.parent_id
+      (t) => t.date === yesterday && t.is_in_progress && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date
     )
     if (candidates.length === 0) return []
     const existingSources = new Set(

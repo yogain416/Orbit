@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react'
 import { getWeekRange, toDateStr, getTodayStr } from '../utils/date'
 import { usePersistedState } from '../utils/storage'
 import { getHolidayName, getDayColorClass } from '../utils/holidays'
+import { DEFAULT_CATEGORIES } from '../utils/categories'
+import MorePopover, { sortChips } from '../components/MorePopover'
 
 const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일']
+const WEEK_MAX_CHIPS = 5
 
 const TASK_COLOR_LEFT = {
   red: 'border-red-400',
@@ -23,7 +26,7 @@ const HABIT_COLOR_DOT = {
   purple: 'bg-purple-400',
 }
 
-export default function WeekView({ currentDate, onDateChange, onDateClick, onAddTask }) {
+export default function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTask }) {
   const [tasksByDate, setTasksByDate] = useState({})
   const [poolTasks, setPoolTasks] = useState([])
   const [poolAddTitle, setPoolAddTitle] = useState('')
@@ -31,9 +34,15 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
   const [dragInfo, setDragInfo] = useState(null)
   const [dragOverDate, setDragOverDate] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+  const [popoverDate, setPopoverDate] = useState(null)
   // 접힌 요일 카드 — 날짜 문자열 array. 오늘은 자동 제외됨.
   const [collapsedDays, setCollapsedDays] = usePersistedState('weekview:collapsed-days', [])
   const { start, end, monday } = getWeekRange(currentDate)
+
+  useEffect(() => {
+    window.api.categories.get().then((cats) => { if (cats?.length) setCategories(cats) })
+  }, [])
 
   const weekPoolKey = `W:${start}`
 
@@ -352,25 +361,36 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
                   ) : (
                     <>
                       {/* 할일 미리보기 */}
-                      <div className="flex-1 overflow-hidden p-1.5 flex flex-col gap-0.5">
-                        {tasks.slice(0, 5).map((task) => (
-                          <div
-                            key={task.id}
-                            draggable
-                            onDragStart={(e) => handleTaskDragStart(e, task.id, dateStr)}
-                            onClick={(e) => e.stopPropagation()}
-                            className={`text-xs px-1.5 py-0.5 rounded truncate border-l-2 cursor-grab active:opacity-50 ${
-                              task.is_completed
-                                ? 'bg-slate-100 text-slate-400 line-through border-slate-300'
-                                : `bg-indigo-50 text-indigo-700 ${task.color ? TASK_COLOR_LEFT[task.color] : 'border-transparent'}`
-                            }`}
-                            title={task.title}
-                          >
-                            {task.title.length > 7 ? task.title.slice(0, 7) + '…' : task.title}
+                      <div className="flex-1 p-1.5 flex flex-col gap-0.5">
+                        {sortChips(tasks).slice(0, WEEK_MAX_CHIPS).map((task) => (
+                          <div key={task.id} className="relative group/chip">
+                            <div
+                              draggable
+                              onDragStart={(e) => handleTaskDragStart(e, task.id, dateStr)}
+                              onClick={(e) => { e.stopPropagation(); onEditTask && onEditTask(task) }}
+                              className={`text-xs px-1.5 py-0.5 rounded truncate border-l-2 cursor-pointer hover:bg-indigo-100 active:opacity-50 ${
+                                task.is_completed
+                                  ? 'bg-slate-100 text-slate-400 line-through border-slate-300'
+                                  : `bg-indigo-50 text-indigo-700 ${task.color ? TASK_COLOR_LEFT[task.color] : 'border-transparent'}`
+                              }`}
+                              title={task.title}
+                            >
+                              {task.title.length > 7 ? task.title.slice(0, 7) + '…' : task.title}
+                            </div>
+                            {/* 호버 즉시 표시 풀 제목 */}
+                            <span className="invisible group-hover/chip:visible absolute z-50 left-0 -top-7 bg-slate-800 text-white text-[11px] rounded px-2 py-1 whitespace-nowrap shadow-lg pointer-events-none max-w-[280px] truncate">
+                              {task.title}
+                            </span>
                           </div>
                         ))}
-                        {tasks.length > 5 && (
-                          <div className="text-xs text-slate-400 text-center">+{tasks.length - 5}</div>
+                        {tasks.length > WEEK_MAX_CHIPS && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setPopoverDate(dateStr) }}
+                            title={`이 날의 일정 ${tasks.length}개 모두 보기`}
+                            className="text-[10px] text-indigo-600 hover:text-white hover:bg-indigo-500 bg-indigo-50 border border-indigo-200 rounded text-center px-1.5 py-0.5 mt-0.5 font-semibold transition-colors"
+                          >
+                            ▸ +{tasks.length - WEEK_MAX_CHIPS}개 더
+                          </button>
                         )}
                       </div>
 
@@ -389,6 +409,18 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
             })}
 
           </div>
+
+          {/* +N개 더 팝오버 */}
+          {popoverDate && (
+            <MorePopover
+              date={popoverDate}
+              tasks={tasksByDate[popoverDate] || []}
+              categories={categories}
+              onClose={() => setPopoverDate(null)}
+              onEditTask={onEditTask}
+              onAddTask={onAddTask}
+            />
+          )}
 
           {/* 습관 트래커 */}
           {habits.length > 0 && (

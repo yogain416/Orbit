@@ -161,6 +161,7 @@ function MainApp() {
             onDateChange={setCurrentDate}
             onDateClick={(date) => { setCurrentDate(new Date(date + 'T00:00:00')); setView('일별') }}
             onAddTask={openAddModal}
+            onEditTask={openEditModal}
           />
         )}
         {view === '월별' && (
@@ -169,6 +170,7 @@ function MainApp() {
             onDateChange={setCurrentDate}
             onDateClick={(date) => { setCurrentDate(new Date(date + 'T00:00:00')); setView('일별') }}
             onAddTask={openAddModal}
+            onEditTask={openEditModal}
           />
         )}
         {view === '타임블록' && (

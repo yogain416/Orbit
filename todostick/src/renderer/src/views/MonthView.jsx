@@ -2,9 +2,15 @@ import { useState, useEffect } from 'react'
 import { getDaysInMonth, toDateStr, getTodayStr } from '../utils/date'
 import { usePersistedState } from '../utils/storage'
 import { getHolidayName, getDayColorClass } from '../utils/holidays'
+import { DEFAULT_CATEGORIES } from '../utils/categories'
+import MorePopover, { TaskChip, sortChips } from '../components/MorePopover'
 
 const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일']
 const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토']
+
+// GCal 모드 활성화에 필요한 최소 폭 (사이드바 닫혀도 너무 좁으면 compact로 fallback)
+const GCAL_MIN_WIDTH = 800
+const GCAL_MAX_CHIPS = 4
 
 function getWeekIdxOfDate(dateStr, weeksOfMonth) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -34,13 +40,29 @@ function getWeeksOfMonth(year, month) {
   return weeks
 }
 
-export default function MonthView({ currentDate, onDateChange, onDateClick, onAddTask }) {
+export default function MonthView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTask }) {
   const [tasksByDate, setTasksByDate] = useState({})
   const [poolTasks, setPoolTasks] = useState([])
   const [poolAddTitle, setPoolAddTitle] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const [popoverDate, setPopoverDate] = useState(null)
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
+
+  useEffect(() => {
+    window.api.categories.get().then((cats) => { if (cats?.length) setCategories(cats) })
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // GCal 모드: 사이드바 닫혔고 충분히 넓을 때만
+  const gcalMode = !sidebarOpen && windowWidth >= GCAL_MIN_WIDTH
 
   const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
   // 사이드바 주차 그룹 접힘 상태 (week index 배열). 기본은 모두 펴짐.
@@ -55,7 +77,22 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
   const load = () => {
     window.api.tasks.getByMonth(year, month + 1).then((tasks) => {
       const map = {}
-      tasks.forEach((t) => { if (!map[t.date]) map[t.date] = []; map[t.date].push(t) })
+      tasks.forEach((t) => {
+        // 다일 이벤트는 시작~종료 모든 날짜 셀에 매핑 (셀 사이 띠 연결)
+        if (t.end_date && t.end_date > t.date) {
+          const cur = new Date(t.date + 'T00:00:00')
+          const end = new Date(t.end_date + 'T00:00:00')
+          while (cur <= end) {
+            const ds = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`
+            if (!map[ds]) map[ds] = []
+            map[ds].push(t)
+            cur.setDate(cur.getDate() + 1)
+          }
+        } else {
+          if (!map[t.date]) map[t.date] = []
+          map[t.date].push(t)
+        }
+      })
       setTasksByDate(map)
     })
   }
@@ -341,7 +378,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
               const weekRows = []
               for (let i = 0; i < days.length; i += 7) weekRows.push(days.slice(i, i + 7))
               return weekRows.map((week, wIdx) => (
-                <div key={wIdx} className="border border-slate-100 rounded-xl overflow-hidden bg-white">
+                <div key={wIdx} className={`border border-slate-100 rounded-xl overflow-hidden bg-white ${gcalMode ? 'flex-shrink-0' : ''}`}>
                   <div className="grid grid-cols-7 gap-1 p-1">
                     {week.map((day, di) => {
                       if (!day) return <div key={`e-${wIdx}-${di}`} />
@@ -353,42 +390,97 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                       const dayColor = getDayColorClass(dateStr, day.getDay())
                       const holidayName = getHolidayName(dateStr)
 
+                      const sortedTasks = gcalMode ? sortChips(tasks) : tasks
+                      const hasStarred = gcalMode && sortedTasks.some((t) => t.is_starred && !t.is_completed)
+
+                      const cellTitle = gcalMode && tasks.length > 0
+                        ? `${holidayName ? holidayName + ' · ' : ''}일정 ${tasks.length}개 — 클릭해서 자세히 보기`
+                        : (holidayName || (gcalMode ? '클릭해서 일정 추가/보기' : undefined))
                       return (
                         <div
                           key={dateStr}
                           onClick={() => onDateClick(dateStr)}
-                          title={holidayName || undefined}
-                          className={`group relative flex flex-col items-center justify-start py-2 px-0.5 rounded-lg cursor-pointer transition-all hover:bg-slate-100 min-h-[60px] ${
-                            isToday ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''
+                          title={cellTitle}
+                          className={`group relative flex flex-col ${gcalMode ? 'items-stretch px-1 pt-1.5 pb-1' : 'items-center justify-start py-2 px-0.5'} rounded-lg cursor-pointer transition-all hover:bg-slate-100 ${gcalMode ? 'min-h-[140px]' : 'min-h-[60px]'} ${
+                            isToday ? 'ring-2 ring-indigo-400 bg-indigo-50' : hasStarred ? 'bg-yellow-50/60' : ''
                           }`}
                         >
-                          <span className={`text-xs font-semibold w-7 h-7 flex items-center justify-center rounded-full ${
-                            isToday
-                              ? 'bg-indigo-600 text-white'
-                              : dayColor === 'red'
-                              ? 'text-red-500'
-                              : dayColor === 'blue'
-                              ? 'text-blue-500'
-                              : 'text-slate-700'
-                          }`}>
-                            {day.getDate()}
-                          </span>
+                          {/* 날짜 헤더 */}
+                          <div className={gcalMode ? 'flex items-center justify-between mb-0.5' : 'contents'}>
+                            <span className={`text-xs font-semibold ${gcalMode ? 'w-6 h-6' : 'w-7 h-7'} flex items-center justify-center rounded-full ${
+                              isToday
+                                ? 'bg-indigo-600 text-white'
+                                : dayColor === 'red'
+                                ? 'text-red-500'
+                                : dayColor === 'blue'
+                                ? 'text-blue-500'
+                                : 'text-slate-700'
+                            }`}>
+                              {day.getDate()}
+                            </span>
+                            {gcalMode && holidayName && (
+                              <span className="text-[9px] text-red-400 truncate ml-1">{holidayName}</span>
+                            )}
+                          </div>
 
-                          {tasks.length > 0 && (
-                            <div className="flex flex-col items-center gap-0.5 mt-0.5">
-                              <span className={`w-1.5 h-1.5 rounded-full ${allDone ? 'bg-green-400' : 'bg-amber-400'}`} />
-                              <span className="text-xs text-slate-400 leading-none">{tasks.length}</span>
-                            </div>
+                          {/* 칩(GCal 모드) 또는 점·개수(compact) */}
+                          {gcalMode ? (
+                            tasks.length > 0 && (
+                              <div className="flex flex-col gap-0.5">
+                                {sortedTasks.slice(0, GCAL_MAX_CHIPS).map((task) => (
+                                  <TaskChip
+                                    key={task.id}
+                                    task={task}
+                                    categories={categories}
+                                    cellDate={dateStr}
+                                    weekStart={toDateStr(weeksOfMonth[wIdx])}
+                                    weekEnd={(() => {
+                                      const we = new Date(weeksOfMonth[wIdx])
+                                      we.setDate(we.getDate() + 6)
+                                      return toDateStr(we)
+                                    })()}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      onEditTask && onEditTask(task)
+                                    }}
+                                  />
+                                ))}
+                                {sortedTasks.length > GCAL_MAX_CHIPS && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setPopoverDate(dateStr) }}
+                                    title={`이 날의 일정 ${sortedTasks.length}개 모두 보기`}
+                                    className="text-[10px] text-indigo-600 hover:text-white hover:bg-indigo-500 bg-indigo-50 border border-indigo-200 rounded text-left px-1.5 py-0.5 mt-0.5 font-semibold transition-colors flex items-center gap-0.5"
+                                  >
+                                    <span>▸</span>
+                                    <span>+{sortedTasks.length - GCAL_MAX_CHIPS}개 더</span>
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          ) : (
+                            tasks.length > 0 && (
+                              <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                                <span className={`w-1.5 h-1.5 rounded-full ${allDone ? 'bg-green-400' : 'bg-amber-400'}`} />
+                                <span className="text-xs text-slate-400 leading-none">{tasks.length}</span>
+                              </div>
+                            )
                           )}
 
                           {onAddTask && (
                             <button
                               onClick={(e) => { e.stopPropagation(); onAddTask(dateStr) }}
-                              className="absolute top-0.5 right-0.5 w-4 h-4 opacity-0 group-hover:opacity-100 flex items-center justify-center text-indigo-400 hover:text-indigo-600 text-xs font-bold transition-opacity"
+                              className="absolute top-0.5 right-0.5 w-4 h-4 opacity-0 group-hover:opacity-100 flex items-center justify-center text-indigo-400 hover:text-indigo-600 text-xs font-bold transition-opacity z-10"
                               title="할일 추가"
                             >
                               +
                             </button>
+                          )}
+
+                          {/* GCal 모드 셀 hover 안내 — native tooltip이 안 보일 수 있어 시각 hint 추가 */}
+                          {gcalMode && (
+                            <span className="absolute bottom-0.5 right-1 text-[9px] text-indigo-500 opacity-0 group-hover:opacity-80 transition-opacity pointer-events-none font-medium">
+                              ↗ 자세히
+                            </span>
                           )}
                         </div>
                       )
@@ -398,6 +490,18 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
               ))
             })()}
           </div>
+
+          {/* +N개 더보기 팝오버 */}
+          {popoverDate && (
+            <MorePopover
+              date={popoverDate}
+              tasks={tasksByDate[popoverDate] || []}
+              categories={categories}
+              onClose={() => setPopoverDate(null)}
+              onEditTask={onEditTask}
+              onAddTask={onAddTask}
+            />
+          )}
 
           {/* 월간 통계 */}
           <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-6">

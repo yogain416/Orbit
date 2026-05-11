@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { toDateStr, getTodayStr } from '../utils/date'
 import { DEFAULT_CATEGORIES, getCategoryById } from '../utils/categories'
 import { getHolidayName, getDayColorClass } from '../utils/holidays'
+import { usePersistedState } from '../utils/storage'
 
 export default function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
   const [tasks, setTasks] = useState([])
@@ -10,6 +11,11 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
   const [expandedId, setExpandedId] = useState(null)
   const [overdueTasks, setOverdueTasks] = useState([])
   const [rolloverDone, setRolloverDone] = useState(false)
+  // 이월 배너를 그날 숨길지 — 오늘 한 번 닫으면 자정 지나기 전엔 다시 안 뜸
+  const [bannerDismissed, setBannerDismissed] = usePersistedState(
+    `rolloverBannerDismissed:${toDateStr(currentDate)}`,
+    false
+  )
   const [selectedRolloverIds, setSelectedRolloverIds] = useState(new Set())
   const [draggedId, setDraggedId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
@@ -129,6 +135,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     await window.api.tasks.rollover(dateStr)
     setRolloverDone(true)
     setOverdueTasks([])
+    setBannerDismissed(true)
     load()
   }
 
@@ -137,6 +144,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     await window.api.tasks.rolloverSelected([...selectedRolloverIds], dateStr)
     setRolloverDone(true)
     setOverdueTasks([])
+    setBannerDismissed(true)
     load()
   }
 
@@ -235,16 +243,17 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
         </div>
       )}
 
-      {/* 이월 배너 */}
-      {isToday && overdueTasks.length > 0 && !rolloverDone && (
+      {/* 이월 배너 — 하루에 한 번만 자동 표시. 닫거나 이월하면 그날은 다시 안 뜸 */}
+      {isToday && overdueTasks.length > 0 && !rolloverDone && !bannerDismissed && (
         <div className="mx-6 mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-amber-700 font-medium">⏰ 어제 미완료 할일</span>
             <button
-              onClick={() => setOverdueTasks([])}
-              className="text-xs text-amber-400 hover:text-amber-600 transition-colors"
+              onClick={() => setBannerDismissed(true)}
+              title="오늘은 다시 안 보이게 닫기"
+              className="text-base text-amber-400 hover:text-amber-600 transition-colors leading-none px-1"
             >
-              닫기
+              ✕
             </button>
           </div>
           <div className="flex flex-col gap-1 mb-2.5">
@@ -401,7 +410,8 @@ const COLOR_BORDER = {
 
 function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr()
-  const isOverdue = !task.is_completed && task.date < today
+  // 다일 이벤트는 종료일이 지나야 기한 초과
+  const isOverdue = !task.is_completed && ((task.end_date || task.date) < today)
   const isRepeat = task.parent_id || task.is_template
   const colorBorder = task.color ? COLOR_BORDER[task.color] : null
   const catInfo = task.category ? getCategoryById(task.category, categories) : null

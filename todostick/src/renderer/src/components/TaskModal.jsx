@@ -23,6 +23,7 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
   const [title, setTitle] = useState(task?.title || '')
   const [memo, setMemo] = useState(task?.memo || '')
   const [date, setDate] = useState(task?.date || defaultDate || getTodayStr())
+  const [endDate, setEndDate] = useState(task?.end_date || '')
   const [repeatType, setRepeatType] = useState(task?.repeat_type || 'none')
   const [repeatDays, setRepeatDays] = useState(task?.repeat_days || [0, 1, 2, 3, 4, 5, 6])
   const [isHabit, setIsHabit] = useState(!!task?.is_habit)
@@ -48,8 +49,11 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
   const handleSave = async () => {
     if (!title.trim() || overLimit) return
     setSaving(true)
+    // 다일 이벤트: 비반복 + 종료일이 시작일보다 늦을 때만 유효
+    const resolvedEndDate = (repeatType === 'none' && endDate && endDate > date) ? endDate : null
     const payload = {
       title: title.trim(), memo, date,
+      end_date: resolvedEndDate,
       repeat_type: repeatType,
       repeat_days: repeatType === 'daily' ? repeatDays : null,
       remind_at: remindAt || null,
@@ -114,12 +118,42 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
           {/* 날짜 */}
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">날짜</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+              />
+              {repeatType === 'none' && (
+                <>
+                  <span className="text-xs text-gray-400 flex-shrink-0">~</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    min={date}
+                    placeholder="종료일"
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                  />
+                  {endDate && (
+                    <button
+                      type="button"
+                      onClick={() => setEndDate('')}
+                      className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 flex-shrink-0"
+                    >
+                      지우기
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            {repeatType === 'none' && endDate && endDate > date && (
+              <p className="text-xs text-indigo-500 mt-1">📅 다일 이벤트 ({date} ~ {endDate})</p>
+            )}
+            {repeatType === 'none' && endDate && endDate <= date && (
+              <p className="text-xs text-red-400 mt-1">종료일은 시작일 이후여야 합니다</p>
+            )}
           </div>
 
           {/* 시간 (타임블록용) */}

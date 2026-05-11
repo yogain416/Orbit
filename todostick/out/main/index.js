@@ -190,7 +190,7 @@ const db = {
     const data = read();
     const changed = generateRepeatInstances(data, date);
     if (changed) write(data);
-    return data.tasks.filter((t) => t.date === date && !t.is_template).sort((a, b) => {
+    return data.tasks.filter((t) => !t.is_template && (t.date === date || t.end_date && t.date <= date && date <= t.end_date)).sort((a, b) => {
       const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
       if (star) return star;
       return a.order_index - b.order_index || a.created_at.localeCompare(b.created_at);
@@ -207,7 +207,7 @@ const db = {
       if (generateRepeatInstances(data, date)) changed = true;
     }
     if (changed) write(data);
-    return data.tasks.filter((t) => t.date.startsWith(prefix) && !t.is_template).sort((a, b) => {
+    return data.tasks.filter((t) => !t.is_template && (t.date.startsWith(prefix) || t.end_date && t.date <= endDate && t.end_date >= startDate)).sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
       if (star) return star;
@@ -221,7 +221,7 @@ const db = {
       if (generateRepeatInstances(data, date)) changed = true;
     }
     if (changed) write(data);
-    return data.tasks.filter((t) => t.date >= startDate && t.date <= endDate && !t.is_template).sort((a, b) => {
+    return data.tasks.filter((t) => !t.is_template && (t.date >= startDate && t.date <= endDate || t.end_date && t.date <= endDate && t.end_date >= startDate)).sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
       if (star) return star;
@@ -233,21 +233,29 @@ const db = {
     const d = new Date(date);
     d.setDate(d.getDate() - 1);
     const yesterday = d.toISOString().slice(0, 10);
-    return tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id);
+    const rolledSources = new Set(
+      tasks.filter((t) => t.date === date && t.rollover_source_id).map((t) => t.rollover_source_id)
+    );
+    return tasks.filter(
+      (t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date && !rolledSources.has(t.id)
+    );
   },
   getTodayReminders(date) {
     const { tasks } = read();
     return tasks.filter((t) => t.date === date && t.remind_at && !t.is_template);
   },
-  createTask({ title, memo = "", date, repeat_type = "none", repeat_days = null, order_index = 0, remind_at = null, color = null, category = null, is_habit = false, start_time = null, end_time = null }) {
+  createTask({ title, memo = "", date, end_date = null, repeat_type = "none", repeat_days = null, order_index = 0, remind_at = null, color = null, category = null, is_habit = false, start_time = null, end_time = null }) {
     const data = read();
     const habit = repeat_type !== "none" && !!is_habit;
+    const isPoolKey = typeof date === "string" && (date.startsWith("M:") || date.startsWith("W:"));
+    const resolvedEndDate = repeat_type === "none" && !isPoolKey && end_date && end_date > date ? end_date : null;
     if (repeat_type === "none") {
       const task = {
         id: generateId(),
         title,
         memo,
         date,
+        end_date: resolvedEndDate,
         is_completed: false,
         repeat_type,
         order_index,
@@ -429,7 +437,7 @@ const db = {
     const d = new Date(toDate);
     d.setDate(d.getDate() - 1);
     const yesterday = d.toISOString().slice(0, 10);
-    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id);
+    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date);
     const existingSources = new Set(
       data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
     );
@@ -463,7 +471,7 @@ const db = {
   rolloverSelectedTasks(taskIds, toDate) {
     const data = read();
     const idSet = new Set(taskIds);
-    const selected = data.tasks.filter((t) => idSet.has(t.id));
+    const selected = data.tasks.filter((t) => idSet.has(t.id) && !t.end_date);
     const existingSources = new Set(
       data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
     );
@@ -500,7 +508,7 @@ const db = {
     d.setDate(d.getDate() - 1);
     const yesterday = d.toISOString().slice(0, 10);
     const candidates = data.tasks.filter(
-      (t) => t.date === yesterday && t.is_in_progress && !t.is_completed && !t.is_template && !t.parent_id
+      (t) => t.date === yesterday && t.is_in_progress && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date
     );
     if (candidates.length === 0) return [];
     const existingSources = new Set(
