@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { toDateStr, getTodayStr } from '../utils/date'
 import { DEFAULT_CATEGORIES, getCategoryById } from '../utils/categories'
 import { getHolidayName, getDayColorClass } from '../utils/holidays'
@@ -70,41 +70,33 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     return () => window.api.tasks.offRefresh(handler)
   }, [load, loadOverdue])
 
-  const handleToggle = (task) => {
+  const doToggle = useCallback(async (id, note) => {
+    await window.api.tasks.toggle(id, note)
+    window.api.tasks.notifyChanged()
+    load()
+  }, [load])
+
+  const handleToggle = useCallback((task) => {
     if (!task.is_completed) {
       setCompletionNoteTask(task)
     } else {
       doToggle(task.id, null)
     }
-  }
+  }, [doToggle])
 
-  const doToggle = async (id, note) => {
-    await window.api.tasks.toggle(id, note)
-    window.api.tasks.notifyChanged()
-    load()
-  }
-
-  const handleToggleInProgress = async (task) => {
+  const handleToggleInProgress = useCallback(async (task) => {
     await window.api.tasks.setInProgress(task.id, !task.is_in_progress)
     window.api.tasks.notifyChanged()
     load()
-  }
+  }, [load])
 
-  const handleToggleStarred = async (task) => {
+  const handleToggleStarred = useCallback(async (task) => {
     await window.api.tasks.setStarred(task.id, !task.is_starred)
     window.api.tasks.notifyChanged()
     load()
-  }
+  }, [load])
 
-  const handleDelete = (task) => {
-    if (task.parent_id || task.is_template) {
-      setDeleteConfirm({ task })
-      return
-    }
-    performDelete(task)
-  }
-
-  const performDelete = async (task) => {
+  const performDelete = useCallback(async (task) => {
     const snap = { ...task }
     await window.api.tasks.delete(task.id)
     window.api.tasks.notifyChanged()
@@ -122,10 +114,26 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
       }
     })
     setTimeout(() => setToast(null), 5000)
-  }
+  }, [load])
+
+  const handleDelete = useCallback((task) => {
+    if (task.parent_id || task.is_template) {
+      setDeleteConfirm({ task })
+      return
+    }
+    performDelete(task)
+  }, [performDelete])
 
   const handleDeleteAndFuture = async (task) => {
     await window.api.tasks.deleteAndFuture(task.id, dateStr)
+    window.api.tasks.notifyChanged()
+    setDeleteConfirm(null)
+    load()
+  }
+
+  // 전체 반복 삭제 — 템플릿 + 과거/미래 모든 인스턴스 정리
+  const handleDeleteAll = async (task) => {
+    await window.api.tasks.deleteAndFuture(task.id, '1970-01-01')
     window.api.tasks.notifyChanged()
     setDeleteConfirm(null)
     load()
@@ -156,23 +164,34 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     })
   }
 
-  const handleDragStart = (id) => setDraggedId(id)
-  const handleDragOver = (id) => { if (id !== draggedId) setDragOverId(id) }
-  const handleDrop = async (targetId) => {
-    if (!draggedId || draggedId === targetId) {
+  const handleDragStart = useCallback((id) => setDraggedId(id), [])
+  const handleDragOver = useCallback((id) => {
+    setDragOverId((prev) => (id !== draggedIdRef.current && prev !== id ? id : prev))
+  }, [])
+  const draggedIdRef = useRef(null)
+  useEffect(() => { draggedIdRef.current = draggedId }, [draggedId])
+  const tasksRef = useRef(tasks)
+  useEffect(() => { tasksRef.current = tasks }, [tasks])
+  const handleDrop = useCallback(async (targetId) => {
+    const dragged = draggedIdRef.current
+    if (!dragged || dragged === targetId) {
       setDraggedId(null); setDragOverId(null); return
     }
-    const ids = tasks.map((t) => t.id)
-    const from = ids.indexOf(draggedId)
+    const ids = tasksRef.current.map((t) => t.id)
+    const from = ids.indexOf(dragged)
     const to = ids.indexOf(targetId)
     const newOrder = [...ids]
     newOrder.splice(from, 1)
-    newOrder.splice(to, 0, draggedId)
+    newOrder.splice(to, 0, dragged)
     setDraggedId(null); setDragOverId(null)
     await window.api.tasks.reorder(dateStr, newOrder)
     load()
-  }
-  const handleDragEnd = () => { setDraggedId(null); setDragOverId(null) }
+  }, [dateStr, load])
+  const handleDragEnd = useCallback(() => { setDraggedId(null); setDragOverId(null) }, [])
+
+  const onExpand = useCallback((id) => {
+    setExpandedId((prev) => (prev === id ? null : id))
+  }, [])
 
   const displayTasks = showCompleted ? tasks : tasks.filter((t) => !t.is_completed)
   const completed = tasks.filter((t) => t.is_completed).length
@@ -296,7 +315,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
                 onEdit={onEditTask}
                 onDelete={handleDelete}
                 isExpanded={expandedId === task.id}
-                onExpand={(id) => setExpandedId(expandedId === id ? null : id)}
+                onExpand={onExpand}
                 isDragging={draggedId === task.id}
                 isDragOver={dragOverId === task.id}
                 onDragStart={handleDragStart}
@@ -341,9 +360,15 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
               </button>
               <button
                 onClick={() => handleDeleteAndFuture(deleteConfirm.task)}
+                className="w-full py-2.5 rounded-xl border border-red-200 text-sm text-red-600 hover:bg-red-50 transition-colors"
+              >
+                오늘 이후 모두 삭제
+              </button>
+              <button
+                onClick={() => handleDeleteAll(deleteConfirm.task)}
                 className="w-full py-2.5 rounded-xl bg-red-500 text-sm text-white hover:bg-red-600 transition-colors"
               >
-                이후 모두 삭제
+                전체 반복 삭제 (과거 포함)
               </button>
               <button
                 onClick={() => setDeleteConfirm(null)}
@@ -408,7 +433,7 @@ const COLOR_BORDER = {
   purple: 'border-l-purple-400',
 }
 
-function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+const TaskCard = memo(function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr()
   // 다일 이벤트는 종료일이 지나야 기한 초과
   const isOverdue = !task.is_completed && ((task.end_date || task.date) < today)
@@ -556,7 +581,7 @@ function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStar
       )}
     </div>
   )
-}
+})
 
 function SeeMemo({ dateStr }) {
   const [good, setGood] = useState('')

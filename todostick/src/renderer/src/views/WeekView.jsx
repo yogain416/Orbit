@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo, memo } from 'react'
 import { getWeekRange, toDateStr, getTodayStr } from '../utils/date'
 import { usePersistedState } from '../utils/storage'
 import { getHolidayName, getDayColorClass } from '../utils/holidays'
@@ -46,34 +46,34 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
 
   const weekPoolKey = `W:${start}`
 
-  const loadTasks = () => {
+  const loadTasks = useCallback(() => {
     window.api.tasks.getByWeek(start, end).then((tasks) => {
       const map = {}
       tasks.forEach((t) => { if (!map[t.date]) map[t.date] = []; map[t.date].push(t) })
       setTasksByDate(map)
     })
-  }
+  }, [start, end])
 
-  const loadPool = () => {
+  const loadPool = useCallback(() => {
     window.api.tasks.getPool(weekPoolKey).then(setPoolTasks)
-  }
+  }, [weekPoolKey])
 
-  useEffect(() => { loadTasks(); loadPool() }, [start, end])
+  useEffect(() => { loadTasks(); loadPool() }, [loadTasks, loadPool])
 
   useEffect(() => {
     const handler = () => { loadTasks(); loadPool() }
     window.api.tasks.onRefresh(handler)
     return () => window.api.tasks.offRefresh(handler)
-  }, [start, end])
+  }, [loadTasks, loadPool])
 
   const prevWeek = () => { const d = new Date(currentDate); d.setDate(d.getDate() - 7); onDateChange(d) }
   const nextWeek = () => { const d = new Date(currentDate); d.setDate(d.getDate() + 7); onDateChange(d) }
 
-  const days = Array.from({ length: 7 }, (_, i) => {
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
     return d
-  })
+  }), [start])
 
   const today = getTodayStr()
   const weekLabel = `${monday.getMonth() + 1}월 ${Math.ceil(monday.getDate() / 7)}주차`
@@ -84,7 +84,8 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
 
   const habitMap = {}
   Object.entries(tasksByDate).forEach(([date, tasks]) => {
-    tasks.filter((t) => t.parent_id).forEach((t) => {
+    // is_habit으로 명시한 반복 인스턴스만 트래커에 표시 (반복 ≠ 습관)
+    tasks.filter((t) => t.parent_id && t.is_habit).forEach((t) => {
       if (!habitMap[t.parent_id]) {
         habitMap[t.parent_id] = { title: t.title, color: t.color, byDate: {} }
       }
@@ -111,30 +112,38 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
     if (e.key === 'Escape') setPoolAddTitle('')
   }
 
-  const handlePoolToggle = async (taskId) => {
+  const handlePoolToggle = useCallback(async (taskId) => {
     await window.api.tasks.toggle(taskId, null)
     window.api.tasks.notifyChanged()
     loadPool()
-  }
+  }, [loadPool])
 
-  const handleDayTaskToggle = async (taskId) => {
+  const handleDayTaskToggle = useCallback(async (taskId) => {
     await window.api.tasks.toggle(taskId, null)
     window.api.tasks.notifyChanged()
     loadTasks()
-  }
+  }, [loadTasks])
 
-  const handleAssignToDay = async (taskId, dateStr) => {
+  const handleAssignToDay = useCallback(async (taskId, dateStr) => {
     await window.api.tasks.update(taskId, { date: dateStr })
     window.api.tasks.notifyChanged()
     loadPool()
     loadTasks()
-  }
+  }, [loadPool, loadTasks])
 
-  const handleDeletePool = async (taskId) => {
+  const handleDeletePool = useCallback(async (taskId) => {
     await window.api.tasks.delete(taskId)
     window.api.tasks.notifyChanged()
     loadPool()
-  }
+  }, [loadPool])
+
+  const handleDeleteScheduled = useCallback(async (task) => {
+    const ok = window.confirm(`"${task.title}" 을(를) 삭제할까요?\n반복 일정이면 이 날만 삭제됩니다.`)
+    if (!ok) return
+    await window.api.tasks.delete(task.id)
+    window.api.tasks.notifyChanged()
+    loadTasks()
+  }, [loadTasks])
 
   const handleHabitToggle = async (taskId) => {
     await window.api.tasks.toggle(taskId, null)
@@ -250,7 +259,12 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
                           <span>{done}/{dayTasks.length}</span>
                         </p>
                         {dayTasks.map((task) => (
-                          <WeekSidebarDayTask key={task.id} task={task} onToggle={handleDayTaskToggle} />
+                          <WeekSidebarDayTask
+                            key={task.id}
+                            task={task}
+                            onToggle={handleDayTaskToggle}
+                            onDelete={handleDeleteScheduled}
+                          />
                         ))}
                       </div>
                     )
@@ -368,12 +382,13 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
                               draggable
                               onDragStart={(e) => handleTaskDragStart(e, task.id, dateStr)}
                               onClick={(e) => { e.stopPropagation(); onEditTask && onEditTask(task) }}
+                              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteScheduled(task) }}
                               className={`text-xs px-1.5 py-0.5 rounded truncate border-l-2 cursor-pointer hover:bg-indigo-100 active:opacity-50 ${
                                 task.is_completed
                                   ? 'bg-slate-100 text-slate-400 line-through border-slate-300'
                                   : `bg-indigo-50 text-indigo-700 ${task.color ? TASK_COLOR_LEFT[task.color] : 'border-transparent'}`
                               }`}
-                              title={task.title}
+                              title={`${task.title} — 우클릭: 삭제`}
                             >
                               {task.title.length > 7 ? task.title.slice(0, 7) + '…' : task.title}
                             </div>
@@ -419,6 +434,7 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
               onClose={() => setPopoverDate(null)}
               onEditTask={onEditTask}
               onAddTask={onAddTask}
+              onDeleteTask={handleDeleteScheduled}
             />
           )}
 
@@ -499,7 +515,7 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
   )
 }
 
-function WeekSidebarPoolTask({ task, days, onToggle, onAssign, onDelete }) {
+const WeekSidebarPoolTask = memo(function WeekSidebarPoolTask({ task, days, onToggle, onAssign, onDelete }) {
   return (
     <div className={`flex flex-col rounded-lg px-2 py-1.5 mb-0.5 group ${task.is_completed ? 'bg-slate-50' : 'bg-white'}`}>
       <div className="flex items-center gap-1.5">
@@ -536,11 +552,11 @@ function WeekSidebarPoolTask({ task, days, onToggle, onAssign, onDelete }) {
       </div>
     </div>
   )
-}
+})
 
-function WeekSidebarDayTask({ task, onToggle }) {
+const WeekSidebarDayTask = memo(function WeekSidebarDayTask({ task, onToggle, onDelete }) {
   return (
-    <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 ${task.is_completed ? 'bg-slate-50' : 'bg-white'}`}>
+    <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 group ${task.is_completed ? 'bg-slate-50' : 'bg-white'}`}>
       <button
         onClick={() => onToggle(task.id)}
         className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -553,6 +569,15 @@ function WeekSidebarDayTask({ task, onToggle }) {
         {task.title}
         {(task.parent_id || task.is_template) && <span className="ml-1 text-indigo-400 text-[10px]">🔁</span>}
       </span>
+      {onDelete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(task) }}
+          title="삭제"
+          className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity"
+        >
+          ✕
+        </button>
+      )}
     </div>
   )
-}
+})

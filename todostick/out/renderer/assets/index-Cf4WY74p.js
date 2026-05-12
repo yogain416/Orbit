@@ -7189,36 +7189,29 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
     window.api.tasks.onRefresh(handler);
     return () => window.api.tasks.offRefresh(handler);
   }, [load, loadOverdue]);
-  const handleToggle = (task) => {
+  const doToggle = reactExports.useCallback(async (id2, note) => {
+    await window.api.tasks.toggle(id2, note);
+    window.api.tasks.notifyChanged();
+    load();
+  }, [load]);
+  const handleToggle = reactExports.useCallback((task) => {
     if (!task.is_completed) {
       setCompletionNoteTask(task);
     } else {
       doToggle(task.id, null);
     }
-  };
-  const doToggle = async (id2, note) => {
-    await window.api.tasks.toggle(id2, note);
-    window.api.tasks.notifyChanged();
-    load();
-  };
-  const handleToggleInProgress = async (task) => {
+  }, [doToggle]);
+  const handleToggleInProgress = reactExports.useCallback(async (task) => {
     await window.api.tasks.setInProgress(task.id, !task.is_in_progress);
     window.api.tasks.notifyChanged();
     load();
-  };
-  const handleToggleStarred = async (task) => {
+  }, [load]);
+  const handleToggleStarred = reactExports.useCallback(async (task) => {
     await window.api.tasks.setStarred(task.id, !task.is_starred);
     window.api.tasks.notifyChanged();
     load();
-  };
-  const handleDelete = (task) => {
-    if (task.parent_id || task.is_template) {
-      setDeleteConfirm({ task });
-      return;
-    }
-    performDelete(task);
-  };
-  const performDelete = async (task) => {
+  }, [load]);
+  const performDelete = reactExports.useCallback(async (task) => {
     const snap = { ...task };
     await window.api.tasks.delete(task.id);
     window.api.tasks.notifyChanged();
@@ -7239,9 +7232,22 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
       }
     });
     setTimeout(() => setToast(null), 5e3);
-  };
+  }, [load]);
+  const handleDelete = reactExports.useCallback((task) => {
+    if (task.parent_id || task.is_template) {
+      setDeleteConfirm({ task });
+      return;
+    }
+    performDelete(task);
+  }, [performDelete]);
   const handleDeleteAndFuture = async (task) => {
     await window.api.tasks.deleteAndFuture(task.id, dateStr);
+    window.api.tasks.notifyChanged();
+    setDeleteConfirm(null);
+    load();
+  };
+  const handleDeleteAll = async (task) => {
+    await window.api.tasks.deleteAndFuture(task.id, "1970-01-01");
     window.api.tasks.notifyChanged();
     setDeleteConfirm(null);
     load();
@@ -7261,31 +7267,43 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
       return next;
     });
   };
-  const handleDragStart = (id2) => setDraggedId(id2);
-  const handleDragOver = (id2) => {
-    if (id2 !== draggedId) setDragOverId(id2);
-  };
-  const handleDrop = async (targetId) => {
-    if (!draggedId || draggedId === targetId) {
+  const handleDragStart = reactExports.useCallback((id2) => setDraggedId(id2), []);
+  const handleDragOver = reactExports.useCallback((id2) => {
+    setDragOverId((prev) => id2 !== draggedIdRef.current && prev !== id2 ? id2 : prev);
+  }, []);
+  const draggedIdRef = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    draggedIdRef.current = draggedId;
+  }, [draggedId]);
+  const tasksRef = reactExports.useRef(tasks);
+  reactExports.useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+  const handleDrop = reactExports.useCallback(async (targetId) => {
+    const dragged = draggedIdRef.current;
+    if (!dragged || dragged === targetId) {
       setDraggedId(null);
       setDragOverId(null);
       return;
     }
-    const ids = tasks.map((t2) => t2.id);
-    const from = ids.indexOf(draggedId);
+    const ids = tasksRef.current.map((t2) => t2.id);
+    const from = ids.indexOf(dragged);
     const to = ids.indexOf(targetId);
     const newOrder = [...ids];
     newOrder.splice(from, 1);
-    newOrder.splice(to, 0, draggedId);
+    newOrder.splice(to, 0, dragged);
     setDraggedId(null);
     setDragOverId(null);
     await window.api.tasks.reorder(dateStr, newOrder);
     load();
-  };
-  const handleDragEnd = () => {
+  }, [dateStr, load]);
+  const handleDragEnd = reactExports.useCallback(() => {
     setDraggedId(null);
     setDragOverId(null);
-  };
+  }, []);
+  const onExpand = reactExports.useCallback((id2) => {
+    setExpandedId((prev) => prev === id2 ? null : id2);
+  }, []);
   const displayTasks = showCompleted ? tasks : tasks.filter((t2) => !t2.is_completed);
   const completed = tasks.filter((t2) => t2.is_completed).length;
   const total = tasks.length;
@@ -7399,7 +7417,7 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
             onEdit: onEditTask,
             onDelete: handleDelete,
             isExpanded: expandedId === task.id,
-            onExpand: (id2) => setExpandedId(expandedId === id2 ? null : id2),
+            onExpand,
             isDragging: draggedId === task.id,
             isDragOver: dragOverId === task.id,
             onDragStart: handleDragStart,
@@ -7458,8 +7476,16 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
           "button",
           {
             onClick: () => handleDeleteAndFuture(deleteConfirm.task),
+            className: "w-full py-2.5 rounded-xl border border-red-200 text-sm text-red-600 hover:bg-red-50 transition-colors",
+            children: "오늘 이후 모두 삭제"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => handleDeleteAll(deleteConfirm.task),
             className: "w-full py-2.5 rounded-xl bg-red-500 text-sm text-white hover:bg-red-600 transition-colors",
-            children: "이후 모두 삭제"
+            children: "전체 반복 삭제 (과거 포함)"
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -7514,7 +7540,7 @@ const COLOR_BORDER = {
   blue: "border-l-blue-400",
   purple: "border-l-purple-400"
 };
-function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+const TaskCard = reactExports.memo(function TaskCard2({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr();
   const isOverdue = !task.is_completed && (task.end_date || task.date) < today;
   const isRepeat = task.parent_id || task.is_template;
@@ -7612,7 +7638,7 @@ function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStar
       ]
     }
   );
-}
+});
 function SeeMemo({ dateStr }) {
   const [good, setGood] = reactExports.useState("");
   const [bad, setBad] = reactExports.useState("");
@@ -7753,6 +7779,9 @@ const WEEKDAY_KO$1 = ["일", "월", "화", "수", "목", "금", "토"];
 function sortChips(tasks) {
   return tasks.slice().sort((a, b) => {
     if (!!a.is_completed !== !!b.is_completed) return a.is_completed ? 1 : -1;
+    const aInProg = !!a.is_in_progress;
+    const bInProg = !!b.is_in_progress;
+    if (aInProg !== bInProg) return aInProg ? -1 : 1;
     const aMulti = !!a.end_date;
     const bMulti = !!b.end_date;
     if (aMulti !== bMulti) return aMulti ? -1 : 1;
@@ -7768,7 +7797,7 @@ function sortChips(tasks) {
 function HoverTip({ children }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "invisible group-hover/chip:visible absolute z-50 left-0 -top-7 bg-slate-800 text-white text-[11px] rounded px-2 py-1 whitespace-nowrap shadow-lg pointer-events-none max-w-[280px] truncate", children });
 }
-function TaskChip({ task, categories, onClick, cellDate, weekStart, weekEnd }) {
+function TaskChip({ task, categories, onClick, onContextMenu, cellDate, weekStart, weekEnd }) {
   const cat = task.category ? getCategoryById(task.category, categories) : null;
   const color = cat?.color || "#94A3B8";
   const isCompleted = !!task.is_completed;
@@ -7785,6 +7814,7 @@ function TaskChip({ task, categories, onClick, cellDate, weekStart, weekEnd }) {
         "button",
         {
           onClick,
+          onContextMenu,
           title: fullTitle,
           className: `flex items-center gap-1 px-1 py-0.5 text-left transition-opacity ${radiusClass} ${isCompleted ? "opacity-50" : "hover:opacity-90"} min-w-0 w-full`,
           style: { backgroundColor: color },
@@ -7800,6 +7830,7 @@ function TaskChip({ task, categories, onClick, cellDate, weekStart, weekEnd }) {
         "button",
         {
           onClick,
+          onContextMenu,
           title: fullTitle,
           className: "flex items-center gap-1 rounded px-1 py-0.5 text-left bg-yellow-100 hover:bg-yellow-200 transition-colors min-w-0 w-full",
           children: [
@@ -7818,6 +7849,7 @@ function TaskChip({ task, categories, onClick, cellDate, weekStart, weekEnd }) {
         "button",
         {
           onClick,
+          onContextMenu,
           title: fullTitle,
           className: `flex items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-100 transition-colors min-w-0 w-full ${isCompleted ? "opacity-50" : ""}`,
           children: [
@@ -7846,7 +7878,7 @@ function TaskChip({ task, categories, onClick, cellDate, weekStart, weekEnd }) {
     /* @__PURE__ */ jsxRuntimeExports.jsx(HoverTip, { children: fullTitle })
   ] });
 }
-function MorePopover({ date, tasks, categories, onClose, onEditTask, onAddTask }) {
+function MorePopover({ date, tasks, categories, onClose, onEditTask, onAddTask, onDeleteTask }) {
   const sorted = sortChips(tasks);
   const d = /* @__PURE__ */ new Date(date + "T00:00:00");
   const label = `${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAY_KO$1[d.getDay()]})`;
@@ -7860,17 +7892,28 @@ function MorePopover({ date, tasks, categories, onClose, onEditTask, onAddTask }
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-bold text-slate-800", children: label }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "text-slate-400 hover:text-slate-600 text-base leading-none", children: "✕" })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto py-2 px-2", children: sorted.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mb-0.5", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-          TaskChip,
-          {
-            task,
-            categories,
-            onClick: () => {
-              onEditTask && onEditTask(task);
-              onClose();
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto py-2 px-2", children: sorted.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mb-0.5 flex items-center gap-1 group/row", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 min-w-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+            TaskChip,
+            {
+              task,
+              categories,
+              onClick: () => {
+                onEditTask && onEditTask(task);
+                onClose();
+              }
             }
-          }
-        ) }, task.id)) }),
+          ) }),
+          onDeleteTask && /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => onDeleteTask(task),
+              title: "삭제",
+              className: "opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-red-400 text-xs flex-shrink-0 transition-opacity px-1",
+              children: "✕"
+            }
+          )
+        ] }, task.id)) }),
         onAddTask && /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
@@ -7922,7 +7965,7 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
     });
   }, []);
   const weekPoolKey = `W:${start}`;
-  const loadTasks = () => {
+  const loadTasks = reactExports.useCallback(() => {
     window.api.tasks.getByWeek(start, end).then((tasks) => {
       const map = {};
       tasks.forEach((t2) => {
@@ -7931,14 +7974,14 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
       });
       setTasksByDate(map);
     });
-  };
-  const loadPool = () => {
+  }, [start, end]);
+  const loadPool = reactExports.useCallback(() => {
     window.api.tasks.getPool(weekPoolKey).then(setPoolTasks);
-  };
+  }, [weekPoolKey]);
   reactExports.useEffect(() => {
     loadTasks();
     loadPool();
-  }, [start, end]);
+  }, [loadTasks, loadPool]);
   reactExports.useEffect(() => {
     const handler = () => {
       loadTasks();
@@ -7946,7 +7989,7 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
     };
     window.api.tasks.onRefresh(handler);
     return () => window.api.tasks.offRefresh(handler);
-  }, [start, end]);
+  }, [loadTasks, loadPool]);
   const prevWeek = () => {
     const d = new Date(currentDate);
     d.setDate(d.getDate() - 7);
@@ -7957,11 +8000,11 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
     d.setDate(d.getDate() + 7);
     onDateChange(d);
   };
-  const days = Array.from({ length: 7 }, (_, i) => {
+  const days = reactExports.useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return d;
-  });
+  }), [start]);
   const today = getTodayStr();
   const weekLabel = `${monday.getMonth() + 1}월 ${Math.ceil(monday.getDate() / 7)}주차`;
   const allTasks = Object.values(tasksByDate).flat();
@@ -7969,7 +8012,7 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
   const weekDone = allTasks.filter((t2) => t2.is_completed).length;
   const habitMap = {};
   Object.entries(tasksByDate).forEach(([date, tasks]) => {
-    tasks.filter((t2) => t2.parent_id).forEach((t2) => {
+    tasks.filter((t2) => t2.parent_id && t2.is_habit).forEach((t2) => {
       if (!habitMap[t2.parent_id]) {
         habitMap[t2.parent_id] = { title: t2.title, color: t2.color, byDate: {} };
       }
@@ -7993,27 +8036,35 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
     if (e.key === "Enter") handlePoolAdd();
     if (e.key === "Escape") setPoolAddTitle("");
   };
-  const handlePoolToggle = async (taskId) => {
+  const handlePoolToggle = reactExports.useCallback(async (taskId) => {
     await window.api.tasks.toggle(taskId, null);
     window.api.tasks.notifyChanged();
     loadPool();
-  };
-  const handleDayTaskToggle = async (taskId) => {
+  }, [loadPool]);
+  const handleDayTaskToggle = reactExports.useCallback(async (taskId) => {
     await window.api.tasks.toggle(taskId, null);
     window.api.tasks.notifyChanged();
     loadTasks();
-  };
-  const handleAssignToDay = async (taskId, dateStr) => {
+  }, [loadTasks]);
+  const handleAssignToDay = reactExports.useCallback(async (taskId, dateStr) => {
     await window.api.tasks.update(taskId, { date: dateStr });
     window.api.tasks.notifyChanged();
     loadPool();
     loadTasks();
-  };
-  const handleDeletePool = async (taskId) => {
+  }, [loadPool, loadTasks]);
+  const handleDeletePool = reactExports.useCallback(async (taskId) => {
     await window.api.tasks.delete(taskId);
     window.api.tasks.notifyChanged();
     loadPool();
-  };
+  }, [loadPool]);
+  const handleDeleteScheduled = reactExports.useCallback(async (task) => {
+    const ok2 = window.confirm(`"${task.title}" 을(를) 삭제할까요?
+반복 일정이면 이 날만 삭제됩니다.`);
+    if (!ok2) return;
+    await window.api.tasks.delete(task.id);
+    window.api.tasks.notifyChanged();
+    loadTasks();
+  }, [loadTasks]);
   const handleHabitToggle = async (taskId) => {
     await window.api.tasks.toggle(taskId, null);
     window.api.tasks.notifyChanged();
@@ -8119,7 +8170,15 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
                   dayTasks.length
                 ] })
               ] }),
-              dayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(WeekSidebarDayTask, { task, onToggle: handleDayTaskToggle }, task.id))
+              dayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                WeekSidebarDayTask,
+                {
+                  task,
+                  onToggle: handleDayTaskToggle,
+                  onDelete: handleDeleteScheduled
+                },
+                task.id
+              ))
             ] }, dateStr);
           })
         ] }) }),
@@ -8204,8 +8263,13 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
                             e.stopPropagation();
                             onEditTask && onEditTask(task);
                           },
+                          onContextMenu: (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteScheduled(task);
+                          },
                           className: `text-xs px-1.5 py-0.5 rounded truncate border-l-2 cursor-pointer hover:bg-indigo-100 active:opacity-50 ${task.is_completed ? "bg-slate-100 text-slate-400 line-through border-slate-300" : `bg-indigo-50 text-indigo-700 ${task.color ? TASK_COLOR_LEFT[task.color] : "border-transparent"}`}`,
-                          title: task.title,
+                          title: `${task.title} — 우클릭: 삭제`,
                           children: task.title.length > 7 ? task.title.slice(0, 7) + "…" : task.title
                         }
                       ),
@@ -8243,7 +8307,8 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
             categories,
             onClose: () => setPopoverDate(null),
             onEditTask,
-            onAddTask
+            onAddTask,
+            onDeleteTask: handleDeleteScheduled
           }
         ),
         habits.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-amber-50 border-t border-amber-100 flex-shrink-0", children: [
@@ -8307,7 +8372,7 @@ function WeekView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTas
     ] })
   ] });
 }
-function WeekSidebarPoolTask({ task, days, onToggle, onAssign, onDelete }) {
+const WeekSidebarPoolTask = reactExports.memo(function WeekSidebarPoolTask2({ task, days, onToggle, onAssign, onDelete }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex flex-col rounded-lg px-2 py-1.5 mb-0.5 group ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -8339,9 +8404,9 @@ function WeekSidebarPoolTask({ task, days, onToggle, onAssign, onDelete }) {
       i
     )) })
   ] });
-}
-function WeekSidebarDayTask({ task, onToggle }) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
+});
+const WeekSidebarDayTask = reactExports.memo(function WeekSidebarDayTask2({ task, onToggle, onDelete }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 group ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {
@@ -8353,9 +8418,21 @@ function WeekSidebarDayTask({ task, onToggle }) {
     /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex-1 text-xs truncate min-w-0 ${task.is_completed ? "line-through text-slate-400" : "text-slate-700"}`, children: [
       task.title,
       (task.parent_id || task.is_template) && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1 text-indigo-400 text-[10px]", children: "🔁" })
-    ] })
+    ] }),
+    onDelete && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: (e) => {
+          e.stopPropagation();
+          onDelete(task);
+        },
+        title: "삭제",
+        className: "opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity",
+        children: "✕"
+      }
+    )
   ] });
-}
+});
 const DAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"];
 const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
 const GCAL_MIN_WIDTH = 800;
@@ -8503,6 +8580,14 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTa
   };
   const handleScheduledToggle = async (taskId) => {
     await window.api.tasks.toggle(taskId, null);
+    window.api.tasks.notifyChanged();
+    load();
+  };
+  const handleScheduledDelete = async (task) => {
+    const ok2 = window.confirm(`"${task.title}" 을(를) 삭제할까요?
+반복 일정이면 이 날만 삭제됩니다.`);
+    if (!ok2) return;
+    await window.api.tasks.delete(task.id);
     window.api.tasks.notifyChanged();
     load();
   };
@@ -8654,7 +8739,8 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTa
                       MonthScheduledTask,
                       {
                         task,
-                        onToggle: handleScheduledToggle
+                        onToggle: handleScheduledToggle,
+                        onDelete: handleScheduledDelete
                       },
                       task.id
                     ))
@@ -8727,6 +8813,11 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTa
                         onClick: (e) => {
                           e.stopPropagation();
                           onEditTask && onEditTask(task);
+                        },
+                        onContextMenu: (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleScheduledDelete(task);
                         }
                       },
                       task.id
@@ -8781,7 +8872,8 @@ function MonthView({ currentDate, onDateChange, onDateClick, onAddTask, onEditTa
             categories,
             onClose: () => setPopoverDate(null),
             onEditTask,
-            onAddTask
+            onAddTask,
+            onDeleteTask: handleScheduledDelete
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-2 border-t border-slate-100 flex items-center justify-center gap-6", children: totalTasks > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
@@ -8855,9 +8947,9 @@ function MonthPoolTask({ task, weeks, onAssign, onToggle, onDelete }) {
     }) })
   ] });
 }
-function MonthScheduledTask({ task, onToggle }) {
+function MonthScheduledTask({ task, onToggle, onDelete }) {
   const isRepeat = task.parent_id || task.is_template;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 group ${task.is_completed ? "bg-slate-50" : "bg-white"}`, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {
@@ -8869,7 +8961,19 @@ function MonthScheduledTask({ task, onToggle }) {
     /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex-1 text-xs truncate min-w-0 ${task.is_completed ? "line-through text-slate-400" : "text-slate-700"}`, children: [
       task.title,
       isRepeat && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-1 text-violet-400 text-[10px]", children: "🔁" })
-    ] })
+    ] }),
+    onDelete && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: (e) => {
+          e.stopPropagation();
+          onDelete(task);
+        },
+        title: "삭제",
+        className: "opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity",
+        children: "✕"
+      }
+    )
   ] });
 }
 function RecordsView() {
@@ -10379,6 +10483,16 @@ function StickerPopup() {
     window.api.tasks.notifyChanged();
     load();
   };
+  const handleToggleInProgress = async (task) => {
+    await window.api.tasks.setInProgress(task.id, !task.is_in_progress);
+    window.api.tasks.notifyChanged();
+    load();
+  };
+  const handleToggleStarred = async (task) => {
+    await window.api.tasks.setStarred(task.id, !task.is_starred);
+    window.api.tasks.notifyChanged();
+    load();
+  };
   const handleDelete = async (task) => {
     const snapshot = { ...task };
     await window.api.tasks.delete(task.id);
@@ -10540,7 +10654,17 @@ function StickerPopup() {
         ] }) : allDone ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center h-full gap-1", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-2xl", children: "✅" }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-green-600 font-medium", children: "모두 완료!" })
-        ] }) : displayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(StickerTask, { task, onToggle: handleToggle, onDelete: handleDelete }, task.id)) }),
+        ] }) : displayTasks.map((task) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+          StickerTask,
+          {
+            task,
+            onToggle: handleToggle,
+            onToggleInProgress: handleToggleInProgress,
+            onToggleStarred: handleToggleStarred,
+            onDelete: handleDelete
+          },
+          task.id
+        )) }),
         total > 0 && !allDone && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-yellow-50 px-2 pb-2 flex-shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-1.5 bg-yellow-200 rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
           "div",
           {
@@ -10670,10 +10794,12 @@ function StickerCompletionNote({ task, onConfirm, onClose }) {
     ] })
   ] }) });
 }
-function StickerTask({ task, onToggle, onDelete }) {
+function StickerTask({ task, onToggle, onToggleInProgress, onToggleStarred, onDelete }) {
   const isOverdue = !task.is_completed && task.date < (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const colorDot = task.color ? STICKER_COLOR_DOT[task.color] : null;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-2 px-2 py-1.5 rounded-lg group ${task.is_completed ? "opacity-60" : isOverdue ? "bg-red-100" : "bg-white shadow-sm"}`, children: [
+  const isInProgress = !!task.is_in_progress && !task.is_completed;
+  const isStarred = !!task.is_starred && !task.is_completed;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-1 px-2 py-1.5 rounded-lg group ${task.is_completed ? "opacity-60" : isInProgress ? "bg-blue-50 ring-1 ring-blue-200" : isStarred ? "bg-yellow-100 ring-1 ring-yellow-400" : isOverdue ? "bg-red-100" : "bg-white shadow-sm"}`, children: [
     colorDot && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${colorDot}` }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
@@ -10683,7 +10809,25 @@ function StickerTask({ task, onToggle, onDelete }) {
         children: task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[9px]", children: "✓" })
       }
     ),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `flex-1 text-xs leading-tight line-clamp-2 ${task.is_completed ? "line-through text-gray-400" : "text-gray-700"}`, children: task.title }),
+    !task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: () => onToggleInProgress(task),
+        title: task.is_in_progress ? "진행중 해제" : "진행중으로 표시 — 다음날 자동 복사",
+        className: `w-4 h-4 rounded flex items-center justify-center flex-shrink-0 text-[8px] font-bold transition-colors ${task.is_in_progress ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-400 hover:bg-blue-100 hover:text-blue-500"}`,
+        children: "▶"
+      }
+    ),
+    !task.is_completed && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        onClick: () => onToggleStarred(task),
+        title: task.is_starred ? "중요 해제" : "오늘 중요로 표시 — 목록 상단 고정",
+        className: `w-4 h-4 flex items-center justify-center flex-shrink-0 text-xs leading-none transition-colors ${task.is_starred ? "text-yellow-500 hover:text-yellow-600" : "text-gray-300 hover:text-yellow-400"}`,
+        children: task.is_starred ? "★" : "☆"
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `flex-1 text-xs leading-tight line-clamp-2 min-w-0 ${task.is_completed ? "line-through text-gray-400" : "text-gray-700"}`, children: task.title }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {

@@ -176,6 +176,14 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
     load()
   }
 
+  const handleScheduledDelete = async (task) => {
+    const ok = window.confirm(`"${task.title}" 을(를) 삭제할까요?\n반복 일정이면 이 날만 삭제됩니다.`)
+    if (!ok) return
+    await window.api.tasks.delete(task.id)
+    window.api.tasks.notifyChanged()
+    load()
+  }
+
   // 일정 task(일별 등록)를 주차별로 묶기
   const scheduledTasksByWeek = {}
   for (const [dateStr, tasks] of Object.entries(tasksByDate)) {
@@ -328,6 +336,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                                       key={task.id}
                                       task={task}
                                       onToggle={handleScheduledToggle}
+                                      onDelete={handleScheduledDelete}
                                     />
                                   ))}
                                 </div>
@@ -443,6 +452,11 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                                       e.stopPropagation()
                                       onEditTask && onEditTask(task)
                                     }}
+                                    onContextMenu={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      handleScheduledDelete(task)
+                                    }}
                                   />
                                 ))}
                                 {sortedTasks.length > GCAL_MAX_CHIPS && (
@@ -500,6 +514,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
               onClose={() => setPopoverDate(null)}
               onEditTask={onEditTask}
               onAddTask={onAddTask}
+              onDeleteTask={handleScheduledDelete}
             />
           )}
 
@@ -589,10 +604,10 @@ function getDayIndex(date) {
   return day === 0 ? 6 : day - 1
 }
 
-function MonthScheduledTask({ task, onToggle }) {
+function MonthScheduledTask({ task, onToggle, onDelete }) {
   const isRepeat = task.parent_id || task.is_template
   return (
-    <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 ${task.is_completed ? 'bg-slate-50' : 'bg-white'}`}>
+    <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 group ${task.is_completed ? 'bg-slate-50' : 'bg-white'}`}>
       <button
         onClick={() => onToggle(task.id)}
         className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -607,6 +622,15 @@ function MonthScheduledTask({ task, onToggle }) {
         {task.title}
         {isRepeat && <span className="ml-1 text-violet-400 text-[10px]">🔁</span>}
       </span>
+      {onDelete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(task) }}
+          title="삭제"
+          className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity"
+        >
+          ✕
+        </button>
+      )}
     </div>
   )
 }

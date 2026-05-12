@@ -7,25 +7,36 @@ function dbPath() {
   return join(app.getPath('userData'), 'todostick.json')
 }
 
+// 모듈 전역 인메모리 캐시 — Electron 메인 프로세스 단일 owner라 동시성 안전.
+// 모든 read/write가 이 캐시를 경유. write 시 디스크 동기 flush로 영속성 유지.
+let cache = null
+
 function read() {
+  if (cache) return cache
   try {
     const path = dbPath()
-    if (!existsSync(path)) return { tasks: [], settings: {} }
+    if (!existsSync(path)) {
+      cache = { tasks: [], settings: {} }
+      return cache
+    }
     const data = JSON.parse(readFileSync(path, 'utf-8'))
     if (!data.settings) data.settings = {}
-    // lazy migration: is_habit / is_in_progress / is_starred 필드 보정
+    // lazy migration: is_habit / is_in_progress / is_starred 필드 보정 (캐시 적재 시 1회만)
     for (const t of data.tasks) {
       if (t.is_habit === undefined) t.is_habit = false
       if (t.is_in_progress === undefined) t.is_in_progress = false
       if (t.is_starred === undefined) t.is_starred = false
     }
-    return data
+    cache = data
+    return cache
   } catch {
-    return { tasks: [], settings: {} }
+    cache = { tasks: [], settings: {} }
+    return cache
   }
 }
 
 function write(data) {
+  cache = data
   writeFileSync(dbPath(), JSON.stringify(data, null, 2), 'utf-8')
 }
 
@@ -105,6 +116,7 @@ function seedIfEmpty() {
   seed.tasks.push(meetingT)
 
   writeFileSync(path, JSON.stringify(seed, null, 2), 'utf-8')
+  cache = null // 다음 read()가 시드 적재 + 마이그레이션을 거치도록 무효화
   return true
 }
 
@@ -130,11 +142,17 @@ function shouldRepeatOnDate(template, date) {
 
 function generateRepeatInstances(data, date) {
   const templates = data.tasks.filter((t) => t.is_template && t.repeat_type !== 'none')
+  if (templates.length === 0) return false
+  // 같은 date에 이미 생성된 인스턴스를 1회 스캔으로 Set화 → O(1) 룩업
+  // (기존: 템플릿마다 data.tasks.some() 풀스캔 = O(T*N))
+  const existing = new Set()
+  for (const t of data.tasks) {
+    if (t.parent_id && t.date === date) existing.add(t.parent_id)
+  }
   let changed = false
   for (const tmpl of templates) {
     if (!shouldRepeatOnDate(tmpl, date)) continue
-    const exists = data.tasks.some((t) => t.parent_id === tmpl.id && t.date === date)
-    if (!exists) {
+    if (!existing.has(tmpl.id)) {
       data.tasks.push({
         id: generateId(),
         title: tmpl.title,
@@ -154,6 +172,7 @@ function generateRepeatInstances(data, date) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
+      existing.add(tmpl.id)
       changed = true
     }
   }
@@ -185,6 +204,10 @@ export default {
         (t.end_date && t.date <= date && date <= t.end_date)
       ))
       .sort((a, b) => {
+        // 진행중이 최우선 (단, 완료된 것은 제외 — setInProgress가 둘 다 true 방지하지만 안전망)
+        const aInProg = !!a.is_in_progress && !a.is_completed
+        const bInProg = !!b.is_in_progress && !b.is_completed
+        if (aInProg !== bInProg) return aInProg ? -1 : 1
         const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
         if (star) return star
         return a.order_index - b.order_index || a.created_at.localeCompare(b.created_at)
@@ -209,6 +232,9 @@ export default {
       ))
       .sort((a, b) => {
         if (a.date !== b.date) return a.date.localeCompare(b.date)
+        const aInProg = !!a.is_in_progress && !a.is_completed
+        const bInProg = !!b.is_in_progress && !b.is_completed
+        if (aInProg !== bInProg) return aInProg ? -1 : 1
         const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
         if (star) return star
         return a.order_index - b.order_index
@@ -229,6 +255,9 @@ export default {
       ))
       .sort((a, b) => {
         if (a.date !== b.date) return a.date.localeCompare(b.date)
+        const aInProg = !!a.is_in_progress && !a.is_completed
+        const bInProg = !!b.is_in_progress && !b.is_completed
+        if (aInProg !== bInProg) return aInProg ? -1 : 1
         const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
         if (star) return star
         return a.order_index - b.order_index
@@ -308,6 +337,8 @@ export default {
     const data = read()
     const task = data.tasks.find((t) => t.id === id)
     if (!task) return null
+    const wasTemplate = !!task.is_template
+    const prevRepeatType = task.repeat_type
     Object.assign(task, fields, { updated_at: new Date().toISOString() })
 
     // is_habit 변경은 템플릿/인스턴스 전체에 전파 (HabitView는 템플릿만 보므로 부모도 맞춰야 잔디에 반영됨)
@@ -322,6 +353,20 @@ export default {
           }
         }
       }
+    }
+
+    // 반복 제거: 템플릿의 repeat_type을 'none'으로 변경 시 미래 인스턴스 정리
+    // (과거 인스턴스는 기록 보존, 템플릿은 일반 task로 변환되어 자동 생성 중단)
+    if (wasTemplate && prevRepeatType !== 'none' && fields.repeat_type === 'none') {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      data.tasks = data.tasks.filter((t) => {
+        if (t.parent_id === task.id && t.date > todayStr) return false
+        return true
+      })
+      task.is_template = false
+      task.parent_id = null
+      task.skipped_dates = undefined
+      task.is_habit = false
     }
 
     write(data)

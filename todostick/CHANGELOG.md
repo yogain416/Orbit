@@ -4,6 +4,39 @@
 
 ## [Unreleased]
 
+## [1.5.2] — 2026-05-12
+
+### Added
+- 🗑️ **WeekView · MonthView · MorePopover 에서 할일 삭제 지원**
+  - WeekView/MonthView day cell 칩 — **우클릭** → confirm 다이얼로그 → 삭제
+  - WeekView 사이드바 요일별 task — hover 시 ✕ 버튼 노출
+  - MonthView 사이드바 일정 task(`MonthScheduledTask`) — hover 시 ✕ 버튼 노출
+  - "+N개 더보기" 팝오버(`MorePopover`) — 각 항목 hover 시 ✕ 노출
+  - 반복 일정의 경우 "이 날만 삭제" 처리 (DB가 `skipped_dates`에 자동 추가) — 이후 모두/전체 삭제 옵션은 DayView에서 유지
+  - `TaskChip` 컴포넌트에 `onContextMenu` prop 추가
+
+## [1.5.1] — 2026-05-12
+
+### Added
+- 📌 **스티커 메모에 진행중(▶) / 별표(★) 토글** — DayView와 동일한 UX
+  - `StickerTask`에 두 버튼 추가 (완료된 task에는 숨김)
+  - 진행중: 파란 배경 + ring, 별표: 진한 노란 배경 + ring (기본 스티커 배경과 구분)
+  - 백엔드 정렬이 이미 진행중→별표 우선이라 스티커에서도 자동 상단 고정
+
+### Performance
+- ⚡ **DB 인메모리 캐시** — `database.js`의 `read()` 결과를 모듈 전역 캐시로 보관
+  - 매 호출마다 풀-파일 `readFileSync` + `JSON.parse` + lazy migration 루프 제거
+  - 토글/별표/진행중 같은 빈번한 작업의 디스크 부하 감소
+  - `write()` 시 캐시 갱신 + 동기 flush로 영속성 유지
+- ⚡ **반복 인스턴스 존재 확인 O(T·N) → O(T)** — `generateRepeatInstances` 최적화
+  - 같은 date의 `parent_id`를 1회 스캔으로 Set화 → 템플릿별 `tasks.some()` 풀스캔 제거
+  - MonthView 진입(31일 × 템플릿마다 풀스캔)에서 가장 큰 효과
+- ⚡ **DayView `TaskCard` `React.memo` + 핸들러 `useCallback`**
+  - 카드 1개 토글 시 나머지 카드 re-render 차단
+  - 드래그 핸들러는 `draggedIdRef` / `tasksRef`로 의존성 최소화
+- ⚡ **WeekView 사이드바 컴포넌트 `memo` + `loadTasks`/`loadPool` `useCallback`**
+  - `days` 배열 `useMemo([start])`로 안정화
+
 ## [1.5.0] — 2026-05-11
 
 ### Added

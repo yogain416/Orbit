@@ -12,10 +12,15 @@ const isDev = utils.is.dev;
 function dbPath() {
   return path.join(electron.app.getPath("userData"), "todostick.json");
 }
+let cache = null;
 function read() {
+  if (cache) return cache;
   try {
     const path2 = dbPath();
-    if (!fs.existsSync(path2)) return { tasks: [], settings: {} };
+    if (!fs.existsSync(path2)) {
+      cache = { tasks: [], settings: {} };
+      return cache;
+    }
     const data = JSON.parse(fs.readFileSync(path2, "utf-8"));
     if (!data.settings) data.settings = {};
     for (const t of data.tasks) {
@@ -23,12 +28,15 @@ function read() {
       if (t.is_in_progress === void 0) t.is_in_progress = false;
       if (t.is_starred === void 0) t.is_starred = false;
     }
-    return data;
+    cache = data;
+    return cache;
   } catch {
-    return { tasks: [], settings: {} };
+    cache = { tasks: [], settings: {} };
+    return cache;
   }
 }
 function write(data) {
+  cache = data;
   fs.writeFileSync(dbPath(), JSON.stringify(data, null, 2), "utf-8");
 }
 function seedIfEmpty() {
@@ -122,6 +130,7 @@ function seedIfEmpty() {
   });
   seed.tasks.push(meetingT);
   fs.writeFileSync(path2, JSON.stringify(seed, null, 2), "utf-8");
+  cache = null;
   return true;
 }
 function generateId() {
@@ -144,11 +153,15 @@ function shouldRepeatOnDate(template, date) {
 }
 function generateRepeatInstances(data, date) {
   const templates = data.tasks.filter((t) => t.is_template && t.repeat_type !== "none");
+  if (templates.length === 0) return false;
+  const existing = /* @__PURE__ */ new Set();
+  for (const t of data.tasks) {
+    if (t.parent_id && t.date === date) existing.add(t.parent_id);
+  }
   let changed = false;
   for (const tmpl of templates) {
     if (!shouldRepeatOnDate(tmpl, date)) continue;
-    const exists = data.tasks.some((t) => t.parent_id === tmpl.id && t.date === date);
-    if (!exists) {
+    if (!existing.has(tmpl.id)) {
       data.tasks.push({
         id: generateId(),
         title: tmpl.title,
@@ -168,6 +181,7 @@ function generateRepeatInstances(data, date) {
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
+      existing.add(tmpl.id);
       changed = true;
     }
   }
@@ -191,6 +205,9 @@ const db = {
     const changed = generateRepeatInstances(data, date);
     if (changed) write(data);
     return data.tasks.filter((t) => !t.is_template && (t.date === date || t.end_date && t.date <= date && date <= t.end_date)).sort((a, b) => {
+      const aInProg = !!a.is_in_progress && !a.is_completed;
+      const bInProg = !!b.is_in_progress && !b.is_completed;
+      if (aInProg !== bInProg) return aInProg ? -1 : 1;
       const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
       if (star) return star;
       return a.order_index - b.order_index || a.created_at.localeCompare(b.created_at);
@@ -209,6 +226,9 @@ const db = {
     if (changed) write(data);
     return data.tasks.filter((t) => !t.is_template && (t.date.startsWith(prefix) || t.end_date && t.date <= endDate && t.end_date >= startDate)).sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const aInProg = !!a.is_in_progress && !a.is_completed;
+      const bInProg = !!b.is_in_progress && !b.is_completed;
+      if (aInProg !== bInProg) return aInProg ? -1 : 1;
       const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
       if (star) return star;
       return a.order_index - b.order_index;
@@ -223,6 +243,9 @@ const db = {
     if (changed) write(data);
     return data.tasks.filter((t) => !t.is_template && (t.date >= startDate && t.date <= endDate || t.end_date && t.date <= endDate && t.end_date >= startDate)).sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const aInProg = !!a.is_in_progress && !a.is_completed;
+      const bInProg = !!b.is_in_progress && !b.is_completed;
+      if (aInProg !== bInProg) return aInProg ? -1 : 1;
       const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
       if (star) return star;
       return a.order_index - b.order_index;
@@ -328,6 +351,8 @@ const db = {
     const data = read();
     const task = data.tasks.find((t) => t.id === id);
     if (!task) return null;
+    const wasTemplate = !!task.is_template;
+    const prevRepeatType = task.repeat_type;
     Object.assign(task, fields, { updated_at: (/* @__PURE__ */ new Date()).toISOString() });
     if (Object.prototype.hasOwnProperty.call(fields, "is_habit")) {
       const templateId = task.is_template ? task.id : task.parent_id;
@@ -340,6 +365,17 @@ const db = {
           }
         }
       }
+    }
+    if (wasTemplate && prevRepeatType !== "none" && fields.repeat_type === "none") {
+      const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      data.tasks = data.tasks.filter((t) => {
+        if (t.parent_id === task.id && t.date > todayStr) return false;
+        return true;
+      });
+      task.is_template = false;
+      task.parent_id = null;
+      task.skipped_dates = void 0;
+      task.is_habit = false;
     }
     write(data);
     return task;
@@ -698,7 +734,8 @@ function createMainWindow() {
     title: isDev ? "TodoStick [DEV]" : "TodoStick",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
-      sandbox: false
+      sandbox: false,
+      spellcheck: false
     }
   });
   mainWindow.on("ready-to-show", () => {
@@ -737,7 +774,8 @@ function createStickerWindow() {
     hasShadow: true,
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
-      sandbox: false
+      sandbox: false,
+      spellcheck: false
     }
   });
   if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {

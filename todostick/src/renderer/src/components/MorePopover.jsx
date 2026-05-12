@@ -2,10 +2,14 @@ import { getCategoryById } from '../utils/categories'
 
 const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토']
 
-// 칩 정렬: 다일이벤트 → ★ → 시간 → 일반 → 완료(맨 아래)
+// 칩 정렬: 진행중(0순위) → 다일이벤트 → ★ → 시간 → 일반 → 완료(맨 아래)
 export function sortChips(tasks) {
   return tasks.slice().sort((a, b) => {
     if (!!a.is_completed !== !!b.is_completed) return a.is_completed ? 1 : -1
+    // 진행중이 최우선 (완료 제외 후 가장 위)
+    const aInProg = !!a.is_in_progress
+    const bInProg = !!b.is_in_progress
+    if (aInProg !== bInProg) return aInProg ? -1 : 1
     const aMulti = !!a.end_date
     const bMulti = !!b.end_date
     if (aMulti !== bMulti) return aMulti ? -1 : 1
@@ -28,7 +32,7 @@ function HoverTip({ children }) {
   )
 }
 
-export function TaskChip({ task, categories, onClick, cellDate, weekStart, weekEnd }) {
+export function TaskChip({ task, categories, onClick, onContextMenu, cellDate, weekStart, weekEnd }) {
   const cat = task.category ? getCategoryById(task.category, categories) : null
   const color = cat?.color || '#94A3B8'
   const isCompleted = !!task.is_completed
@@ -49,6 +53,7 @@ export function TaskChip({ task, categories, onClick, cellDate, weekStart, weekE
       <div className="relative group/chip min-w-0" style={{ marginLeft: isStart ? 0 : '-4px', marginRight: isEnd ? 0 : '-4px' }}>
         <button
           onClick={onClick}
+          onContextMenu={onContextMenu}
           title={fullTitle}
           className={`flex items-center gap-1 px-1 py-0.5 text-left transition-opacity ${radiusClass} ${isCompleted ? 'opacity-50' : 'hover:opacity-90'} min-w-0 w-full`}
           style={{ backgroundColor: color }}
@@ -67,6 +72,7 @@ export function TaskChip({ task, categories, onClick, cellDate, weekStart, weekE
       <div className="relative group/chip min-w-0">
         <button
           onClick={onClick}
+          onContextMenu={onContextMenu}
           title={fullTitle}
           className="flex items-center gap-1 rounded px-1 py-0.5 text-left bg-yellow-100 hover:bg-yellow-200 transition-colors min-w-0 w-full"
         >
@@ -84,6 +90,7 @@ export function TaskChip({ task, categories, onClick, cellDate, weekStart, weekE
       <div className="relative group/chip min-w-0">
         <button
           onClick={onClick}
+          onContextMenu={onContextMenu}
           title={fullTitle}
           className={`flex items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-100 transition-colors min-w-0 w-full ${isCompleted ? 'opacity-50' : ''}`}
         >
@@ -117,7 +124,7 @@ export function TaskChip({ task, categories, onClick, cellDate, weekStart, weekE
   )
 }
 
-export default function MorePopover({ date, tasks, categories, onClose, onEditTask, onAddTask }) {
+export default function MorePopover({ date, tasks, categories, onClose, onEditTask, onAddTask, onDeleteTask }) {
   const sorted = sortChips(tasks)
   const d = new Date(date + 'T00:00:00')
   const label = `${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAY_KO[d.getDay()]})`
@@ -133,12 +140,23 @@ export default function MorePopover({ date, tasks, categories, onClose, onEditTa
         </div>
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {sorted.map((task) => (
-            <div key={task.id} className="mb-0.5">
-              <TaskChip
-                task={task}
-                categories={categories}
-                onClick={() => { onEditTask && onEditTask(task); onClose() }}
-              />
+            <div key={task.id} className="mb-0.5 flex items-center gap-1 group/row">
+              <div className="flex-1 min-w-0">
+                <TaskChip
+                  task={task}
+                  categories={categories}
+                  onClick={() => { onEditTask && onEditTask(task); onClose() }}
+                />
+              </div>
+              {onDeleteTask && (
+                <button
+                  onClick={() => onDeleteTask(task)}
+                  title="삭제"
+                  className="opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-red-400 text-xs flex-shrink-0 transition-opacity px-1"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>

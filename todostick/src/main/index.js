@@ -21,7 +21,8 @@ function createMainWindow() {
     title: isDev ? 'TodoStick [DEV]' : 'TodoStick',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      spellcheck: false
     }
   })
 
@@ -65,7 +66,8 @@ function createStickerWindow() {
     hasShadow: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      spellcheck: false
     }
   })
 

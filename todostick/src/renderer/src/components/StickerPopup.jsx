@@ -137,6 +137,18 @@ export default function StickerPopup() {
     load()
   }
 
+  const handleToggleInProgress = async (task) => {
+    await window.api.tasks.setInProgress(task.id, !task.is_in_progress)
+    window.api.tasks.notifyChanged()
+    load()
+  }
+
+  const handleToggleStarred = async (task) => {
+    await window.api.tasks.setStarred(task.id, !task.is_starred)
+    window.api.tasks.notifyChanged()
+    load()
+  }
+
   const handleDelete = async (task) => {
     const snapshot = { ...task }
     await window.api.tasks.delete(task.id)
@@ -305,7 +317,14 @@ export default function StickerPopup() {
                   </div>
                 ) : (
                   displayTasks.map((task) => (
-                    <StickerTask key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} />
+                    <StickerTask
+                      key={task.id}
+                      task={task}
+                      onToggle={handleToggle}
+                      onToggleInProgress={handleToggleInProgress}
+                      onToggleStarred={handleToggleStarred}
+                      onDelete={handleDelete}
+                    />
                   ))
                 )}
               </div>
@@ -436,13 +455,23 @@ function StickerCompletionNote({ task, onConfirm, onClose }) {
   )
 }
 
-function StickerTask({ task, onToggle, onDelete }) {
+function StickerTask({ task, onToggle, onToggleInProgress, onToggleStarred, onDelete }) {
   const isOverdue = !task.is_completed && task.date < new Date().toISOString().slice(0, 10)
   const colorDot = task.color ? STICKER_COLOR_DOT[task.color] : null
+  const isInProgress = !!task.is_in_progress && !task.is_completed
+  const isStarred = !!task.is_starred && !task.is_completed
 
   return (
-    <div className={`flex items-center gap-2 px-2 py-1.5 rounded-lg group ${
-      task.is_completed ? 'opacity-60' : isOverdue ? 'bg-red-100' : 'bg-white shadow-sm'
+    <div className={`flex items-center gap-1 px-2 py-1.5 rounded-lg group ${
+      task.is_completed
+        ? 'opacity-60'
+        : isInProgress
+        ? 'bg-blue-50 ring-1 ring-blue-200'
+        : isStarred
+        ? 'bg-yellow-100 ring-1 ring-yellow-400'
+        : isOverdue
+        ? 'bg-red-100'
+        : 'bg-white shadow-sm'
     }`}>
       {colorDot && (
         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${colorDot}`} />
@@ -458,7 +487,35 @@ function StickerTask({ task, onToggle, onDelete }) {
         {task.is_completed && <span className="text-[9px]">✓</span>}
       </button>
 
-      <span className={`flex-1 text-xs leading-tight line-clamp-2 ${
+      {/* 진행중 토글 — 완료된 task에는 숨김 */}
+      {!task.is_completed && (
+        <button
+          onClick={() => onToggleInProgress(task)}
+          title={task.is_in_progress ? '진행중 해제' : '진행중으로 표시 — 다음날 자동 복사'}
+          className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 text-[8px] font-bold transition-colors ${
+            task.is_in_progress
+              ? 'bg-blue-500 text-white'
+              : 'bg-gray-100 text-gray-400 hover:bg-blue-100 hover:text-blue-500'
+          }`}
+        >
+          ▶
+        </button>
+      )}
+
+      {/* 별표 토글 — 완료된 task에는 숨김 */}
+      {!task.is_completed && (
+        <button
+          onClick={() => onToggleStarred(task)}
+          title={task.is_starred ? '중요 해제' : '오늘 중요로 표시 — 목록 상단 고정'}
+          className={`w-4 h-4 flex items-center justify-center flex-shrink-0 text-xs leading-none transition-colors ${
+            task.is_starred ? 'text-yellow-500 hover:text-yellow-600' : 'text-gray-300 hover:text-yellow-400'
+          }`}
+        >
+          {task.is_starred ? '★' : '☆'}
+        </button>
+      )}
+
+      <span className={`flex-1 text-xs leading-tight line-clamp-2 min-w-0 ${
         task.is_completed ? 'line-through text-gray-400' : 'text-gray-700'
       }`}>
         {task.title}
