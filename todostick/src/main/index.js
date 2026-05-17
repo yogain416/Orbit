@@ -230,8 +230,8 @@ ipcMain.handle('tasks:delete', (_, id) => db.deleteTask(id))
 ipcMain.handle('tasks:toggle', (_, id, note) => db.toggleTask(id, note))
 ipcMain.handle('tasks:setInProgress', (_, id, value) => db.setInProgress(id, value))
 ipcMain.handle('tasks:setStarred', (_, id, value) => db.setStarred(id, value))
-ipcMain.handle('tasks:autoRolloverInProgress', (_, toDate) => {
-  const result = db.autoRolloverInProgress(toDate)
+ipcMain.handle('tasks:autoRolloverOverdue', (_, toDate) => {
+  const result = db.autoRolloverOverdue(toDate)
   if (result.length > 0) {
     mainWindow?.webContents.send('tasks:refresh')
     stickerWindow?.webContents.send('tasks:refresh')
