@@ -18,7 +18,7 @@ function createMainWindow() {
     minHeight: 500,
     show: false,
     autoHideMenuBar: true,
-    title: isDev ? 'TodoStick [DEV]' : 'TodoStick',
+    title: isDev ? 'Orbit [DEV]' : 'Orbit',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -114,7 +114,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(iconPath)
 
   tray = new Tray(icon)
-  tray.setToolTip(isDev ? 'TodoStick [DEV]' : 'TodoStick')
+  tray.setToolTip(isDev ? 'Orbit [DEV]' : 'Orbit')
   updateTrayMenu()
   tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus() })
 }
@@ -180,7 +180,7 @@ function scheduleMidnightRefresh() {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId(isDev ? 'com.todostick.dev' : 'com.todostick')
+  electronApp.setAppUserModelId(isDev ? 'com.orbit.dev' : 'com.orbit')
 
   // dev 모드 + 빈 DB일 때 시드 데이터 자동 생성
   if (isDev) {
@@ -230,8 +230,8 @@ ipcMain.handle('tasks:delete', (_, id) => db.deleteTask(id))
 ipcMain.handle('tasks:toggle', (_, id, note) => db.toggleTask(id, note))
 ipcMain.handle('tasks:setInProgress', (_, id, value) => db.setInProgress(id, value))
 ipcMain.handle('tasks:setStarred', (_, id, value) => db.setStarred(id, value))
-ipcMain.handle('tasks:autoRolloverInProgress', (_, toDate) => {
-  const result = db.autoRolloverInProgress(toDate)
+ipcMain.handle('tasks:autoRolloverOverdue', (_, toDate) => {
+  const result = db.autoRolloverOverdue(toDate)
   if (result.length > 0) {
     mainWindow?.webContents.send('tasks:refresh')
     stickerWindow?.webContents.send('tasks:refresh')
