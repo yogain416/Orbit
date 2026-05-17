@@ -1,6 +1,7 @@
 // ⚠️ setup-paths가 가장 먼저 평가되어야 함 (database.js 평가 전에 setPath 호출 필요)
 import { isDev } from './setup-paths.js'
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, Notification, globalShortcut } from 'electron'
+import { migrateUserData } from './userdata-migration.js'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import db from './database.js'
@@ -180,6 +181,19 @@ function scheduleMidnightRefresh() {
 }
 
 app.whenReady().then(() => {
+  // v1.6.0 todostick → orbit 폴더 마이그레이션 (이전 사용자 데이터 보존)
+  try {
+    const userDataPath = app.getPath('userData')
+    const parentDir = userDataPath.split(/[/\\]/).slice(0, -1).join('/')
+    const oldDir = `${parentDir}/todostick`
+    const result = migrateUserData({ oldDir, newDir: userDataPath })
+    if (result.migrated) {
+      console.log('[migration] todostick → orbit:', result.to)
+    }
+  } catch (e) {
+    console.error('[migration] failed:', e)
+  }
+
   electronApp.setAppUserModelId(isDev ? 'com.orbit.dev' : 'com.orbit')
 
   // dev 모드 + 빈 DB일 때 시드 데이터 자동 생성

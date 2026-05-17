@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import { autoRolloverOverdue as computeAutoRolloverOverdue } from './rollover.js'
+import { autoRolloverOverdue as computeAutoRolloverOverdue, yesterdayOf } from './rollover.js'
 
 // lazy: setup-paths.js의 setPath가 적용된 후 호출됨
 function dbPath() {
@@ -267,9 +267,7 @@ export default {
 
   getOverdueTasks(date) {
     const { tasks } = read()
-    const d = new Date(date)
-    d.setDate(d.getDate() - 1)
-    const yesterday = d.toISOString().slice(0, 10)
+    const yesterday = yesterdayOf(date)
     // 이미 오늘로 이월된 원본은 제외 (rolloverTasks가 원본 보존하므로 멱등 보장 필요)
     const rolledSources = new Set(
       tasks.filter((t) => t.date === date && t.rollover_source_id).map((t) => t.rollover_source_id)
@@ -475,9 +473,7 @@ export default {
 
   rolloverTasks(toDate) {
     const data = read()
-    const d = new Date(toDate)
-    d.setDate(d.getDate() - 1)
-    const yesterday = d.toISOString().slice(0, 10)
+    const yesterday = yesterdayOf(toDate)
     // 다일 이벤트는 이월 대상에서 제외 (이미 오늘 표시됨)
     const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date)
     // 멱등: 같은 원본을 이미 toDate에 복사한 게 있으면 스킵

@@ -2,7 +2,7 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
 }
 
-function yesterdayOf(toDate) {
+export function yesterdayOf(toDate) {
   const d = new Date(toDate + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString().slice(0, 10)

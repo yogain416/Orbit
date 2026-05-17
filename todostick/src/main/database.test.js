@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { autoRolloverOverdue } from './rollover.js'
+import { autoRolloverOverdue, yesterdayOf } from './rollover.js'
 
 function mkTask(overrides) {
   return {
@@ -111,5 +111,23 @@ describe('autoRolloverOverdue', () => {
     const out = autoRolloverOverdue(tasks, '2026-05-17')
     expect(out[0].id).not.toBe('a')
     expect(out[0].id).toBeTruthy()
+  })
+})
+
+describe('yesterdayOf', () => {
+  it('전일 날짜를 YYYY-MM-DD로 반환', () => {
+    expect(yesterdayOf('2026-05-17')).toBe('2026-05-16')
+  })
+
+  it('월 경계를 정확히 처리', () => {
+    expect(yesterdayOf('2026-06-01')).toBe('2026-05-31')
+  })
+
+  it('연 경계를 정확히 처리', () => {
+    expect(yesterdayOf('2027-01-01')).toBe('2026-12-31')
+  })
+
+  it('윤년 2월 경계', () => {
+    expect(yesterdayOf('2028-03-01')).toBe('2028-02-29')
   })
 })
