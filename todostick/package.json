@@ -1,7 +1,7 @@
 {
-  "name": "todostick",
-  "version": "1.5.2",
-  "description": "스티커처럼 붙어있는 오늘의 할 일 앱",
+  "name": "orbit",
+  "version": "1.6.0",
+  "description": "Orbit — 개인과 팀의 일정·할일·프로젝트를 잇는 운영 OS",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -29,8 +29,8 @@
     "vitest": "^1.6.0"
   },
   "build": {
-    "appId": "com.todostick.app",
-    "productName": "TodoStick",
+    "appId": "com.orbit.app",
+    "productName": "Orbit",
     "copyright": "Copyright © 2026",
     "directories": {
       "output": "release",
@@ -56,7 +56,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "TodoStick"
+      "shortcutName": "Orbit"
     }
   }
 }
