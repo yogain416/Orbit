@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
+import { autoRolloverOverdue as computeAutoRolloverOverdue } from './rollover.js'
 
 // lazy: setup-paths.js의 setPath가 적용된 후 호출됨
 function dbPath() {
@@ -540,43 +541,10 @@ export default {
     return newTasks
   },
 
-  autoRolloverInProgress(toDate) {
+  autoRolloverOverdue(toDate) {
     const data = read()
-    const d = new Date(toDate)
-    d.setDate(d.getDate() - 1)
-    const yesterday = d.toISOString().slice(0, 10)
-    // 다일 이벤트는 자동 복사 대상 아님 (이미 오늘 셀에 자연 표시되므로 이중 표시 방지)
-    const candidates = data.tasks.filter(
-      (t) => t.date === yesterday && t.is_in_progress && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date
-    )
-    if (candidates.length === 0) return []
-    const existingSources = new Set(
-      data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
-    )
-    const toCopy = candidates.filter((t) => !existingSources.has(t.id))
-    if (toCopy.length === 0) return []
-    const maxOrder = data.tasks.filter((t) => t.date === toDate).length
-    const now = new Date().toISOString()
-    const newTasks = toCopy.map((t, i) => ({
-      id: generateId(),
-      title: t.title,
-      memo: t.memo,
-      date: toDate,
-      is_completed: false,
-      is_in_progress: true,
-      repeat_type: 'none',
-      order_index: maxOrder + i,
-      remind_at: null,
-      color: t.color || null,
-      category: t.category || null,
-      is_template: false,
-      parent_id: null,
-      rollover_source_id: t.id,
-      completion_note: null,
-      completed_at: null,
-      created_at: now,
-      updated_at: now
-    }))
+    const newTasks = computeAutoRolloverOverdue(data.tasks, toDate)
+    if (newTasks.length === 0) return []
     data.tasks.push(...newTasks)
     write(data)
     return newTasks
