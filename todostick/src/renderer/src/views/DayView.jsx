@@ -45,7 +45,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     let cancelled = false
     const run = async () => {
       if (isToday) {
-        const created = await window.api.tasks.autoRolloverInProgress(dateStr)
+        const created = await window.api.tasks.autoRolloverOverdue(dateStr)
         if (cancelled) return
         if (created && created.length > 0) {
           window.api.tasks.notifyChanged()
@@ -266,7 +266,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
       {isToday && overdueTasks.length > 0 && !rolloverDone && !bannerDismissed && (
         <div className="mx-6 mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-amber-700 font-medium">⏰ 어제 미완료 할일</span>
+            <span className="text-xs text-amber-700 font-medium">⏰ 자동 이월되지 않은 항목</span>
             <button
               onClick={() => setBannerDismissed(true)}
               title="오늘은 다시 안 보이게 닫기"
