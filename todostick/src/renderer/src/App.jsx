@@ -6,6 +6,7 @@ import RecordsView from './views/RecordsView'
 import TimeBlockView from './views/TimeBlockView'
 import ReviewView from './views/ReviewView'
 import HabitView from './views/HabitView'
+import LoginView from './views/LoginView'
 import TaskModal from './components/TaskModal'
 import StickerPopup from './components/StickerPopup'
 import SettingsModal from './components/SettingsModal'
@@ -17,6 +18,35 @@ const VIEWS = ['일별', '주별', '월별', '타임블록', '습관', '리뷰',
 export default function App() {
   const isSticker = window.location.hash === '#sticker'
   if (isSticker) return <StickerPopup />
+  return <AuthGate />
+}
+
+function AuthGate() {
+  // 'unknown'은 초기 getSession 로딩 중. session === null이면 LoginView, session 있으면 MainApp.
+  const [session, setSession] = useState('unknown')
+
+  useEffect(() => {
+    let cancelled = false
+    window.api.auth.getSession()
+      .then((s) => { if (!cancelled) setSession(s || null) })
+      .catch(() => { if (!cancelled) setSession(null) })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    const handler = (_, payload) => setSession(payload?.session || null)
+    window.api.auth.onStateChanged(handler)
+    return () => window.api.auth.offStateChanged(handler)
+  }, [])
+
+  if (session === 'unknown') {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <span className="text-sm text-slate-400">불러오는 중...</span>
+      </div>
+    )
+  }
+  if (!session) return <LoginView />
   return <MainApp />
 }
 

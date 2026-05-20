@@ -62,5 +62,13 @@ contextBridge.exposeInMainWorld('api', {
   },
   env: {
     info: () => ipcRenderer.invoke('env:info')
+  },
+  auth: {
+    signInWithGoogle: () => ipcRenderer.invoke('auth:signInWithGoogle'),
+    getSession: () => ipcRenderer.invoke('auth:getSession'),
+    getUser: () => ipcRenderer.invoke('auth:getUser'),
+    signOut: () => ipcRenderer.invoke('auth:signOut'),
+    onStateChanged: (cb) => ipcRenderer.on('auth:state-changed', cb),
+    offStateChanged: (cb) => ipcRenderer.removeListener('auth:state-changed', cb)
   }
 })

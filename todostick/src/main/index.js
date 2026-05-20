@@ -5,6 +5,10 @@ import { migrateUserData } from './userdata-migration.js'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import db from './database.js'
+import { getAuth } from './auth.js'
+
+// Supabase 콘솔의 Redirect URLs에 등록된 스킴. spec/auth.js의 REDIRECT_URL과 호스트가 일치해야 한다.
+const AUTH_PROTOCOL_SCHEME = 'app'
 
 let mainWindow = null
 let stickerWindow = null
@@ -180,6 +184,61 @@ function scheduleMidnightRefresh() {
   }, msToMidnight + 500)
 }
 
+// ── OAuth deep link 처리 ────────────────────────────────────
+// Windows/Linux는 single-instance + second-instance argv로, macOS는 open-url 이벤트로 callback URL이 들어온다.
+
+function extractAuthCallbackUrl(argv) {
+  if (!argv) return null
+  for (const arg of argv) {
+    if (typeof arg === 'string' && arg.startsWith(`${AUTH_PROTOCOL_SCHEME}://`) && arg.includes('/auth/callback')) {
+      return arg
+    }
+  }
+  return null
+}
+
+async function handleDeepLink(url) {
+  if (!url) return
+  try {
+    const result = await getAuth().handleAuthCallback(url)
+    mainWindow?.webContents.send('auth:state-changed', { session: result?.session ?? null })
+    mainWindow?.show()
+    mainWindow?.focus()
+  } catch (e) {
+    console.error('[auth] callback failed:', e)
+    mainWindow?.webContents.send('auth:state-changed', { session: null, error: String(e?.message || e) })
+  }
+}
+
+// custom protocol 등록 — 개발 모드에선 electron 실행 파일과 인자를 명시해야 한다.
+if (process.defaultApp && process.argv.length >= 2) {
+  app.setAsDefaultProtocolClient(AUTH_PROTOCOL_SCHEME, process.execPath, [join(process.cwd(), process.argv[1])])
+} else {
+  app.setAsDefaultProtocolClient(AUTH_PROTOCOL_SCHEME)
+}
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_, argv) => {
+    // 이미 실행 중인 인스턴스로 OAuth callback이 들어옴 (Windows/Linux)
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+    const url = extractAuthCallbackUrl(argv)
+    if (url) handleDeepLink(url)
+  })
+}
+
+// macOS deep link
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  handleDeepLink(url)
+})
+
 app.whenReady().then(() => {
   // v1.6.0 todostick → orbit 폴더 마이그레이션 (이전 사용자 데이터 보존)
   try {
@@ -212,6 +271,12 @@ app.whenReady().then(() => {
   registerShortcuts()
   scheduleReminders()
   scheduleMidnightRefresh()
+
+  // 처음 실행 시 argv에 callback URL이 들어있으면 처리 (예: 로그아웃 상태에서 외부 링크 클릭)
+  const initialUrl = extractAuthCallbackUrl(process.argv)
+  if (initialUrl) {
+    mainWindow?.webContents.once('did-finish-load', () => handleDeepLink(initialUrl))
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
@@ -358,4 +423,20 @@ ipcMain.on('window:setSize', (event, width, height) => {
 ipcMain.on('window:setIgnoreMouseEvents', (event, ignore) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (win) win.setIgnoreMouseEvents(ignore, { forward: true })
+})
+
+// IPC: 인증
+ipcMain.handle('auth:signInWithGoogle', async () => {
+  return await getAuth().signInWithGoogle()
+})
+ipcMain.handle('auth:getSession', async () => {
+  return await getAuth().getSession()
+})
+ipcMain.handle('auth:getUser', async () => {
+  return await getAuth().getUser()
+})
+ipcMain.handle('auth:signOut', async () => {
+  await getAuth().signOut()
+  mainWindow?.webContents.send('auth:state-changed', { session: null })
+  return true
 })
