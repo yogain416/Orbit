@@ -10,6 +10,7 @@ import LoginView from './views/LoginView'
 import TaskModal from './components/TaskModal'
 import StickerPopup from './components/StickerPopup'
 import SettingsModal from './components/SettingsModal'
+import UserMenu from './components/UserMenu'
 import ReminderToastContainer, { playFunSound } from './components/ReminderToast'
 import { formatDate, getTodayStr } from './utils/date'
 
@@ -47,10 +48,10 @@ function AuthGate() {
     )
   }
   if (!session) return <LoginView />
-  return <MainApp />
+  return <MainApp user={session.user} />
 }
 
-function MainApp() {
+function MainApp({ user }) {
   const [view, setView] = useState('일별')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [modalOpen, setModalOpen] = useState(false)
@@ -95,6 +96,15 @@ function MainApp() {
   }, [])
 
   const goToToday = () => setCurrentDate(new Date())
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      // signOut 후 main의 'auth:state-changed'가 발화하여 AuthGate가 LoginView로 자동 전환한다.
+      await window.api.auth.signOut()
+    } catch (e) {
+      console.error('signOut failed:', e)
+    }
+  }, [])
 
   // 전역 키보드 단축키
   useEffect(() => {
@@ -173,6 +183,7 @@ function MainApp() {
         >
           ⚙️
         </button>
+        <UserMenu user={user} onSignOut={handleSignOut} />
       </header>
 
       {/* 메인 콘텐츠 */}

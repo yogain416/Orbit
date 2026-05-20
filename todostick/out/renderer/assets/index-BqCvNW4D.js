@@ -11128,6 +11128,53 @@ function CategoriesTab({ onClose }) {
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex justify-end px-6 py-4 border-t border-gray-100", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors", children: "닫기" }) })
   ] });
 }
+function UserMenu({ user, onSignOut }) {
+  const [open, setOpen] = reactExports.useState(false);
+  const ref = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    window.addEventListener("mousedown", handler);
+    return () => window.removeEventListener("mousedown", handler);
+  }, [open]);
+  const email = user?.email || "";
+  const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || email || "사용자";
+  const initial = displayName.charAt(0).toUpperCase();
+  const avatar = user?.user_metadata?.avatar_url;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "relative flex-shrink-0", ref, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        type: "button",
+        onClick: () => setOpen((v2) => !v2),
+        className: "w-8 h-8 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-700 font-semibold text-xs hover:bg-indigo-200 transition-colors overflow-hidden",
+        title: email || displayName,
+        "aria-label": "계정 메뉴",
+        children: avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: avatar, alt: displayName, className: "w-full h-full object-cover", referrerPolicy: "no-referrer" }) : initial
+      }
+    ),
+    open && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "absolute right-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg z-50 overflow-hidden", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "px-4 py-3 border-b border-slate-100", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm font-semibold text-slate-800 truncate", children: displayName }),
+        email && email !== displayName && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-xs text-slate-500 truncate", children: email })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          type: "button",
+          onClick: () => {
+            setOpen(false);
+            onSignOut();
+          },
+          className: "w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors",
+          children: "로그아웃"
+        }
+      )
+    ] })
+  ] });
+}
 function playFunSound() {
   try {
     const ctx = new AudioContext();
@@ -11215,9 +11262,9 @@ function AuthGate() {
     return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center h-screen bg-slate-50", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-slate-400", children: "불러오는 중..." }) });
   }
   if (!session) return /* @__PURE__ */ jsxRuntimeExports.jsx(LoginView, {});
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(MainApp, {});
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(MainApp, { user: session.user });
 }
-function MainApp() {
+function MainApp({ user }) {
   const [view, setView] = reactExports.useState("일별");
   const [currentDate, setCurrentDate] = reactExports.useState(/* @__PURE__ */ new Date());
   const [modalOpen, setModalOpen] = reactExports.useState(false);
@@ -11256,6 +11303,13 @@ function MainApp() {
     setModalOpen(true);
   }, []);
   const goToToday = () => setCurrentDate(/* @__PURE__ */ new Date());
+  const handleSignOut = reactExports.useCallback(async () => {
+    try {
+      await window.api.auth.signOut();
+    } catch (e) {
+      console.error("signOut failed:", e);
+    }
+  }, []);
   reactExports.useEffect(() => {
     const handler = (e) => {
       if (modalOpen) return;
@@ -11322,7 +11376,8 @@ function MainApp() {
           title: "단축키 설정",
           children: "⚙️"
         }
-      )
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(UserMenu, { user, onSignOut: handleSignOut })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("main", { className: "flex-1 overflow-hidden", children: [
       view === "일별" && /* @__PURE__ */ jsxRuntimeExports.jsx(
