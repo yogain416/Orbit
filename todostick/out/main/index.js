@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const Database = require("better-sqlite3");
 const supabaseJs = require("@supabase/supabase-js");
+const WebSocket = require("ws");
 const dotenv = require("dotenv");
 if (utils.is.dev) {
   const devUserData = path.join(electron.app.getPath("appData"), "todostick-dev");
@@ -1247,6 +1248,11 @@ function createSupabaseClient({ url, anonKey, storage }) {
       detectSessionInUrl: false,
       flowType: "pkce",
       storage
+    },
+    // Electron 29의 내장 Node는 20.x — native WebSocket이 없어서 SDK가 모듈 init 시 throw.
+    // Realtime 자체는 안 쓰지만 import 시점에 초기화되므로 ws를 transport로 명시.
+    realtime: {
+      transport: WebSocket
     }
   });
 }
