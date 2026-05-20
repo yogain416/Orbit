@@ -9,6 +9,8 @@ function loadEnv() {
 
   const candidates = []
   if (process.cwd()) candidates.push(join(process.cwd(), '.env'))
+  // packaged 앱에선 .env가 resources/ 안에 들어간다 (electron-builder extraResources).
+  if (process.resourcesPath) candidates.push(join(process.resourcesPath, '.env'))
   if (app?.getAppPath) {
     try { candidates.push(join(app.getAppPath(), '.env')) } catch {}
   }

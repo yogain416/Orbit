@@ -1158,6 +1158,7 @@ function loadEnv() {
   if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) return;
   const candidates = [];
   if (process.cwd()) candidates.push(path.join(process.cwd(), ".env"));
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, ".env"));
   if (electron.app?.getAppPath) {
     try {
       candidates.push(path.join(electron.app.getAppPath(), ".env"));
