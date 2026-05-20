@@ -99,10 +99,17 @@ function updateTrayMenu() {
     { label: '메인 창 열기', click: () => { mainWindow?.show(); mainWindow?.focus() } },
     {
       label: stickerWindow ? '스티커 숨기기' : '스티커 열기',
-      click: () => {
+      click: async () => {
         if (stickerWindow) {
           stickerWindow.close()
         } else {
+          // 인증 없으면 스티커는 데이터 노출 위험이라 띄우지 않는다.
+          const session = await getAuth().getSession().catch(() => null)
+          if (!session) {
+            mainWindow?.show()
+            mainWindow?.focus()
+            return
+          }
           createStickerWindow()
           updateTrayMenu()
         }
@@ -204,9 +211,26 @@ async function handleDeepLink(url) {
     mainWindow?.webContents.send('auth:state-changed', { session: result?.session ?? null })
     mainWindow?.show()
     mainWindow?.focus()
+    refreshUserWindows()
   } catch (e) {
     console.error('[auth] callback failed:', e)
     mainWindow?.webContents.send('auth:state-changed', { session: null, error: String(e?.message || e) })
+  }
+}
+
+// 인증 상태에 따라 사용자 데이터를 보여주는 창(현재는 스티커)을 토글한다.
+// LoginView가 뜬 상태에서 사용자 데이터가 노출되는 걸 막기 위함.
+async function refreshUserWindows() {
+  try {
+    const session = await getAuth().getSession()
+    if (session && !stickerWindow) {
+      createStickerWindow()
+    } else if (!session && stickerWindow) {
+      stickerWindow.close()
+    }
+    updateTrayMenu()
+  } catch (e) {
+    console.error('[auth] refreshUserWindows failed:', e)
   }
 }
 
@@ -266,8 +290,10 @@ app.whenReady().then(() => {
   })
 
   createMainWindow()
-  createStickerWindow()
   createTray()
+  // 스티커는 인증된 세션이 있을 때만 띄운다. 처음 실행 시 secure-storage에
+  // 세션이 남아있으면 자동 복원되므로 await로 한 번 확인 후 결정.
+  refreshUserWindows()
   registerShortcuts()
   scheduleReminders()
   scheduleMidnightRefresh()
@@ -438,5 +464,6 @@ ipcMain.handle('auth:getUser', async () => {
 ipcMain.handle('auth:signOut', async () => {
   await getAuth().signOut()
   mainWindow?.webContents.send('auth:state-changed', { session: null })
+  refreshUserWindows()
   return true
 })

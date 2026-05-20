@@ -1412,10 +1412,16 @@ function updateTrayMenu() {
     } },
     {
       label: stickerWindow ? "스티커 숨기기" : "스티커 열기",
-      click: () => {
+      click: async () => {
         if (stickerWindow) {
           stickerWindow.close();
         } else {
+          const session = await getAuth().getSession().catch(() => null);
+          if (!session) {
+            mainWindow?.show();
+            mainWindow?.focus();
+            return;
+          }
           createStickerWindow();
           updateTrayMenu();
         }
@@ -1511,9 +1517,23 @@ async function handleDeepLink(url) {
     mainWindow?.webContents.send("auth:state-changed", { session: result?.session ?? null });
     mainWindow?.show();
     mainWindow?.focus();
+    refreshUserWindows();
   } catch (e) {
     console.error("[auth] callback failed:", e);
     mainWindow?.webContents.send("auth:state-changed", { session: null, error: String(e?.message || e) });
+  }
+}
+async function refreshUserWindows() {
+  try {
+    const session = await getAuth().getSession();
+    if (session && !stickerWindow) {
+      createStickerWindow();
+    } else if (!session && stickerWindow) {
+      stickerWindow.close();
+    }
+    updateTrayMenu();
+  } catch (e) {
+    console.error("[auth] refreshUserWindows failed:", e);
   }
 }
 if (process.defaultApp && process.argv.length >= 2) {
@@ -1560,8 +1580,8 @@ electron.app.whenReady().then(() => {
     utils.optimizer.watchWindowShortcuts(window);
   });
   createMainWindow();
-  createStickerWindow();
   createTray();
+  refreshUserWindows();
   registerShortcuts();
   scheduleReminders();
   scheduleMidnightRefresh();
@@ -1694,5 +1714,6 @@ electron.ipcMain.handle("auth:getUser", async () => {
 electron.ipcMain.handle("auth:signOut", async () => {
   await getAuth().signOut();
   mainWindow?.webContents.send("auth:state-changed", { session: null });
+  refreshUserWindows();
   return true;
 });
