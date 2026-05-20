@@ -11,7 +11,7 @@ electron.contextBridge.exposeInMainWorld("api", {
     toggle: (id, note) => electron.ipcRenderer.invoke("tasks:toggle", id, note),
     setInProgress: (id, value) => electron.ipcRenderer.invoke("tasks:setInProgress", id, value),
     setStarred: (id, value) => electron.ipcRenderer.invoke("tasks:setStarred", id, value),
-    autoRolloverInProgress: (toDate) => electron.ipcRenderer.invoke("tasks:autoRolloverInProgress", toDate),
+    autoRolloverOverdue: (toDate) => electron.ipcRenderer.invoke("tasks:autoRolloverOverdue", toDate),
     getCompleted: (filters) => electron.ipcRenderer.invoke("tasks:getCompleted", filters),
     getPool: (poolKey) => electron.ipcRenderer.invoke("tasks:getPool", poolKey),
     getOverdue: (date) => electron.ipcRenderer.invoke("tasks:getOverdue", date),
@@ -62,5 +62,13 @@ electron.contextBridge.exposeInMainWorld("api", {
   },
   env: {
     info: () => electron.ipcRenderer.invoke("env:info")
+  },
+  auth: {
+    signInWithGoogle: () => electron.ipcRenderer.invoke("auth:signInWithGoogle"),
+    getSession: () => electron.ipcRenderer.invoke("auth:getSession"),
+    getUser: () => electron.ipcRenderer.invoke("auth:getUser"),
+    signOut: () => electron.ipcRenderer.invoke("auth:signOut"),
+    onStateChanged: (cb) => electron.ipcRenderer.on("auth:state-changed", cb),
+    offStateChanged: (cb) => electron.ipcRenderer.removeListener("auth:state-changed", cb)
   }
 });

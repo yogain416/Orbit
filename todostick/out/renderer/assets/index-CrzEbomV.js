@@ -7162,7 +7162,7 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
     let cancelled = false;
     const run = async () => {
       if (isToday) {
-        const created = await window.api.tasks.autoRolloverInProgress(dateStr);
+        const created = await window.api.tasks.autoRolloverOverdue(dateStr);
         if (cancelled) return;
         if (created && created.length > 0) {
           window.api.tasks.notifyChanged();
@@ -7367,7 +7367,7 @@ function DayView({ currentDate, onDateChange, onAddTask, onEditTask }) {
     ] }) }),
     isToday && overdueTasks.length > 0 && !rolloverDone && !bannerDismissed && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mx-6 mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mb-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-amber-700 font-medium", children: "⏰ 어제 미완료 할일" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-amber-700 font-medium", children: "⏰ 자동 이월되지 않은 항목" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
@@ -9982,6 +9982,53 @@ function HabitView() {
     ] })
   ] }) });
 }
+function LoginView() {
+  const [loading, setLoading] = reactExports.useState(false);
+  const [error, setError] = reactExports.useState(null);
+  const [waitingCallback, setWaitingCallback] = reactExports.useState(false);
+  const handleSignIn = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      await window.api.auth.signInWithGoogle();
+      setWaitingCallback(true);
+    } catch (e) {
+      setError(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center h-screen bg-gradient-to-br from-indigo-50 via-white to-slate-50", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "w-full max-w-md mx-auto px-8", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center mb-10", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-5xl text-indigo-500 mb-3", children: "◎" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-3xl font-bold text-slate-800 tracking-tight", children: "Orbit" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-sm text-slate-500", children: "개인과 팀의 일정·할일·프로젝트를 잇는 운영 OS" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white rounded-2xl shadow-sm border border-slate-200 p-8", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          type: "button",
+          onClick: handleSignIn,
+          disabled: loading || waitingCallback,
+          className: "w-full flex items-center justify-center gap-3 px-4 py-3 bg-white border border-slate-300 rounded-lg font-semibold text-slate-700 text-sm hover:bg-slate-50 hover:border-slate-400 disabled:opacity-60 disabled:cursor-not-allowed transition-colors",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "18", height: "18", viewBox: "0 0 24 24", "aria-hidden": "true", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("path", { fill: "#4285F4", d: "M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("path", { fill: "#34A853", d: "M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("path", { fill: "#FBBC05", d: "M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("path", { fill: "#EA4335", d: "M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" })
+            ] }),
+            loading ? "브라우저 여는 중..." : "Google로 로그인"
+          ]
+        }
+      ),
+      waitingCallback && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-5 px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 leading-relaxed", children: "브라우저에서 Google 로그인을 완료해 주세요. 인증이 끝나면 자동으로 이 창으로 돌아옵니다." }),
+      error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-5 px-3 py-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 leading-relaxed", children: error }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-6 text-[11px] text-slate-400 leading-relaxed text-center", children: "로그인 시 Google Calendar·Tasks 접근 권한을 요청합니다. (PC가 Google API를 직접 호출)" })
+    ] })
+  ] }) });
+}
 const COLORS = [
   { value: null, bg: "bg-slate-200", label: "없음" },
   { value: "red", bg: "bg-red-400", label: "빨강" },
@@ -11144,6 +11191,30 @@ const VIEWS = ["일별", "주별", "월별", "타임블록", "습관", "리뷰",
 function App() {
   const isSticker = window.location.hash === "#sticker";
   if (isSticker) return /* @__PURE__ */ jsxRuntimeExports.jsx(StickerPopup, {});
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(AuthGate, {});
+}
+function AuthGate() {
+  const [session, setSession] = reactExports.useState("unknown");
+  reactExports.useEffect(() => {
+    let cancelled = false;
+    window.api.auth.getSession().then((s) => {
+      if (!cancelled) setSession(s || null);
+    }).catch(() => {
+      if (!cancelled) setSession(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  reactExports.useEffect(() => {
+    const handler = (_, payload) => setSession(payload?.session || null);
+    window.api.auth.onStateChanged(handler);
+    return () => window.api.auth.offStateChanged(handler);
+  }, []);
+  if (session === "unknown") {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center h-screen bg-slate-50", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-slate-400", children: "불러오는 중..." }) });
+  }
+  if (!session) return /* @__PURE__ */ jsxRuntimeExports.jsx(LoginView, {});
   return /* @__PURE__ */ jsxRuntimeExports.jsx(MainApp, {});
 }
 function MainApp() {
@@ -11200,8 +11271,8 @@ function MainApp() {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-screen bg-slate-50", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { className: "flex items-center gap-4 px-5 py-2.5 bg-white border-b border-slate-200 shadow-sm", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5 flex-shrink-0", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-lg", children: "📌" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-bold text-indigo-600 text-base tracking-tight", children: "TodoStick" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-lg text-indigo-500", children: "◎" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-bold text-indigo-600 text-base tracking-tight", children: "Orbit" }),
         envInfo.isDev && /* @__PURE__ */ jsxRuntimeExports.jsx(
           "span",
           {

@@ -3,65 +3,427 @@ const electron = require("electron");
 const utils = require("@electron-toolkit/utils");
 const path = require("path");
 const fs = require("fs");
+const Database = require("better-sqlite3");
+const supabaseJs = require("@supabase/supabase-js");
+const dotenv = require("dotenv");
 if (utils.is.dev) {
   const devUserData = path.join(electron.app.getPath("appData"), "todostick-dev");
   electron.app.setPath("userData", devUserData);
   console.log("[DEV] userData →", devUserData);
 }
 const isDev = utils.is.dev;
+const DB_FILENAME = "todostick.json";
+function migrateUserData({ oldDir, newDir }) {
+  if (!fs.existsSync(oldDir)) {
+    return { migrated: false, reason: "source-missing" };
+  }
+  const oldFile = path.join(oldDir, DB_FILENAME);
+  if (!fs.existsSync(oldFile)) {
+    return { migrated: false, reason: "source-missing" };
+  }
+  if (!fs.existsSync(newDir)) {
+    fs.mkdirSync(newDir, { recursive: true });
+  }
+  const newFile = path.join(newDir, DB_FILENAME);
+  if (fs.existsSync(newFile)) {
+    return { migrated: false, reason: "target-exists" };
+  }
+  fs.copyFileSync(oldFile, newFile);
+  return { migrated: true, from: oldFile, to: newFile };
+}
+const SCHEMA_VERSION = 1;
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  memo TEXT DEFAULT '',
+  date TEXT NOT NULL,
+  end_date TEXT,
+  is_completed INTEGER DEFAULT 0,
+  is_in_progress INTEGER DEFAULT 0,
+  is_starred INTEGER DEFAULT 0,
+  repeat_type TEXT DEFAULT 'none',
+  repeat_days TEXT,
+  order_index INTEGER DEFAULT 0,
+  remind_at TEXT,
+  color TEXT,
+  category TEXT,
+  is_habit INTEGER DEFAULT 0,
+  start_time TEXT,
+  end_time TEXT,
+  is_template INTEGER DEFAULT 0,
+  parent_id TEXT,
+  skipped_dates TEXT,
+  rollover_source_id TEXT,
+  completion_note TEXT,
+  completed_at TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(date);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  color TEXT
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS see_memos (
+  date TEXT PRIMARY KEY,
+  good TEXT DEFAULT '',
+  bad TEXT DEFAULT '',
+  next TEXT DEFAULT '',
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS monthly_goals (
+  ym TEXT PRIMARY KEY,
+  text TEXT DEFAULT '',
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+`;
+function openDatabase(path2) {
+  const db2 = new Database(path2);
+  db2.pragma("journal_mode = WAL");
+  db2.pragma("foreign_keys = ON");
+  db2.exec(SCHEMA);
+  const stmt = db2.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)");
+  stmt.run("schema_version", String(SCHEMA_VERSION));
+  return db2;
+}
+const TASK_COLS$1 = [
+  "id",
+  "title",
+  "memo",
+  "date",
+  "end_date",
+  "is_completed",
+  "is_in_progress",
+  "is_starred",
+  "repeat_type",
+  "repeat_days",
+  "order_index",
+  "remind_at",
+  "color",
+  "category",
+  "is_habit",
+  "start_time",
+  "end_time",
+  "is_template",
+  "parent_id",
+  "skipped_dates",
+  "rollover_source_id",
+  "completion_note",
+  "completed_at",
+  "created_at",
+  "updated_at"
+];
+const BOOL_COLS$1 = /* @__PURE__ */ new Set(["is_completed", "is_in_progress", "is_starred", "is_habit", "is_template"]);
+const ARRAY_COLS$1 = /* @__PURE__ */ new Set(["repeat_days", "skipped_dates"]);
+function normalizeTaskValue(col, value) {
+  if (value === void 0) return null;
+  if (BOOL_COLS$1.has(col)) return value ? 1 : 0;
+  if (ARRAY_COLS$1.has(col)) return value ? JSON.stringify(value) : null;
+  return value;
+}
+function migrateJsonToSqlite(jsonPath2, db2) {
+  const already = db2.prepare("SELECT value FROM meta WHERE key='json_migrated'").get();
+  if (already) {
+    return { skipped: true, tasks: 0, categories: 0, seeMemos: 0, goals: 0 };
+  }
+  if (!fs.existsSync(jsonPath2)) {
+    db2.prepare("INSERT INTO meta (key, value) VALUES ('json_migrated', '1')").run();
+    return { skipped: true, tasks: 0, categories: 0, seeMemos: 0, goals: 0 };
+  }
+  const raw = JSON.parse(fs.readFileSync(jsonPath2, "utf-8"));
+  const tasks = raw.tasks || [];
+  const settings = raw.settings || {};
+  const insertTask = db2.prepare(`INSERT INTO tasks (${TASK_COLS$1.join(", ")}) VALUES (${TASK_COLS$1.map(() => "?").join(", ")})`);
+  const insertCategory = db2.prepare("INSERT OR REPLACE INTO categories (id, label, color) VALUES (?, ?, ?)");
+  const insertSeeMemo = db2.prepare("INSERT OR REPLACE INTO see_memos (date, good, bad, next, updated_at) VALUES (?, ?, ?, ?, ?)");
+  const insertGoal = db2.prepare("INSERT OR REPLACE INTO monthly_goals (ym, text, updated_at) VALUES (?, ?, ?)");
+  const insertSetting = db2.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let categoriesCount = 0;
+  let seeCount = 0;
+  let goalCount = 0;
+  db2.transaction(() => {
+    for (const t of tasks) {
+      insertTask.run(...TASK_COLS$1.map((col) => normalizeTaskValue(col, t[col])));
+    }
+    for (const cat of settings.categories || []) {
+      insertCategory.run(cat.id, cat.label, cat.color || null);
+      categoriesCount++;
+    }
+    for (const [key, value] of Object.entries(settings)) {
+      if (key === "categories") continue;
+      if (key.startsWith("see:")) {
+        const date = key.slice(4);
+        const obj = typeof value === "string" ? { good: value, bad: "", next: "" } : value;
+        insertSeeMemo.run(date, obj.good || "", obj.bad || "", obj.next || "", now);
+        seeCount++;
+      } else if (key.startsWith("goal:")) {
+        const ym = key.slice(5);
+        insertGoal.run(ym, String(value), now);
+        goalCount++;
+      } else {
+        const v = typeof value === "string" ? value : JSON.stringify(value);
+        insertSetting.run(key, v);
+      }
+    }
+    db2.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('json_migrated', '1')").run();
+  })();
+  return { skipped: false, tasks: tasks.length, categories: categoriesCount, seeMemos: seeCount, goals: goalCount };
+}
+function generateId$1() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+function autoRolloverOverdue(tasks, toDate) {
+  const candidates = tasks.filter(
+    (t) => t.date < toDate && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date
+  );
+  if (candidates.length === 0) return [];
+  const existingSources = new Set(
+    tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
+  );
+  const toCopy = candidates.filter((t) => !existingSources.has(t.id));
+  if (toCopy.length === 0) return [];
+  const maxOrder = tasks.filter((t) => t.date === toDate).length;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  return toCopy.map((t, i) => ({
+    id: generateId$1(),
+    title: t.title,
+    memo: t.memo,
+    date: toDate,
+    is_completed: false,
+    is_in_progress: !!t.is_in_progress,
+    repeat_type: "none",
+    order_index: maxOrder + i,
+    remind_at: null,
+    color: t.color || null,
+    category: t.category || null,
+    is_template: false,
+    parent_id: null,
+    rollover_source_id: t.id,
+    completion_note: null,
+    completed_at: null,
+    created_at: now,
+    updated_at: now
+  }));
+}
+function shouldRepeatOnDate(template, date) {
+  if (template.date >= date) return false;
+  if (template.skipped_dates && template.skipped_dates.includes(date)) return false;
+  const tDate = /* @__PURE__ */ new Date(template.date + "T00:00:00");
+  const rDate = /* @__PURE__ */ new Date(date + "T00:00:00");
+  if (template.repeat_type === "daily") {
+    if (template.repeat_days && template.repeat_days.length > 0) {
+      return template.repeat_days.includes(rDate.getDay());
+    }
+    return true;
+  }
+  if (template.repeat_type === "weekly") return tDate.getDay() === rDate.getDay();
+  if (template.repeat_type === "monthly") return tDate.getDate() === rDate.getDate();
+  return false;
+}
+function buildRepeatInstancesForDate(tasks, date, generateId2) {
+  const templates = tasks.filter((t) => t.is_template && t.repeat_type !== "none");
+  if (templates.length === 0) return [];
+  const existing = /* @__PURE__ */ new Set();
+  for (const t of tasks) {
+    if (t.parent_id && t.date === date) existing.add(t.parent_id);
+  }
+  const newInstances = [];
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  for (const tmpl of templates) {
+    if (!shouldRepeatOnDate(tmpl, date)) continue;
+    if (existing.has(tmpl.id)) continue;
+    newInstances.push({
+      id: generateId2(),
+      title: tmpl.title,
+      memo: tmpl.memo,
+      date,
+      is_completed: false,
+      repeat_type: tmpl.repeat_type,
+      order_index: tmpl.order_index,
+      remind_at: tmpl.remind_at || null,
+      color: tmpl.color || null,
+      category: tmpl.category || null,
+      is_habit: !!tmpl.is_habit,
+      parent_id: tmpl.id,
+      is_template: false,
+      completion_note: null,
+      completed_at: null,
+      created_at: now,
+      updated_at: now
+    });
+    existing.add(tmpl.id);
+  }
+  return newInstances;
+}
+let _db = null;
 function dbPath() {
+  return path.join(electron.app.getPath("userData"), "orbit.db");
+}
+function jsonPath() {
   return path.join(electron.app.getPath("userData"), "todostick.json");
 }
-let cache = null;
-function read() {
-  if (cache) return cache;
+function getDb() {
+  if (_db) return _db;
+  _db = openDatabase(dbPath());
   try {
-    const path2 = dbPath();
-    if (!fs.existsSync(path2)) {
-      cache = { tasks: [], settings: {} };
-      return cache;
-    }
-    const data = JSON.parse(fs.readFileSync(path2, "utf-8"));
-    if (!data.settings) data.settings = {};
-    for (const t of data.tasks) {
-      if (t.is_habit === void 0) t.is_habit = false;
-      if (t.is_in_progress === void 0) t.is_in_progress = false;
-      if (t.is_starred === void 0) t.is_starred = false;
-    }
-    cache = data;
-    return cache;
-  } catch {
-    cache = { tasks: [], settings: {} };
-    return cache;
+    migrateJsonToSqlite(jsonPath(), _db);
+  } catch (e) {
+    console.error("[migrate] failed:", e);
   }
+  return _db;
 }
-function write(data) {
-  cache = data;
-  fs.writeFileSync(dbPath(), JSON.stringify(data, null, 2), "utf-8");
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+function nowIso() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+const TASK_COLS = [
+  "id",
+  "title",
+  "memo",
+  "date",
+  "end_date",
+  "is_completed",
+  "is_in_progress",
+  "is_starred",
+  "repeat_type",
+  "repeat_days",
+  "order_index",
+  "remind_at",
+  "color",
+  "category",
+  "is_habit",
+  "start_time",
+  "end_time",
+  "is_template",
+  "parent_id",
+  "skipped_dates",
+  "rollover_source_id",
+  "completion_note",
+  "completed_at",
+  "created_at",
+  "updated_at"
+];
+const BOOL_COLS = /* @__PURE__ */ new Set(["is_completed", "is_in_progress", "is_starred", "is_habit", "is_template"]);
+const ARRAY_COLS = /* @__PURE__ */ new Set(["repeat_days", "skipped_dates"]);
+function rowToTask(row) {
+  if (!row) return null;
+  const t = { ...row };
+  for (const c of BOOL_COLS) t[c] = !!t[c];
+  for (const c of ARRAY_COLS) {
+    if (t[c]) {
+      try {
+        t[c] = JSON.parse(t[c]);
+      } catch {
+        t[c] = c === "skipped_dates" ? [] : null;
+      }
+    } else {
+      t[c] = c === "skipped_dates" ? [] : null;
+    }
+  }
+  return t;
+}
+function valForCol(col, value) {
+  if (value === void 0) return null;
+  if (value === null) return null;
+  if (BOOL_COLS.has(col)) return value ? 1 : 0;
+  if (ARRAY_COLS.has(col)) return value ? JSON.stringify(value) : null;
+  return value;
+}
+function getAllTasks() {
+  return getDb().prepare("SELECT * FROM tasks").all().map(rowToTask);
+}
+function insertTaskRow(db2, task) {
+  const stmt = db2.prepare(
+    `INSERT INTO tasks (${TASK_COLS.join(", ")}) VALUES (${TASK_COLS.map(() => "?").join(", ")})`
+  );
+  stmt.run(...TASK_COLS.map((c) => valForCol(c, task[c])));
+}
+function dateRange(startDate, endDate) {
+  const dates = [];
+  const cur = /* @__PURE__ */ new Date(startDate + "T00:00:00");
+  const end = /* @__PURE__ */ new Date(endDate + "T00:00:00");
+  while (cur <= end) {
+    dates.push(
+      `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`
+    );
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+function ensureRepeatInstancesForDate(date) {
+  const db2 = getDb();
+  const tasks = getAllTasks();
+  const newInstances = buildRepeatInstancesForDate(tasks, date, generateId);
+  if (newInstances.length === 0) return false;
+  db2.transaction(() => {
+    for (const inst of newInstances) insertTaskRow(db2, inst);
+  })();
+  return true;
+}
+function ensureRepeatInstancesForRange(fromDate, toDate) {
+  let changed = false;
+  for (const date of dateRange(fromDate, toDate)) {
+    if (ensureRepeatInstancesForDate(date)) changed = true;
+  }
+  return changed;
+}
+function sortDayTasks(a, b) {
+  const aInProg = !!a.is_in_progress && !a.is_completed;
+  const bInProg = !!b.is_in_progress && !b.is_completed;
+  if (aInProg !== bInProg) return aInProg ? -1 : 1;
+  const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
+  if (star) return star;
+  if (a.order_index !== b.order_index) return a.order_index - b.order_index;
+  return (a.created_at || "").localeCompare(b.created_at || "");
+}
+function sortMultiDayTasks(a, b) {
+  if (a.date !== b.date) return a.date.localeCompare(b.date);
+  const aInProg = !!a.is_in_progress && !a.is_completed;
+  const bInProg = !!b.is_in_progress && !b.is_completed;
+  if (aInProg !== bInProg) return aInProg ? -1 : 1;
+  const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
+  if (star) return star;
+  return a.order_index - b.order_index;
 }
 function seedIfEmpty() {
-  const path2 = dbPath();
-  if (fs.existsSync(path2)) return false;
+  const db2 = getDb();
+  const count = db2.prepare("SELECT count(*) as c FROM tasks").get().c;
+  if (count > 0) return false;
   const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
   const lastWeek = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-  const seed = {
-    tasks: [],
-    settings: {
-      categories: [
-        { id: "work", label: "업무", color: "blue" },
-        { id: "personal", label: "개인", color: "green" },
-        { id: "health", label: "운동", color: "orange" }
-      ]
-    }
-  };
+  const now = nowIso();
   const mk = (overrides) => ({
     id: generateId(),
     title: "",
     memo: "",
     date: today,
+    end_date: null,
     is_completed: false,
+    is_in_progress: false,
+    is_starred: false,
     repeat_type: "none",
+    repeat_days: null,
     order_index: 0,
     remind_at: null,
     color: null,
@@ -71,16 +433,19 @@ function seedIfEmpty() {
     end_time: null,
     is_template: false,
     parent_id: null,
+    skipped_dates: null,
+    rollover_source_id: null,
     completion_note: null,
     completed_at: null,
-    created_at: (/* @__PURE__ */ new Date()).toISOString(),
-    updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+    created_at: now,
+    updated_at: now,
     ...overrides
   });
-  seed.tasks.push(mk({ title: "🧪 [DEV] 회의 준비", category: "work", color: "blue", start_time: "10:00", end_time: "11:00", order_index: 0 }));
-  seed.tasks.push(mk({ title: "🧪 [DEV] 점심 약속", category: "personal", color: "green", start_time: "12:30", end_time: "13:30", order_index: 1 }));
-  seed.tasks.push(mk({ title: "🧪 [DEV] 코드 리뷰", category: "work", color: "blue", order_index: 2 }));
-  seed.tasks.push(mk({ title: "🧪 [DEV] 어제 못 끝낸 일", date: yesterday, order_index: 99 }));
+  const tasks = [];
+  tasks.push(mk({ title: "🧪 [DEV] 회의 준비", category: "work", color: "blue", start_time: "10:00", end_time: "11:00", order_index: 0 }));
+  tasks.push(mk({ title: "🧪 [DEV] 점심 약속", category: "personal", color: "green", start_time: "12:30", end_time: "13:30", order_index: 1 }));
+  tasks.push(mk({ title: "🧪 [DEV] 코드 리뷰", category: "work", color: "blue", order_index: 2 }));
+  tasks.push(mk({ title: "🧪 [DEV] 어제 못 끝낸 일", date: yesterday, order_index: 99 }));
   const stretchT = mk({
     title: "🌱 [DEV] 스트레칭 10분",
     date: lastWeek,
@@ -91,11 +456,11 @@ function seedIfEmpty() {
     category: "health",
     skipped_dates: []
   });
-  seed.tasks.push(stretchT);
+  tasks.push(stretchT);
   for (let i = 7; i >= 1; i--) {
     const d = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
     if (i % 3 === 0) continue;
-    seed.tasks.push(mk({
+    tasks.push(mk({
       title: stretchT.title,
       date: d,
       repeat_type: "daily",
@@ -118,7 +483,7 @@ function seedIfEmpty() {
     category: "health",
     skipped_dates: []
   });
-  seed.tasks.push(waterT);
+  tasks.push(waterT);
   const meetingT = mk({
     title: "🧪 [DEV] 주간 팀 미팅",
     date: lastWeek,
@@ -128,150 +493,133 @@ function seedIfEmpty() {
     category: "work",
     skipped_dates: []
   });
-  seed.tasks.push(meetingT);
-  fs.writeFileSync(path2, JSON.stringify(seed, null, 2), "utf-8");
-  cache = null;
+  tasks.push(meetingT);
+  const insertCat = db2.prepare("INSERT OR REPLACE INTO categories (id, label, color) VALUES (?, ?, ?)");
+  db2.transaction(() => {
+    for (const t of tasks) insertTaskRow(db2, t);
+    const cats = [
+      { id: "work", label: "업무", color: "blue" },
+      { id: "personal", label: "개인", color: "green" },
+      { id: "health", label: "운동", color: "orange" }
+    ];
+    for (const c of cats) insertCat.run(c.id, c.label, c.color);
+  })();
   return true;
 }
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
-}
-function shouldRepeatOnDate(template, date) {
-  if (template.date >= date) return false;
-  if (template.skipped_dates && template.skipped_dates.includes(date)) return false;
-  const tDate = /* @__PURE__ */ new Date(template.date + "T00:00:00");
-  const rDate = /* @__PURE__ */ new Date(date + "T00:00:00");
-  if (template.repeat_type === "daily") {
-    if (template.repeat_days && template.repeat_days.length > 0) {
-      return template.repeat_days.includes(rDate.getDay());
-    }
-    return true;
-  }
-  if (template.repeat_type === "weekly") return tDate.getDay() === rDate.getDay();
-  if (template.repeat_type === "monthly") return tDate.getDate() === rDate.getDate();
-  return false;
-}
-function generateRepeatInstances(data, date) {
-  const templates = data.tasks.filter((t) => t.is_template && t.repeat_type !== "none");
-  if (templates.length === 0) return false;
-  const existing = /* @__PURE__ */ new Set();
-  for (const t of data.tasks) {
-    if (t.parent_id && t.date === date) existing.add(t.parent_id);
-  }
-  let changed = false;
-  for (const tmpl of templates) {
-    if (!shouldRepeatOnDate(tmpl, date)) continue;
-    if (!existing.has(tmpl.id)) {
-      data.tasks.push({
-        id: generateId(),
-        title: tmpl.title,
-        memo: tmpl.memo,
-        date,
-        is_completed: false,
-        repeat_type: tmpl.repeat_type,
-        order_index: tmpl.order_index,
-        remind_at: tmpl.remind_at || null,
-        color: tmpl.color || null,
-        category: tmpl.category || null,
-        is_habit: !!tmpl.is_habit,
-        parent_id: tmpl.id,
-        is_template: false,
-        completion_note: null,
-        completed_at: null,
-        created_at: (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      existing.add(tmpl.id);
-      changed = true;
-    }
-  }
-  return changed;
-}
-function dateRange(startDate, endDate) {
-  const dates = [];
-  const cur = /* @__PURE__ */ new Date(startDate + "T00:00:00");
-  const end = /* @__PURE__ */ new Date(endDate + "T00:00:00");
-  while (cur <= end) {
-    dates.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
-    cur.setDate(cur.getDate() + 1);
-  }
-  return dates;
-}
 const db = {
-  seedIfEmpty,
   getDbPath: () => dbPath(),
+  seedIfEmpty,
+  // ── 조회 ─────────────────────────────────────────────────
   getTasksByDate(date) {
-    const data = read();
-    const changed = generateRepeatInstances(data, date);
-    if (changed) write(data);
-    return data.tasks.filter((t) => !t.is_template && (t.date === date || t.end_date && t.date <= date && date <= t.end_date)).sort((a, b) => {
-      const aInProg = !!a.is_in_progress && !a.is_completed;
-      const bInProg = !!b.is_in_progress && !b.is_completed;
-      if (aInProg !== bInProg) return aInProg ? -1 : 1;
-      const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
-      if (star) return star;
-      return a.order_index - b.order_index || a.created_at.localeCompare(b.created_at);
-    });
+    ensureRepeatInstancesForDate(date);
+    const rows = getDb().prepare(
+      `SELECT * FROM tasks
+         WHERE is_template = 0
+           AND (date = ?
+                OR (end_date IS NOT NULL AND date <= ? AND ? <= end_date))`
+    ).all(date, date, date);
+    return rows.map(rowToTask).sort(sortDayTasks);
   },
   getTasksByMonth(year, month) {
     const prefix = `${year}-${String(month).padStart(2, "0")}`;
     const daysInMonth = new Date(year, month, 0).getDate();
     const startDate = `${prefix}-01`;
     const endDate = `${prefix}-${String(daysInMonth).padStart(2, "0")}`;
-    const data = read();
-    let changed = false;
-    for (const date of dateRange(startDate, endDate)) {
-      if (generateRepeatInstances(data, date)) changed = true;
-    }
-    if (changed) write(data);
-    return data.tasks.filter((t) => !t.is_template && (t.date.startsWith(prefix) || t.end_date && t.date <= endDate && t.end_date >= startDate)).sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      const aInProg = !!a.is_in_progress && !a.is_completed;
-      const bInProg = !!b.is_in_progress && !b.is_completed;
-      if (aInProg !== bInProg) return aInProg ? -1 : 1;
-      const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
-      if (star) return star;
-      return a.order_index - b.order_index;
-    });
+    ensureRepeatInstancesForRange(startDate, endDate);
+    const rows = getDb().prepare(
+      `SELECT * FROM tasks
+         WHERE is_template = 0
+           AND (date LIKE ?
+                OR (end_date IS NOT NULL AND date <= ? AND end_date >= ?))`
+    ).all(`${prefix}-%`, endDate, startDate);
+    return rows.map(rowToTask).sort(sortMultiDayTasks);
   },
   getTasksByRange(startDate, endDate) {
-    const data = read();
-    let changed = false;
-    for (const date of dateRange(startDate, endDate)) {
-      if (generateRepeatInstances(data, date)) changed = true;
-    }
-    if (changed) write(data);
-    return data.tasks.filter((t) => !t.is_template && (t.date >= startDate && t.date <= endDate || t.end_date && t.date <= endDate && t.end_date >= startDate)).sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      const aInProg = !!a.is_in_progress && !a.is_completed;
-      const bInProg = !!b.is_in_progress && !b.is_completed;
-      if (aInProg !== bInProg) return aInProg ? -1 : 1;
-      const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0);
-      if (star) return star;
-      return a.order_index - b.order_index;
-    });
+    ensureRepeatInstancesForRange(startDate, endDate);
+    const rows = getDb().prepare(
+      `SELECT * FROM tasks
+         WHERE is_template = 0
+           AND ((date >= ? AND date <= ?)
+                OR (end_date IS NOT NULL AND date <= ? AND end_date >= ?))`
+    ).all(startDate, endDate, endDate, startDate);
+    return rows.map(rowToTask).sort(sortMultiDayTasks);
   },
   getOverdueTasks(date) {
-    const { tasks } = read();
-    const d = new Date(date);
-    d.setDate(d.getDate() - 1);
-    const yesterday = d.toISOString().slice(0, 10);
+    const db2 = getDb();
     const rolledSources = new Set(
-      tasks.filter((t) => t.date === date && t.rollover_source_id).map((t) => t.rollover_source_id)
+      db2.prepare(
+        `SELECT rollover_source_id FROM tasks
+           WHERE date = ? AND rollover_source_id IS NOT NULL`
+      ).all(date).map((r) => r.rollover_source_id)
     );
-    return tasks.filter(
-      (t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date && !rolledSources.has(t.id)
-    );
+    const rows = db2.prepare(
+      `SELECT * FROM tasks
+         WHERE date < ?
+           AND is_completed = 0
+           AND is_template = 0
+           AND parent_id IS NULL
+           AND end_date IS NULL`
+    ).all(date);
+    return rows.map(rowToTask).filter((t) => !rolledSources.has(t.id));
   },
   getTodayReminders(date) {
-    const { tasks } = read();
-    return tasks.filter((t) => t.date === date && t.remind_at && !t.is_template);
+    const rows = getDb().prepare(
+      `SELECT * FROM tasks
+         WHERE date = ?
+           AND remind_at IS NOT NULL
+           AND is_template = 0`
+    ).all(date);
+    return rows.map(rowToTask);
   },
-  createTask({ title, memo = "", date, end_date = null, repeat_type = "none", repeat_days = null, order_index = 0, remind_at = null, color = null, category = null, is_habit = false, start_time = null, end_time = null }) {
-    const data = read();
+  getCompletedTasks({ category, search } = {}) {
+    const db2 = getDb();
+    let sql = `SELECT * FROM tasks WHERE is_completed = 1 AND is_template = 0`;
+    const params = [];
+    if (category) {
+      sql += ` AND category = ?`;
+      params.push(category);
+    }
+    const rows = db2.prepare(sql).all(...params);
+    const filtered = rows.map(rowToTask).filter((t) => {
+      if (search) {
+        const s = search.toLowerCase();
+        const inTitle = (t.title || "").toLowerCase().includes(s);
+        const inNote = (t.completion_note || "").toLowerCase().includes(s);
+        if (!inTitle && !inNote) return false;
+      }
+      return true;
+    });
+    return filtered.sort(
+      (a, b) => (b.completed_at || b.updated_at || "").localeCompare(a.completed_at || a.updated_at || "")
+    );
+  },
+  getPoolTasks(poolKey) {
+    const rows = getDb().prepare(`SELECT * FROM tasks WHERE date = ? AND is_template = 0`).all(poolKey);
+    return rows.map(rowToTask).sort(
+      (a, b) => a.order_index - b.order_index || (a.created_at || "").localeCompare(b.created_at || "")
+    );
+  },
+  // ── 쓰기 ─────────────────────────────────────────────────
+  createTask({
+    title,
+    memo = "",
+    date,
+    end_date = null,
+    repeat_type = "none",
+    repeat_days = null,
+    order_index = 0,
+    remind_at = null,
+    color = null,
+    category = null,
+    is_habit = false,
+    start_time = null,
+    end_time = null
+  }) {
+    const db2 = getDb();
     const habit = repeat_type !== "none" && !!is_habit;
     const isPoolKey = typeof date === "string" && (date.startsWith("M:") || date.startsWith("W:"));
     const resolvedEndDate = repeat_type === "none" && !isPoolKey && end_date && end_date > date ? end_date : null;
+    const now = nowIso();
     if (repeat_type === "none") {
       const task = {
         id: generateId(),
@@ -280,7 +628,10 @@ const db = {
         date,
         end_date: resolvedEndDate,
         is_completed: false,
+        is_in_progress: false,
+        is_starred: false,
         repeat_type,
+        repeat_days: null,
         order_index,
         remind_at,
         color,
@@ -290,14 +641,15 @@ const db = {
         end_time,
         is_template: false,
         parent_id: null,
+        skipped_dates: null,
+        rollover_source_id: null,
         completion_note: null,
         completed_at: null,
-        created_at: (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        created_at: now,
+        updated_at: now
       };
-      data.tasks.push(task);
-      write(data);
-      return task;
+      insertTaskRow(db2, task);
+      return rowToTask(db2.prepare("SELECT * FROM tasks WHERE id=?").get(task.id));
     }
     const templateId = generateId();
     const resolvedRepeatDays = repeat_type === "daily" && repeat_days && repeat_days.length < 7 ? repeat_days : null;
@@ -306,7 +658,10 @@ const db = {
       title,
       memo,
       date,
+      end_date: null,
       is_completed: false,
+      is_in_progress: false,
+      is_starred: false,
       repeat_type,
       repeat_days: resolvedRepeatDays,
       order_index,
@@ -319,16 +674,23 @@ const db = {
       is_template: true,
       parent_id: null,
       skipped_dates: [],
-      created_at: (/* @__PURE__ */ new Date()).toISOString(),
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      rollover_source_id: null,
+      completion_note: null,
+      completed_at: null,
+      created_at: now,
+      updated_at: now
     };
     const instance = {
       id: generateId(),
       title,
       memo,
       date,
+      end_date: null,
       is_completed: false,
+      is_in_progress: false,
+      is_starred: false,
       repeat_type,
+      repeat_days: null,
       order_index,
       remind_at,
       color,
@@ -338,259 +700,285 @@ const db = {
       end_time,
       is_template: false,
       parent_id: templateId,
+      skipped_dates: null,
+      rollover_source_id: null,
       completion_note: null,
       completed_at: null,
-      created_at: (/* @__PURE__ */ new Date()).toISOString(),
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      created_at: now,
+      updated_at: now
     };
-    data.tasks.push(template, instance);
-    write(data);
-    return instance;
+    db2.transaction(() => {
+      insertTaskRow(db2, template);
+      insertTaskRow(db2, instance);
+    })();
+    return rowToTask(db2.prepare("SELECT * FROM tasks WHERE id=?").get(instance.id));
   },
   updateTask(id, fields) {
-    const data = read();
-    const task = data.tasks.find((t) => t.id === id);
-    if (!task) return null;
+    const db2 = getDb();
+    const row = db2.prepare("SELECT * FROM tasks WHERE id=?").get(id);
+    if (!row) return null;
+    const task = rowToTask(row);
     const wasTemplate = !!task.is_template;
     const prevRepeatType = task.repeat_type;
-    Object.assign(task, fields, { updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+    const now = nowIso();
+    const setKeys = [];
+    const params = [];
+    for (const [key, val] of Object.entries(fields)) {
+      if (!TASK_COLS.includes(key)) continue;
+      setKeys.push(`${key} = ?`);
+      params.push(valForCol(key, val));
+    }
+    setKeys.push("updated_at = ?");
+    params.push(now);
+    if (setKeys.length > 0) {
+      params.push(id);
+      db2.prepare(`UPDATE tasks SET ${setKeys.join(", ")} WHERE id = ?`).run(...params);
+    }
     if (Object.prototype.hasOwnProperty.call(fields, "is_habit")) {
       const templateId = task.is_template ? task.id : task.parent_id;
       if (templateId) {
-        const now = (/* @__PURE__ */ new Date()).toISOString();
-        for (const t of data.tasks) {
-          if (t.id === templateId || t.parent_id === templateId) {
-            t.is_habit = !!fields.is_habit;
-            t.updated_at = now;
-          }
-        }
+        const flag = fields.is_habit ? 1 : 0;
+        db2.prepare(
+          `UPDATE tasks SET is_habit = ?, updated_at = ?
+           WHERE id = ? OR parent_id = ?`
+        ).run(flag, now, templateId, templateId);
       }
     }
     if (wasTemplate && prevRepeatType !== "none" && fields.repeat_type === "none") {
       const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-      data.tasks = data.tasks.filter((t) => {
-        if (t.parent_id === task.id && t.date > todayStr) return false;
-        return true;
-      });
-      task.is_template = false;
-      task.parent_id = null;
-      task.skipped_dates = void 0;
-      task.is_habit = false;
+      db2.transaction(() => {
+        db2.prepare(
+          `DELETE FROM tasks WHERE parent_id = ? AND date > ?`
+        ).run(task.id, todayStr);
+        db2.prepare(
+          `UPDATE tasks SET is_template = 0, parent_id = NULL, skipped_dates = NULL, is_habit = 0, updated_at = ?
+           WHERE id = ?`
+        ).run(now, task.id);
+      })();
     }
-    write(data);
-    return task;
+    return rowToTask(db2.prepare("SELECT * FROM tasks WHERE id=?").get(id));
   },
   toggleTask(id, completionNote = null) {
-    const data = read();
-    const task = data.tasks.find((t) => t.id === id);
-    if (!task) return null;
-    task.is_completed = !task.is_completed;
-    task.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-    if (task.is_completed) {
-      task.completed_at = (/* @__PURE__ */ new Date()).toISOString();
-      task.completion_note = completionNote || null;
-      task.is_in_progress = false;
+    const db2 = getDb();
+    const row = db2.prepare("SELECT * FROM tasks WHERE id=?").get(id);
+    if (!row) return null;
+    const task = rowToTask(row);
+    const now = nowIso();
+    const newCompleted = !task.is_completed;
+    if (newCompleted) {
+      db2.prepare(
+        `UPDATE tasks SET is_completed = 1, completed_at = ?, completion_note = ?, is_in_progress = 0, updated_at = ?
+         WHERE id = ?`
+      ).run(now, completionNote || null, now, id);
     } else {
-      task.completed_at = null;
-      task.completion_note = null;
+      db2.prepare(
+        `UPDATE tasks SET is_completed = 0, completed_at = NULL, completion_note = NULL, updated_at = ?
+         WHERE id = ?`
+      ).run(now, id);
     }
-    write(data);
-    return task;
+    return rowToTask(db2.prepare("SELECT * FROM tasks WHERE id=?").get(id));
   },
   setInProgress(id, value) {
-    const data = read();
-    const task = data.tasks.find((t) => t.id === id);
-    if (!task) return null;
-    task.is_in_progress = !!value;
-    if (task.is_in_progress) task.is_completed = false;
-    task.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-    write(data);
-    return task;
+    const db2 = getDb();
+    const row = db2.prepare("SELECT * FROM tasks WHERE id=?").get(id);
+    if (!row) return null;
+    const now = nowIso();
+    const flag = value ? 1 : 0;
+    if (flag) {
+      db2.prepare(
+        `UPDATE tasks SET is_in_progress = 1, is_completed = 0, updated_at = ? WHERE id = ?`
+      ).run(now, id);
+    } else {
+      db2.prepare(
+        `UPDATE tasks SET is_in_progress = 0, updated_at = ? WHERE id = ?`
+      ).run(now, id);
+    }
+    return rowToTask(db2.prepare("SELECT * FROM tasks WHERE id=?").get(id));
   },
   setStarred(id, value) {
-    const data = read();
-    const task = data.tasks.find((t) => t.id === id);
-    if (!task) return null;
-    task.is_starred = !!value;
-    task.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-    write(data);
-    return task;
-  },
-  getCompletedTasks({ category, search } = {}) {
-    const { tasks } = read();
-    return tasks.filter((t) => {
-      if (!t.is_completed || t.is_template) return false;
-      if (category && t.category !== category) return false;
-      if (search && !t.title.toLowerCase().includes(search.toLowerCase()) && !(t.completion_note || "").toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    }).sort((a, b) => (b.completed_at || b.updated_at).localeCompare(a.completed_at || a.updated_at));
+    const db2 = getDb();
+    const row = db2.prepare("SELECT * FROM tasks WHERE id=?").get(id);
+    if (!row) return null;
+    const flag = value ? 1 : 0;
+    db2.prepare(
+      `UPDATE tasks SET is_starred = ?, updated_at = ? WHERE id = ?`
+    ).run(flag, nowIso(), id);
+    return rowToTask(db2.prepare("SELECT * FROM tasks WHERE id=?").get(id));
   },
   deleteTask(id) {
-    const data = read();
-    const task = data.tasks.find((t) => t.id === id);
-    if (task && task.parent_id) {
-      const template = data.tasks.find((t) => t.id === task.parent_id);
-      if (template) {
-        if (!template.skipped_dates) template.skipped_dates = [];
-        template.skipped_dates.push(task.date);
+    const db2 = getDb();
+    const row = db2.prepare("SELECT * FROM tasks WHERE id=?").get(id);
+    if (row && row.parent_id) {
+      const task = rowToTask(row);
+      const tmplRow = db2.prepare("SELECT * FROM tasks WHERE id=?").get(task.parent_id);
+      if (tmplRow) {
+        const tmpl = rowToTask(tmplRow);
+        const skipped = Array.isArray(tmpl.skipped_dates) ? tmpl.skipped_dates : [];
+        skipped.push(task.date);
+        db2.prepare(
+          `UPDATE tasks SET skipped_dates = ?, updated_at = ? WHERE id = ?`
+        ).run(JSON.stringify(skipped), nowIso(), tmpl.id);
       }
     }
-    data.tasks = data.tasks.filter((t) => t.id !== id);
-    write(data);
+    db2.prepare("DELETE FROM tasks WHERE id = ?").run(id);
     return { id };
   },
   deleteTaskAndFuture(id, fromDate) {
-    const data = read();
-    const task = data.tasks.find((t) => t.id === id);
-    if (!task) return { id };
+    const db2 = getDb();
+    const row = db2.prepare("SELECT * FROM tasks WHERE id=?").get(id);
+    if (!row) return { id };
+    const task = rowToTask(row);
     const templateId = task.is_template ? task.id : task.parent_id || null;
     if (templateId) {
-      data.tasks = data.tasks.filter((t) => {
-        if (t.id === templateId) return false;
-        if (t.parent_id === templateId && t.date >= fromDate) return false;
-        return true;
-      });
+      db2.transaction(() => {
+        db2.prepare("DELETE FROM tasks WHERE id = ?").run(templateId);
+        db2.prepare(
+          `DELETE FROM tasks WHERE parent_id = ? AND date >= ?`
+        ).run(templateId, fromDate);
+      })();
     } else {
-      data.tasks = data.tasks.filter((t) => t.id !== id);
+      db2.prepare("DELETE FROM tasks WHERE id = ?").run(id);
     }
-    write(data);
     return { id };
   },
   reorderTasks(date, orderedIds) {
-    const data = read();
-    orderedIds.forEach((id, index) => {
-      const task = data.tasks.find((t) => t.id === id);
-      if (task) {
-        task.order_index = index;
-        task.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-      }
-    });
-    write(data);
+    const db2 = getDb();
+    const now = nowIso();
+    const stmt = db2.prepare(
+      `UPDATE tasks SET order_index = ?, updated_at = ? WHERE id = ?`
+    );
+    db2.transaction(() => {
+      orderedIds.forEach((id, index) => stmt.run(index, now, id));
+    })();
     return true;
   },
+  // ── 이월 ─────────────────────────────────────────────────
   rolloverTasks(toDate) {
-    const data = read();
-    const d = new Date(toDate);
-    d.setDate(d.getDate() - 1);
-    const yesterday = d.toISOString().slice(0, 10);
-    const overdue = data.tasks.filter((t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date);
+    const db2 = getDb();
+    const overdueRows = db2.prepare(
+      `SELECT * FROM tasks
+         WHERE date < ?
+           AND is_completed = 0
+           AND is_template = 0
+           AND parent_id IS NULL
+           AND end_date IS NULL`
+    ).all(toDate);
+    const overdue = overdueRows.map(rowToTask);
     const existingSources = new Set(
-      data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
+      db2.prepare(
+        `SELECT rollover_source_id FROM tasks
+           WHERE date = ? AND rollover_source_id IS NOT NULL`
+      ).all(toDate).map((r) => r.rollover_source_id)
     );
     const toCopy = overdue.filter((t) => !existingSources.has(t.id));
-    const maxOrder = data.tasks.filter((t) => t.date === toDate).length;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
+    if (toCopy.length === 0) return [];
+    const maxOrder = db2.prepare(`SELECT count(*) as c FROM tasks WHERE date = ?`).get(toDate).c;
+    const now = nowIso();
     const newTasks = toCopy.map((t, i) => ({
       id: generateId(),
       title: t.title,
       memo: t.memo,
       date: toDate,
+      end_date: null,
       is_completed: false,
       is_in_progress: !!t.is_in_progress,
+      is_starred: false,
       repeat_type: "none",
+      repeat_days: null,
       order_index: maxOrder + i,
       remind_at: null,
       color: t.color || null,
       category: t.category || null,
+      is_habit: false,
+      start_time: null,
+      end_time: null,
       is_template: false,
       parent_id: null,
+      skipped_dates: null,
       rollover_source_id: t.id,
       completion_note: null,
       completed_at: null,
       created_at: now,
       updated_at: now
     }));
-    data.tasks.push(...newTasks);
-    write(data);
+    db2.transaction(() => {
+      for (const nt of newTasks) insertTaskRow(db2, nt);
+    })();
     return newTasks;
   },
   rolloverSelectedTasks(taskIds, toDate) {
-    const data = read();
-    const idSet = new Set(taskIds);
-    const selected = data.tasks.filter((t) => idSet.has(t.id) && !t.end_date);
+    const db2 = getDb();
+    if (!taskIds || taskIds.length === 0) return [];
+    const placeholders = taskIds.map(() => "?").join(",");
+    const selectedRows = db2.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders}) AND end_date IS NULL`).all(...taskIds);
+    const selected = selectedRows.map(rowToTask);
     const existingSources = new Set(
-      data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
+      db2.prepare(
+        `SELECT rollover_source_id FROM tasks
+           WHERE date = ? AND rollover_source_id IS NOT NULL`
+      ).all(toDate).map((r) => r.rollover_source_id)
     );
     const toCopy = selected.filter((t) => !existingSources.has(t.id));
-    const maxOrder = data.tasks.filter((t) => t.date === toDate).length;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
+    if (toCopy.length === 0) return [];
+    const maxOrder = db2.prepare(`SELECT count(*) as c FROM tasks WHERE date = ?`).get(toDate).c;
+    const now = nowIso();
     const newTasks = toCopy.map((t, i) => ({
       id: generateId(),
       title: t.title,
       memo: t.memo,
       date: toDate,
+      end_date: null,
       is_completed: false,
       is_in_progress: !!t.is_in_progress,
+      is_starred: false,
       repeat_type: "none",
+      repeat_days: null,
       order_index: maxOrder + i,
       remind_at: null,
       color: t.color || null,
       category: t.category || null,
+      is_habit: false,
+      start_time: null,
+      end_time: null,
       is_template: false,
       parent_id: null,
+      skipped_dates: null,
       rollover_source_id: t.id,
       completion_note: null,
       completed_at: null,
       created_at: now,
       updated_at: now
     }));
-    data.tasks.push(...newTasks);
-    write(data);
+    db2.transaction(() => {
+      for (const nt of newTasks) insertTaskRow(db2, nt);
+    })();
     return newTasks;
   },
-  autoRolloverInProgress(toDate) {
-    const data = read();
-    const d = new Date(toDate);
-    d.setDate(d.getDate() - 1);
-    const yesterday = d.toISOString().slice(0, 10);
-    const candidates = data.tasks.filter(
-      (t) => t.date === yesterday && t.is_in_progress && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date
-    );
-    if (candidates.length === 0) return [];
-    const existingSources = new Set(
-      data.tasks.filter((t) => t.date === toDate && t.rollover_source_id).map((t) => t.rollover_source_id)
-    );
-    const toCopy = candidates.filter((t) => !existingSources.has(t.id));
-    if (toCopy.length === 0) return [];
-    const maxOrder = data.tasks.filter((t) => t.date === toDate).length;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const newTasks = toCopy.map((t, i) => ({
-      id: generateId(),
-      title: t.title,
-      memo: t.memo,
-      date: toDate,
-      is_completed: false,
-      is_in_progress: true,
-      repeat_type: "none",
-      order_index: maxOrder + i,
-      remind_at: null,
-      color: t.color || null,
-      category: t.category || null,
-      is_template: false,
-      parent_id: null,
-      rollover_source_id: t.id,
-      completion_note: null,
-      completed_at: null,
-      created_at: now,
-      updated_at: now
-    }));
-    data.tasks.push(...newTasks);
-    write(data);
+  autoRolloverOverdue(toDate) {
+    const db2 = getDb();
+    const tasks = getAllTasks();
+    const newTasks = autoRolloverOverdue(tasks, toDate);
+    if (newTasks.length === 0) return [];
+    db2.transaction(() => {
+      for (const nt of newTasks) insertTaskRow(db2, nt);
+    })();
     return newTasks;
   },
-  // ── 습관 트래커 ─────────────────────────────────────────
+  // ── 습관 트래커 ───────────────────────────────────────────
   getHabitMatrix(fromDate, toDate) {
-    const data = read();
-    let changed = false;
-    for (const date of dateRange(fromDate, toDate)) {
-      if (generateRepeatInstances(data, date)) changed = true;
-    }
-    if (changed) write(data);
-    const templates = data.tasks.filter((t) => t.is_template && t.is_habit && t.repeat_type !== "none");
+    ensureRepeatInstancesForRange(fromDate, toDate);
+    const db2 = getDb();
+    const templates = db2.prepare(
+      `SELECT * FROM tasks
+         WHERE is_template = 1 AND is_habit = 1 AND repeat_type != 'none'`
+    ).all().map(rowToTask);
+    const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     return templates.map((tmpl) => {
-      const instances = data.tasks.filter(
-        (t) => !t.is_template && t.parent_id === tmpl.id && t.date >= fromDate && t.date <= toDate
-      );
+      const instances = db2.prepare(
+        `SELECT * FROM tasks
+           WHERE is_template = 0 AND parent_id = ?
+             AND date >= ? AND date <= ?`
+      ).all(tmpl.id, fromDate, toDate).map(rowToTask);
       const byDate = {};
       for (const inst of instances) {
         byDate[inst.date] = {
@@ -608,8 +996,8 @@ const db = {
         if (skipped.has(date)) status = "skip";
         else if (!expected) status = "off";
         else if (byDate[date]?.is_completed) status = "done";
-        else if (date > (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) status = "future";
-        else if (date === (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) status = "today";
+        else if (date > todayStr) status = "future";
+        else if (date === todayStr) status = "today";
         else status = "miss";
         days.push({ date, status, instance: byDate[date] || null });
       }
@@ -628,97 +1016,313 @@ const db = {
     });
   },
   toggleHabitOnDate(templateId, date) {
-    const data = read();
-    const tmpl = data.tasks.find((t) => t.id === templateId && t.is_template);
-    if (!tmpl) return null;
-    let inst = data.tasks.find((t) => t.parent_id === templateId && t.date === date && !t.is_template);
-    if (!inst) {
-      inst = {
+    const db2 = getDb();
+    const tmplRow = db2.prepare(`SELECT * FROM tasks WHERE id = ? AND is_template = 1`).get(templateId);
+    if (!tmplRow) return null;
+    const tmpl = rowToTask(tmplRow);
+    const instRow = db2.prepare(
+      `SELECT * FROM tasks WHERE parent_id = ? AND date = ? AND is_template = 0`
+    ).get(templateId, date);
+    if (!instRow) {
+      const now2 = nowIso();
+      const inst2 = {
         id: generateId(),
         title: tmpl.title,
         memo: tmpl.memo,
         date,
+        end_date: null,
         is_completed: true,
+        is_in_progress: false,
+        is_starred: false,
         repeat_type: tmpl.repeat_type,
+        repeat_days: null,
         order_index: tmpl.order_index,
         remind_at: tmpl.remind_at || null,
         color: tmpl.color || null,
         category: tmpl.category || null,
         is_habit: true,
-        parent_id: templateId,
+        start_time: null,
+        end_time: null,
         is_template: false,
+        parent_id: templateId,
+        skipped_dates: null,
+        rollover_source_id: null,
         completion_note: null,
-        completed_at: (/* @__PURE__ */ new Date()).toISOString(),
-        created_at: (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        completed_at: now2,
+        created_at: now2,
+        updated_at: now2
       };
-      data.tasks.push(inst);
-    } else {
-      inst.is_completed = !inst.is_completed;
-      inst.completed_at = inst.is_completed ? (/* @__PURE__ */ new Date()).toISOString() : null;
-      inst.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+      insertTaskRow(db2, inst2);
+      return rowToTask(db2.prepare("SELECT * FROM tasks WHERE id=?").get(inst2.id));
     }
-    write(data);
-    return inst;
+    const inst = rowToTask(instRow);
+    const now = nowIso();
+    const newCompleted = !inst.is_completed;
+    db2.prepare(
+      `UPDATE tasks SET is_completed = ?, completed_at = ?, updated_at = ?
+       WHERE id = ?`
+    ).run(newCompleted ? 1 : 0, newCompleted ? now : null, now, inst.id);
+    return rowToTask(db2.prepare("SELECT * FROM tasks WHERE id=?").get(inst.id));
   },
-  // ── 플래너 풀 (M:YYYY-MM, W:YYYY-MM-DD 형식) ───────────
-  getPoolTasks(poolKey) {
-    const { tasks } = read();
-    return tasks.filter((t) => t.date === poolKey && !t.is_template).sort((a, b) => a.order_index - b.order_index || a.created_at.localeCompare(b.created_at));
-  },
-  // ── Categories ─────────────────────────────────────────
+  // ── Categories ───────────────────────────────────────────
   getCategories() {
-    const { settings } = read();
-    return settings.categories || [];
+    const db2 = getDb();
+    const rows = db2.prepare("SELECT id, label, color FROM categories").all();
+    if (rows.length > 0) return rows;
+    const setting = db2.prepare("SELECT value FROM settings WHERE key='categories'").get();
+    if (!setting) return [];
+    try {
+      const parsed = JSON.parse(setting.value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   },
   setCategories(categories) {
-    const data = read();
-    data.settings.categories = categories;
-    write(data);
+    const db2 = getDb();
+    db2.transaction(() => {
+      db2.prepare("DELETE FROM categories").run();
+      const stmt = db2.prepare("INSERT INTO categories (id, label, color) VALUES (?, ?, ?)");
+      for (const c of categories) stmt.run(c.id, c.label, c.color || null);
+    })();
   },
+  // ── 설정 (key/value) ─────────────────────────────────────
   getSetting(key) {
-    const { settings } = read();
-    return settings[key];
-  },
-  setSetting(key, value) {
-    const data = read();
-    data.settings[key] = value;
-    write(data);
-  },
-  // ── PDS: See 회고 (날짜별) ─────────────────────────────
-  getSeeMemo(date) {
-    const { settings } = read();
-    const raw = settings[`see:${date}`];
-    if (!raw) return { good: "", bad: "", next: "" };
-    if (typeof raw === "string") return { good: raw, bad: "", next: "" };
+    const row = getDb().prepare("SELECT value FROM settings WHERE key = ?").get(key);
+    if (!row) return void 0;
+    const raw = row.value;
+    if (raw === null || raw === void 0) return raw;
+    const first = raw.charAt(0);
+    if (first === "{" || first === "[") {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    }
     return raw;
   },
-  setSeeMemo(date, obj) {
-    const data = read();
-    data.settings[`see:${date}`] = obj;
-    write(data);
+  setSetting(key, value) {
+    const db2 = getDb();
+    const stored = typeof value === "string" ? value : value === void 0 ? null : JSON.stringify(value);
+    db2.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, stored);
   },
-  // ── PDS: Look Back 월별 통계 ──────────────────────────
+  // ── PDS: See 회고 ────────────────────────────────────────
+  getSeeMemo(date) {
+    const row = getDb().prepare("SELECT good, bad, next FROM see_memos WHERE date = ?").get(date);
+    if (!row) return { good: "", bad: "", next: "" };
+    return { good: row.good || "", bad: row.bad || "", next: row.next || "" };
+  },
+  setSeeMemo(date, obj) {
+    const db2 = getDb();
+    const good = obj && obj.good || "";
+    const bad = obj && obj.bad || "";
+    const next = obj && obj.next || "";
+    db2.prepare(
+      `INSERT OR REPLACE INTO see_memos (date, good, bad, next, updated_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(date, good, bad, next, nowIso());
+  },
+  // ── PDS: Look Back ──────────────────────────────────────
   getMonthlyStats(months) {
-    const { tasks } = read();
+    const db2 = getDb();
+    const totalStmt = db2.prepare(
+      `SELECT count(*) as c FROM tasks
+       WHERE date LIKE ? AND is_template = 0`
+    );
+    const doneStmt = db2.prepare(
+      `SELECT count(*) as c FROM tasks
+       WHERE date LIKE ? AND is_template = 0 AND is_completed = 1`
+    );
     return months.map((ym) => {
-      const monthTasks = tasks.filter((t) => t.date.startsWith(ym) && !t.is_template);
-      const total = monthTasks.length;
-      const done = monthTasks.filter((t) => t.is_completed).length;
+      const pattern = `${ym}-%`;
+      const total = totalStmt.get(pattern).c;
+      const done = doneStmt.get(pattern).c;
       return { ym, total, done, rate: total > 0 ? Math.round(done / total * 100) : 0 };
     });
   },
-  // ── PDS: Look Forward 월별 목표 ───────────────────────
+  // ── PDS: Look Forward ───────────────────────────────────
   getMonthlyGoal(ym) {
-    const { settings } = read();
-    return settings[`goal:${ym}`] || "";
+    const row = getDb().prepare("SELECT text FROM monthly_goals WHERE ym = ?").get(ym);
+    return row ? row.text || "" : "";
   },
   setMonthlyGoal(ym, text) {
-    const data = read();
-    data.settings[`goal:${ym}`] = text;
-    write(data);
+    getDb().prepare(
+      `INSERT OR REPLACE INTO monthly_goals (ym, text, updated_at)
+         VALUES (?, ?, ?)`
+    ).run(ym, text, nowIso());
   }
 };
+function loadEnv() {
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) return;
+  const candidates = [];
+  if (process.cwd()) candidates.push(path.join(process.cwd(), ".env"));
+  if (electron.app?.getAppPath) {
+    try {
+      candidates.push(path.join(electron.app.getAppPath(), ".env"));
+    } catch {
+    }
+  }
+  if (electron.app?.getPath) {
+    try {
+      candidates.push(path.join(electron.app.getPath("userData"), ".env"));
+    } catch {
+    }
+  }
+  for (const path2 of candidates) {
+    if (fs.existsSync(path2)) {
+      dotenv.config({ path: path2 });
+      break;
+    }
+  }
+}
+loadEnv();
+const config = {
+  supabaseUrl: process.env.SUPABASE_URL || "",
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ""
+};
+function assertConfigured() {
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    throw new Error("SUPABASE_URL / SUPABASE_ANON_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.");
+  }
+}
+function createFileBackedStorage({ dir, encrypt, decrypt }) {
+  function resolveDir() {
+    return typeof dir === "function" ? dir() : dir;
+  }
+  function pathFor(key) {
+    return path.join(resolveDir(), encodeURIComponent(key) + ".bin");
+  }
+  function ensureDir() {
+    const d = resolveDir();
+    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+  }
+  return {
+    getItem(key) {
+      const p = pathFor(key);
+      if (!fs.existsSync(p)) return null;
+      try {
+        return decrypt(fs.readFileSync(p));
+      } catch {
+        return null;
+      }
+    },
+    setItem(key, value) {
+      ensureDir();
+      fs.writeFileSync(pathFor(key), encrypt(String(value)));
+    },
+    removeItem(key) {
+      const p = pathFor(key);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
+  };
+}
+let _secureStorage = null;
+function getSecureStorage() {
+  if (_secureStorage) return _secureStorage;
+  _secureStorage = createFileBackedStorage({
+    dir: () => path.join(electron.app.getPath("userData"), "secure"),
+    encrypt: (value) => {
+      if (electron.safeStorage.isEncryptionAvailable()) {
+        return electron.safeStorage.encryptString(value);
+      }
+      return Buffer.from(value, "utf8");
+    },
+    decrypt: (buffer) => {
+      if (electron.safeStorage.isEncryptionAvailable()) {
+        return electron.safeStorage.decryptString(buffer);
+      }
+      return buffer.toString("utf8");
+    }
+  });
+  return _secureStorage;
+}
+function createSupabaseClient({ url, anonKey, storage }) {
+  return supabaseJs.createClient(url, anonKey, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      // Electron에선 redirect URL이 브라우저가 아니라 main process의 deep link로 들어오므로,
+      // supabase-js의 URL fragment 자동 파싱은 꺼두고 우리가 직접 code를 exchange한다.
+      detectSessionInUrl: false,
+      flowType: "pkce",
+      storage
+    }
+  });
+}
+let _client = null;
+function getSupabaseClient() {
+  if (_client) return _client;
+  assertConfigured();
+  _client = createSupabaseClient({
+    url: config.supabaseUrl,
+    anonKey: config.supabaseAnonKey,
+    storage: getSecureStorage()
+  });
+  return _client;
+}
+const GOOGLE_SCOPES = "email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks";
+const REDIRECT_URL = "app://orbit/auth/callback";
+function createAuth({
+  getClient = getSupabaseClient,
+  openExternal = (url) => electron.shell.openExternal(url)
+} = {}) {
+  return {
+    async signInWithGoogle() {
+      const client = getClient();
+      const { data, error } = await client.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: REDIRECT_URL,
+          scopes: GOOGLE_SCOPES,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent"
+          },
+          // Electron main에선 SDK가 직접 redirect할 화면이 없다. URL만 받아서 외부 브라우저로 연다.
+          skipBrowserRedirect: true
+        }
+      });
+      if (error) throw error;
+      if (!data?.url) throw new Error("OAuth URL not returned from Supabase");
+      await openExternal(data.url);
+      return { url: data.url };
+    },
+    async handleAuthCallback(callbackUrl) {
+      const url = new URL(callbackUrl);
+      const errorParam = url.searchParams.get("error_description") || url.searchParams.get("error");
+      if (errorParam) throw new Error(`OAuth error: ${errorParam}`);
+      const code = url.searchParams.get("code");
+      if (!code) throw new Error("OAuth callback missing code parameter");
+      const client = getClient();
+      const { data, error } = await client.auth.exchangeCodeForSession(code);
+      if (error) throw error;
+      return data;
+    },
+    async getSession() {
+      const client = getClient();
+      const { data, error } = await client.auth.getSession();
+      if (error) throw error;
+      return data.session;
+    },
+    async getUser() {
+      const session = await this.getSession();
+      return session?.user || null;
+    },
+    async signOut() {
+      const client = getClient();
+      const { error } = await client.auth.signOut();
+      if (error) throw error;
+    }
+  };
+}
+let _auth = null;
+function getAuth() {
+  if (_auth) return _auth;
+  _auth = createAuth();
+  return _auth;
+}
+const AUTH_PROTOCOL_SCHEME = "app";
 let mainWindow = null;
 let stickerWindow = null;
 let tray = null;
@@ -731,7 +1335,7 @@ function createMainWindow() {
     minHeight: 500,
     show: false,
     autoHideMenuBar: true,
-    title: isDev ? "TodoStick [DEV]" : "TodoStick",
+    title: isDev ? "Orbit [DEV]" : "Orbit",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       sandbox: false,
@@ -822,7 +1426,7 @@ function createTray() {
   const iconPath = path.join(__dirname, "../../resources/icon.png");
   const icon = electron.nativeImage.createFromPath(iconPath);
   tray = new electron.Tray(icon);
-  tray.setToolTip(isDev ? "TodoStick [DEV]" : "TodoStick");
+  tray.setToolTip(isDev ? "Orbit [DEV]" : "Orbit");
   updateTrayMenu();
   tray.on("double-click", () => {
     mainWindow?.show();
@@ -884,8 +1488,63 @@ function scheduleMidnightRefresh() {
     scheduleMidnightRefresh();
   }, msToMidnight + 500);
 }
+function extractAuthCallbackUrl(argv) {
+  if (!argv) return null;
+  for (const arg of argv) {
+    if (typeof arg === "string" && arg.startsWith(`${AUTH_PROTOCOL_SCHEME}://`) && arg.includes("/auth/callback")) {
+      return arg;
+    }
+  }
+  return null;
+}
+async function handleDeepLink(url) {
+  if (!url) return;
+  try {
+    const result = await getAuth().handleAuthCallback(url);
+    mainWindow?.webContents.send("auth:state-changed", { session: result?.session ?? null });
+    mainWindow?.show();
+    mainWindow?.focus();
+  } catch (e) {
+    console.error("[auth] callback failed:", e);
+    mainWindow?.webContents.send("auth:state-changed", { session: null, error: String(e?.message || e) });
+  }
+}
+if (process.defaultApp && process.argv.length >= 2) {
+  electron.app.setAsDefaultProtocolClient(AUTH_PROTOCOL_SCHEME, process.execPath, [path.join(process.cwd(), process.argv[1])]);
+} else {
+  electron.app.setAsDefaultProtocolClient(AUTH_PROTOCOL_SCHEME);
+}
+const gotSingleInstanceLock = electron.app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  electron.app.quit();
+} else {
+  electron.app.on("second-instance", (_, argv) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    const url = extractAuthCallbackUrl(argv);
+    if (url) handleDeepLink(url);
+  });
+}
+electron.app.on("open-url", (event, url) => {
+  event.preventDefault();
+  handleDeepLink(url);
+});
 electron.app.whenReady().then(() => {
-  utils.electronApp.setAppUserModelId(isDev ? "com.todostick.dev" : "com.todostick");
+  try {
+    const userDataPath = electron.app.getPath("userData");
+    const parentDir = userDataPath.split(/[/\\]/).slice(0, -1).join("/");
+    const oldDir = `${parentDir}/todostick`;
+    const result = migrateUserData({ oldDir, newDir: userDataPath });
+    if (result.migrated) {
+      console.log("[migration] todostick → orbit:", result.to);
+    }
+  } catch (e) {
+    console.error("[migration] failed:", e);
+  }
+  utils.electronApp.setAppUserModelId(isDev ? "com.orbit.dev" : "com.orbit");
   if (isDev) {
     const seeded = db.seedIfEmpty();
     if (seeded) console.log("[DEV] 시드 데이터 생성됨 →", db.getDbPath());
@@ -899,6 +1558,10 @@ electron.app.whenReady().then(() => {
   registerShortcuts();
   scheduleReminders();
   scheduleMidnightRefresh();
+  const initialUrl = extractAuthCallbackUrl(process.argv);
+  if (initialUrl) {
+    mainWindow?.webContents.once("did-finish-load", () => handleDeepLink(initialUrl));
+  }
   electron.app.on("activate", () => {
     if (electron.BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
@@ -926,8 +1589,8 @@ electron.ipcMain.handle("tasks:delete", (_, id) => db.deleteTask(id));
 electron.ipcMain.handle("tasks:toggle", (_, id, note) => db.toggleTask(id, note));
 electron.ipcMain.handle("tasks:setInProgress", (_, id, value) => db.setInProgress(id, value));
 electron.ipcMain.handle("tasks:setStarred", (_, id, value) => db.setStarred(id, value));
-electron.ipcMain.handle("tasks:autoRolloverInProgress", (_, toDate) => {
-  const result = db.autoRolloverInProgress(toDate);
+electron.ipcMain.handle("tasks:autoRolloverOverdue", (_, toDate) => {
+  const result = db.autoRolloverOverdue(toDate);
   if (result.length > 0) {
     mainWindow?.webContents.send("tasks:refresh");
     stickerWindow?.webContents.send("tasks:refresh");
@@ -1011,4 +1674,18 @@ electron.ipcMain.on("window:setSize", (event, width, height) => {
 electron.ipcMain.on("window:setIgnoreMouseEvents", (event, ignore) => {
   const win = electron.BrowserWindow.fromWebContents(event.sender);
   if (win) win.setIgnoreMouseEvents(ignore, { forward: true });
+});
+electron.ipcMain.handle("auth:signInWithGoogle", async () => {
+  return await getAuth().signInWithGoogle();
+});
+electron.ipcMain.handle("auth:getSession", async () => {
+  return await getAuth().getSession();
+});
+electron.ipcMain.handle("auth:getUser", async () => {
+  return await getAuth().getUser();
+});
+electron.ipcMain.handle("auth:signOut", async () => {
+  await getAuth().signOut();
+  mainWindow?.webContents.send("auth:state-changed", { session: null });
+  return true;
 });
