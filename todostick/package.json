@@ -1,6 +1,6 @@
 {
   "name": "orbit",
-  "version": "1.7.0-rc2",
+  "version": "1.7.0",
   "description": "Orbit — 개인과 팀의 일정·할일·프로젝트를 잇는 운영 OS",
   "main": "out/main/index.js",
   "scripts": {
