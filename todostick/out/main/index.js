@@ -1403,7 +1403,7 @@ function createStickerWindow() {
   });
 }
 function updateTrayMenu() {
-  if (!tray) return;
+  if (!tray || tray.isDestroyed()) return;
   const contextMenu = electron.Menu.buildFromTemplate([
     { label: "메인 창 열기", click: () => {
       mainWindow?.show();
