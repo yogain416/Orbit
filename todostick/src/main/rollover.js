@@ -9,16 +9,16 @@ export function yesterdayOf(toDate) {
 }
 
 export function autoRolloverOverdue(tasks, toDate) {
-  // 어제 미완료만 대상 — 'date < toDate'로 확장하면 묵은 미완료가 한꺼번에 폭주하고,
-  // 사용자가 카피 삭제 시 멱등성이 깨져 같은 task가 반복 등장함.
-  // 주말/휴가 chain 끊김 문제는 트레이드오프로 일단 수용. 향후 'rolled_at' 컬럼으로 재해결 예정.
-  const yesterday = yesterdayOf(toDate)
+  // toDate 이전의 모든 미완료를 대상으로 함 — 주말/휴가로 며칠 비워도 chain 끊기지 않게.
+  // 'rolled_at' 컬럼이 있는 원본은 이미 한 번 이월됐으므로 제외 → 사용자가 카피를 삭제해도
+  // 다시 이월되지 않음 (영구 멱등성).
   const candidates = tasks.filter((t) =>
-    t.date === yesterday &&
+    t.date < toDate &&
     !t.is_completed &&
     !t.is_template &&
     !t.parent_id &&
-    !t.end_date
+    !t.end_date &&
+    !t.rolled_at
   )
   if (candidates.length === 0) return []
 

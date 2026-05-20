@@ -54,6 +54,42 @@ function cleanupRolloverFloodOnce(db) {
   }
 }
 
+// rolled_at 컬럼이 새로 추가되었으므로 (v1.7.4 schema_version=2), 기존 DB의 '이미 이월된 적 있는'
+// 원본들을 모두 마킹해서 다시 자동 이월 candidate가 되지 않게 한다.
+// 한 번이라도 카피된 원본 = rollover_source_id로 참조된 원본.
+function backfillRolledAtOnce(db) {
+  try {
+    const already = db
+      .prepare("SELECT value FROM meta WHERE key='rolled_at_backfill_v1'")
+      .get()
+    if (already) return 0
+
+    const now = new Date().toISOString()
+    const updated = db
+      .prepare(
+        `UPDATE tasks
+         SET rolled_at = ?
+         WHERE rolled_at IS NULL
+           AND id IN (
+             SELECT DISTINCT rollover_source_id FROM tasks WHERE rollover_source_id IS NOT NULL
+           )`
+      )
+      .run(now).changes
+
+    db.prepare(
+      "INSERT OR REPLACE INTO meta (key, value) VALUES ('rolled_at_backfill_v1', '1')"
+    ).run()
+
+    if (updated > 0) {
+      console.log(`[backfill] rolled_at: ${updated} 원본 마킹됨`)
+    }
+    return updated
+  } catch (e) {
+    console.error('[backfill] rolled_at backfill failed:', e)
+    return 0
+  }
+}
+
 function getDb() {
   if (_db) return _db
   _db = openDatabase(dbPath())
@@ -63,6 +99,7 @@ function getDb() {
     console.error('[migrate] failed:', e)
   }
   cleanupRolloverFloodOnce(_db)
+  backfillRolledAtOnce(_db)
   return _db
 }
 
@@ -85,10 +122,20 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+// 원본 task에 rolled_at 마킹 — 한 번 이월된 원본은 다시 이월되지 않게.
+function markRolledAt(db, ids, now) {
+  if (!ids || ids.length === 0) return
+  const placeholders = ids.map(() => '?').join(',')
+  db.prepare(
+    `UPDATE tasks SET rolled_at = ? WHERE id IN (${placeholders}) AND rolled_at IS NULL`
+  ).run(now, ...ids)
+}
+
 const TASK_COLS = [
   'id', 'title', 'memo', 'date', 'end_date', 'is_completed', 'is_in_progress', 'is_starred',
   'repeat_type', 'repeat_days', 'order_index', 'remind_at', 'color', 'category', 'is_habit',
   'start_time', 'end_time', 'is_template', 'parent_id', 'skipped_dates', 'rollover_source_id',
+  'rolled_at',
   'completion_note', 'completed_at', 'created_at', 'updated_at'
 ]
 const BOOL_COLS = new Set(['is_completed', 'is_in_progress', 'is_starred', 'is_habit', 'is_template'])
@@ -317,28 +364,20 @@ export default {
 
   getOverdueTasks(date) {
     const db = getDb()
-    const yesterday = yesterdayOf(date)
-    // 이미 오늘로 이월된 원본 id 모음 (멱등 보장)
-    const rolledSources = new Set(
-      db
-        .prepare(
-          `SELECT rollover_source_id FROM tasks
-           WHERE date = ? AND rollover_source_id IS NOT NULL`
-        )
-        .all(date)
-        .map((r) => r.rollover_source_id)
-    )
+    // 카피 삭제로 멱등 깨지는 문제는 rolled_at 컬럼이 처리하므로 existingSources 추적 불필요.
+    // rolled_at이 NULL인 (= 아직 이월 안 된) date 이전 미완료만 반환.
     const rows = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE date = ?
+         WHERE date < ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
-           AND end_date IS NULL`
+           AND end_date IS NULL
+           AND rolled_at IS NULL`
       )
-      .all(yesterday)
-    return rows.map(rowToTask).filter((t) => !rolledSources.has(t.id))
+      .all(date)
+    return rows.map(rowToTask)
   },
 
   getTodayReminders(date) {
@@ -618,28 +657,18 @@ export default {
   // ── 이월 ─────────────────────────────────────────────────
   rolloverTasks(toDate) {
     const db = getDb()
-    const yesterday = yesterdayOf(toDate)
     const overdueRows = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE date = ?
+         WHERE date < ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
-           AND end_date IS NULL`
+           AND end_date IS NULL
+           AND rolled_at IS NULL`
       )
-      .all(yesterday)
-    const overdue = overdueRows.map(rowToTask)
-    const existingSources = new Set(
-      db
-        .prepare(
-          `SELECT rollover_source_id FROM tasks
-           WHERE date = ? AND rollover_source_id IS NOT NULL`
-        )
-        .all(toDate)
-        .map((r) => r.rollover_source_id)
-    )
-    const toCopy = overdue.filter((t) => !existingSources.has(t.id))
+      .all(toDate)
+    const toCopy = overdueRows.map(rowToTask)
     if (toCopy.length === 0) return []
     const maxOrder = db
       .prepare(`SELECT count(*) as c FROM tasks WHERE date = ?`)
@@ -653,12 +682,13 @@ export default {
       remind_at: null, color: t.color || null, category: t.category || null,
       is_habit: false, start_time: null, end_time: null,
       is_template: false, parent_id: null, skipped_dates: null,
-      rollover_source_id: t.id,
+      rollover_source_id: t.id, rolled_at: null,
       completion_note: null, completed_at: null,
       created_at: now, updated_at: now
     }))
     db.transaction(() => {
       for (const nt of newTasks) insertTaskRow(db, nt)
+      markRolledAt(db, toCopy.map((t) => t.id), now)
     })()
     return newTasks
   },
@@ -667,20 +697,12 @@ export default {
     const db = getDb()
     if (!taskIds || taskIds.length === 0) return []
     const placeholders = taskIds.map(() => '?').join(',')
+    // 사용자가 명시적으로 선택한 task만 — 이미 rolled_at이 있어도 따라가지 않고 그대로 카피 생성.
+    // (사용자 의도가 명시적이므로)
     const selectedRows = db
       .prepare(`SELECT * FROM tasks WHERE id IN (${placeholders}) AND end_date IS NULL`)
       .all(...taskIds)
-    const selected = selectedRows.map(rowToTask)
-    const existingSources = new Set(
-      db
-        .prepare(
-          `SELECT rollover_source_id FROM tasks
-           WHERE date = ? AND rollover_source_id IS NOT NULL`
-        )
-        .all(toDate)
-        .map((r) => r.rollover_source_id)
-    )
-    const toCopy = selected.filter((t) => !existingSources.has(t.id))
+    const toCopy = selectedRows.map(rowToTask)
     if (toCopy.length === 0) return []
     const maxOrder = db
       .prepare(`SELECT count(*) as c FROM tasks WHERE date = ?`)
@@ -694,12 +716,13 @@ export default {
       remind_at: null, color: t.color || null, category: t.category || null,
       is_habit: false, start_time: null, end_time: null,
       is_template: false, parent_id: null, skipped_dates: null,
-      rollover_source_id: t.id,
+      rollover_source_id: t.id, rolled_at: null,
       completion_note: null, completed_at: null,
       created_at: now, updated_at: now
     }))
     db.transaction(() => {
       for (const nt of newTasks) insertTaskRow(db, nt)
+      markRolledAt(db, toCopy.map((t) => t.id), now)
     })()
     return newTasks
   },
@@ -709,8 +732,10 @@ export default {
     const tasks = getAllTasks()
     const newTasks = computeAutoRolloverOverdue(tasks, toDate)
     if (newTasks.length === 0) return []
+    const now = nowIso()
     db.transaction(() => {
       for (const nt of newTasks) insertTaskRow(db, nt)
+      markRolledAt(db, newTasks.map((nt) => nt.rollover_source_id), now)
     })()
     return newTasks
   },

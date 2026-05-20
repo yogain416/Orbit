@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tasks (
@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   parent_id TEXT,
   skipped_dates TEXT,
   rollover_source_id TEXT,
+  rolled_at TEXT,
   completion_note TEXT,
   completed_at TEXT,
   created_at TEXT,
@@ -65,13 +66,25 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `
 
+function applyMigrations(db) {
+  // v1→v2: tasks.rolled_at 컬럼 추가. SCHEMA의 CREATE TABLE IF NOT EXISTS는 신규 DB에만 작동하므로,
+  // 기존 v1 DB에는 ALTER TABLE로 직접 추가. PRAGMA로 컬럼 존재 여부 확인.
+  const cols = db.prepare('PRAGMA table_info(tasks)').all().map((r) => r.name)
+  if (!cols.includes('rolled_at')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN rolled_at TEXT')
+  }
+}
+
 export function openDatabase(path) {
   const db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
-  const stmt = db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)')
-  stmt.run('schema_version', String(SCHEMA_VERSION))
+  applyMigrations(db)
+  db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
+    'schema_version',
+    String(SCHEMA_VERSION)
+  )
   return db
 }
 

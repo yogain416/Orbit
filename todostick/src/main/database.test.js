@@ -17,6 +17,7 @@ function mkTask(overrides) {
     parent_id: null,
     end_date: null,
     rollover_source_id: undefined,
+    rolled_at: null,
     order_index: 0,
     color: null,
     category: null,
@@ -68,10 +69,10 @@ describe('autoRolloverOverdue', () => {
     expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
   })
 
-  it('이미 오늘로 이월된 원본은 중복 복사 안 함 (멱등)', () => {
+  it('이미 rolled_at이 마킹된 원본은 복사하지 않는다 (영구 멱등)', () => {
+    // 카피 삭제로 멱등 깨지던 문제 해결 — 원본의 rolled_at만 보면 됨.
     const tasks = [
-      mkTask({ id: 'a', date: '2026-05-16', is_completed: false }),
-      mkTask({ id: 'b', date: '2026-05-17', rollover_source_id: 'a' })
+      mkTask({ id: 'a', date: '2026-05-16', is_completed: false, rolled_at: '2026-05-17T00:00:00Z' })
     ]
     expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
   })
@@ -92,13 +93,15 @@ describe('autoRolloverOverdue', () => {
     expect(out[0].is_in_progress).toBe(false)
   })
 
-  it('어제보다 더 옛날 task는 복사하지 않는다 (어제만 대상)', () => {
-    // v1.7.0~v1.7.2에서 'date < toDate'로 확장했더니 묵은 미완료가 폭주 + 멱등 깨짐 →
-    // v1.7.3에서 다시 어제만으로 되돌림. 향후 'rolled_at' 컬럼 도입 후에 범위 재확장 예정.
+  it('며칠 이전 미완료도 복사된다 (rolled_at으로 멱등 보장, v1.7.4 정공법)', () => {
+    // v1.7.3에선 폭주 위험 때문에 어제만으로 제한했으나, rolled_at 컬럼 도입 후
+    // 'date < toDate && !rolled_at'로 확장. 카피 삭제해도 source가 마킹되어 다시 안 옴.
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-10', is_completed: false })
     ]
-    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
+    const out = autoRolloverOverdue(tasks, '2026-05-17')
+    expect(out).toHaveLength(1)
+    expect(out[0].rollover_source_id).toBe('a')
   })
 
   it('오늘 날짜의 task는 복사하지 않는다', () => {
@@ -265,19 +268,13 @@ describe('database (SQLite-backed)', () => {
     expect(JSON.parse(tmplRow.skipped_dates)).toContain('2026-05-15')
   })
 
-  it('getOverdueTasks → 어제 미완료 task 반환 (이월된 것 제외)', () => {
-    // 어제 날짜에 미완료 1, 완료 1, 이미 이월된 원본 1
+  it('getOverdueTasks → 어제 미완료 task 반환 (rolled_at 마킹된 것 제외)', () => {
     database.createTask({ title: '미완', date: '2026-05-16' })
     const done = database.createTask({ title: '완료', date: '2026-05-16' })
     database.toggleTask(done.id)
     const rolled = database.createTask({ title: '이미이월', date: '2026-05-16' })
-    // 오늘에 rollover_source_id로 직접 insert
-    testDb
-      .prepare(
-        `INSERT INTO tasks (id, title, date, rollover_source_id, is_completed, is_template, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 0, 0, ?, ?)`
-      )
-      .run('copy_x', '이미이월', '2026-05-17', rolled.id, '2026-05-17T00:00:00Z', '2026-05-17T00:00:00Z')
+    // 이미 이월된 source는 rolled_at이 마킹됨
+    testDb.prepare(`UPDATE tasks SET rolled_at = ? WHERE id = ?`).run('2026-05-17T00:00:00Z', rolled.id)
 
     const overdue = database.getOverdueTasks('2026-05-17')
     const titles = overdue.map((t) => t.title)
@@ -296,20 +293,34 @@ describe('database (SQLite-backed)', () => {
     expect(out2).toHaveLength(0)
   })
 
-  it('autoRolloverOverdue → 며칠 이전 task는 이월하지 않는다 (어제만 대상, v1.7.3 회귀)', () => {
-    // v1.7.0~v1.7.2에서 'date < toDate'로 확장했다가 폭주로 인해 어제만으로 되돌림.
-    database.createTask({ title: '금요일오래된', date: '2026-05-15' })
+  it('autoRolloverOverdue → 며칠 이전 미완료도 이월된다 + source가 rolled_at으로 마킹됨', () => {
+    const friTask = database.createTask({ title: '금요일진행중', date: '2026-05-15' })
+    database.setInProgress(friTask.id, true)
     const out = database.autoRolloverOverdue('2026-05-18')
-    expect(out).toHaveLength(0)
+    expect(out).toHaveLength(1)
+    expect(out[0].title).toBe('금요일진행중')
+
+    // source의 rolled_at이 마킹되었는지 확인 (다시 안 옴)
+    const sourceRow = testDb.prepare('SELECT rolled_at FROM tasks WHERE id=?').get(friTask.id)
+    expect(sourceRow.rolled_at).toBeTruthy()
+
+    // 카피를 삭제해도 다시 이월되지 않음 (영구 멱등)
+    database.deleteTask(out[0].id)
+    const out2 = database.autoRolloverOverdue('2026-05-18')
+    expect(out2).toHaveLength(0)
   })
 
-  it('getOverdueTasks → 며칠 이전 task는 안 잡힘 (어제만 대상)', () => {
+  it('getOverdueTasks → 며칠 이전 미완료도 잡힘 + rolled_at은 제외', () => {
     database.createTask({ title: '금요일', date: '2026-05-15' })
     database.createTask({ title: '토요일', date: '2026-05-16' })
-    const overdue = database.getOverdueTasks('2026-05-18')
-    const titles = overdue.map((t) => t.title)
-    expect(titles).not.toContain('금요일')
-    expect(titles).not.toContain('토요일')
+    const overdue1 = database.getOverdueTasks('2026-05-18')
+    expect(overdue1.map((t) => t.title)).toEqual(expect.arrayContaining(['금요일', '토요일']))
+
+    // 자동 이월 한 번 돌리면 위 두 개는 rolled_at 마킹됨 → 다시 안 잡힘
+    database.autoRolloverOverdue('2026-05-18')
+    const overdue2 = database.getOverdueTasks('2026-05-18')
+    expect(overdue2.map((t) => t.title)).not.toContain('금요일')
+    expect(overdue2.map((t) => t.title)).not.toContain('토요일')
   })
 
   it('setCategories + getCategories round-trip', () => {

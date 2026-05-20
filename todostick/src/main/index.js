@@ -1,6 +1,6 @@
 // ⚠️ setup-paths가 가장 먼저 평가되어야 함 (database.js 평가 전에 setPath 호출 필요)
 import { isDev } from './setup-paths.js'
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, Notification, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut } from 'electron'
 import { migrateUserData } from './userdata-migration.js'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'

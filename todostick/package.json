@@ -1,16 +1,21 @@
 {
   "name": "orbit",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Orbit — 개인과 팀의 일정·할일·프로젝트를 잇는 운영 OS",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "predev": "electron-builder install-app-deps",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test": "vitest run",
+    "pretest": "npm rebuild better-sqlite3",
     "test:watch": "vitest",
     "gen-icon": "node scripts/generate-icon.mjs",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "prepackage": "electron-builder install-app-deps",
+    "rebuild:node": "npm rebuild better-sqlite3",
+    "rebuild:electron": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
