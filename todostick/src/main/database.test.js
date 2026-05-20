@@ -92,18 +92,16 @@ describe('autoRolloverOverdue', () => {
     expect(out[0].is_in_progress).toBe(false)
   })
 
-  it('며칠 이전의 미완료도 오늘로 복사된다 (주말/휴가로 chain 끊김 방지)', () => {
-    // 회귀: v1.7.0-rc1까지는 "어제만" 대상이어서, 일/이틀 비우면 그 이전 진행중 task가 누락됐음.
+  it('어제보다 더 옛날 task는 복사하지 않는다 (어제만 대상)', () => {
+    // v1.7.0~v1.7.2에서 'date < toDate'로 확장했더니 묵은 미완료가 폭주 + 멱등 깨짐 →
+    // v1.7.3에서 다시 어제만으로 되돌림. 향후 'rolled_at' 컬럼 도입 후에 범위 재확장 예정.
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-10', is_completed: false })
     ]
-    const out = autoRolloverOverdue(tasks, '2026-05-17')
-    expect(out).toHaveLength(1)
-    expect(out[0].rollover_source_id).toBe('a')
-    expect(out[0].date).toBe('2026-05-17')
+    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
   })
 
-  it('오늘 날짜의 task는 복사하지 않는다 (date < toDate)', () => {
+  it('오늘 날짜의 task는 복사하지 않는다', () => {
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-17', is_completed: false })
     ]
@@ -298,24 +296,20 @@ describe('database (SQLite-backed)', () => {
     expect(out2).toHaveLength(0)
   })
 
-  it('autoRolloverOverdue → 며칠 이전 진행중 task도 오늘로 복사 (회귀 테스트)', () => {
-    // 금요일에 진행중 켜놓고 일요일 지난 월요일에 켰을 때 동작해야 함.
-    const friTask = database.createTask({ title: '금요일진행중', date: '2026-05-15' })
-    database.setInProgress(friTask.id, true)
+  it('autoRolloverOverdue → 며칠 이전 task는 이월하지 않는다 (어제만 대상, v1.7.3 회귀)', () => {
+    // v1.7.0~v1.7.2에서 'date < toDate'로 확장했다가 폭주로 인해 어제만으로 되돌림.
+    database.createTask({ title: '금요일오래된', date: '2026-05-15' })
     const out = database.autoRolloverOverdue('2026-05-18')
-    expect(out).toHaveLength(1)
-    expect(out[0].title).toBe('금요일진행중')
-    expect(out[0].is_in_progress).toBe(true)
-    expect(out[0].rollover_source_id).toBe(friTask.id)
+    expect(out).toHaveLength(0)
   })
 
-  it('getOverdueTasks → 며칠 이전 미완료도 잡힘', () => {
+  it('getOverdueTasks → 며칠 이전 task는 안 잡힘 (어제만 대상)', () => {
     database.createTask({ title: '금요일', date: '2026-05-15' })
     database.createTask({ title: '토요일', date: '2026-05-16' })
     const overdue = database.getOverdueTasks('2026-05-18')
     const titles = overdue.map((t) => t.title)
-    expect(titles).toContain('금요일')
-    expect(titles).toContain('토요일')
+    expect(titles).not.toContain('금요일')
+    expect(titles).not.toContain('토요일')
   })
 
   it('setCategories + getCategories round-trip', () => {

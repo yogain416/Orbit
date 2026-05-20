@@ -191,9 +191,15 @@ function migrateJsonToSqlite(jsonPath2, db2) {
 function generateId$1() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
+function yesterdayOf(toDate) {
+  const d = /* @__PURE__ */ new Date(toDate + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
 function autoRolloverOverdue(tasks, toDate) {
+  const yesterday = yesterdayOf(toDate);
   const candidates = tasks.filter(
-    (t) => t.date < toDate && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date
+    (t) => t.date === yesterday && !t.is_completed && !t.is_template && !t.parent_id && !t.end_date
   );
   if (candidates.length === 0) return [];
   const existingSources = new Set(
@@ -281,6 +287,32 @@ function dbPath() {
 function jsonPath() {
   return path.join(electron.app.getPath("userData"), "todostick.json");
 }
+function cleanupRolloverFloodOnce(db2) {
+  try {
+    const already = db2.prepare("SELECT value FROM meta WHERE key='rollover_flood_cleanup_v1'").get();
+    if (already) return 0;
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const yesterday = yesterdayOf(today);
+    const deleted = db2.prepare(
+      `DELETE FROM tasks
+         WHERE id IN (
+           SELECT copy.id FROM tasks copy
+           JOIN tasks src ON copy.rollover_source_id = src.id
+           WHERE copy.date = ? AND src.date < ?
+         )`
+    ).run(today, yesterday).changes;
+    db2.prepare(
+      "INSERT OR REPLACE INTO meta (key, value) VALUES ('rollover_flood_cleanup_v1', '1')"
+    ).run();
+    if (deleted > 0) {
+      console.log(`[cleanup] rollover flood: ${deleted} 카피 삭제됨`);
+    }
+    return deleted;
+  } catch (e) {
+    console.error("[cleanup] rollover_flood_cleanup failed:", e);
+    return 0;
+  }
+}
 function getDb() {
   if (_db) return _db;
   _db = openDatabase(dbPath());
@@ -289,6 +321,7 @@ function getDb() {
   } catch (e) {
     console.error("[migrate] failed:", e);
   }
+  cleanupRolloverFloodOnce(_db);
   return _db;
 }
 function generateId() {
@@ -547,6 +580,7 @@ const db = {
   },
   getOverdueTasks(date) {
     const db2 = getDb();
+    const yesterday = yesterdayOf(date);
     const rolledSources = new Set(
       db2.prepare(
         `SELECT rollover_source_id FROM tasks
@@ -555,12 +589,12 @@ const db = {
     );
     const rows = db2.prepare(
       `SELECT * FROM tasks
-         WHERE date < ?
+         WHERE date = ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
            AND end_date IS NULL`
-    ).all(date);
+    ).all(yesterday);
     return rows.map(rowToTask).filter((t) => !rolledSources.has(t.id));
   },
   getTodayReminders(date) {
@@ -856,14 +890,15 @@ const db = {
   // ── 이월 ─────────────────────────────────────────────────
   rolloverTasks(toDate) {
     const db2 = getDb();
+    const yesterday = yesterdayOf(toDate);
     const overdueRows = db2.prepare(
       `SELECT * FROM tasks
-         WHERE date < ?
+         WHERE date = ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
            AND end_date IS NULL`
-    ).all(toDate);
+    ).all(yesterday);
     const overdue = overdueRows.map(rowToTask);
     const existingSources = new Set(
       db2.prepare(

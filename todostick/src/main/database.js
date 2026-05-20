@@ -2,7 +2,7 @@ import { join } from 'path'
 import { app } from 'electron'
 import { openDatabase } from './sqlite.js'
 import { migrateJsonToSqlite } from './migrate.js'
-import { autoRolloverOverdue as computeAutoRolloverOverdue } from './rollover.js'
+import { autoRolloverOverdue as computeAutoRolloverOverdue, yesterdayOf } from './rollover.js'
 import { buildRepeatInstancesForDate, shouldRepeatOnDate } from './repeat.js'
 
 // ── 모듈 전역 상태 ──────────────────────────────────────────
@@ -16,6 +16,44 @@ function jsonPath() {
   return join(app.getPath('userData'), 'todostick.json')
 }
 
+// v1.7.0~v1.7.2의 rollover 폭주 버그로 오늘에 박힌 묵은 카피를 일회성으로 정리.
+// 'rollover_source_id가 있고 source의 date가 어제보다 이전인' 카피만 삭제 — 어제 카피는 정상.
+// meta 플래그로 한 번만 실행. v1.7.3에서 도입.
+function cleanupRolloverFloodOnce(db) {
+  try {
+    const already = db
+      .prepare("SELECT value FROM meta WHERE key='rollover_flood_cleanup_v1'")
+      .get()
+    if (already) return 0
+
+    const today = new Date().toISOString().slice(0, 10)
+    const yesterday = yesterdayOf(today)
+
+    const deleted = db
+      .prepare(
+        `DELETE FROM tasks
+         WHERE id IN (
+           SELECT copy.id FROM tasks copy
+           JOIN tasks src ON copy.rollover_source_id = src.id
+           WHERE copy.date = ? AND src.date < ?
+         )`
+      )
+      .run(today, yesterday).changes
+
+    db.prepare(
+      "INSERT OR REPLACE INTO meta (key, value) VALUES ('rollover_flood_cleanup_v1', '1')"
+    ).run()
+
+    if (deleted > 0) {
+      console.log(`[cleanup] rollover flood: ${deleted} 카피 삭제됨`)
+    }
+    return deleted
+  } catch (e) {
+    console.error('[cleanup] rollover_flood_cleanup failed:', e)
+    return 0
+  }
+}
+
 function getDb() {
   if (_db) return _db
   _db = openDatabase(dbPath())
@@ -24,6 +62,7 @@ function getDb() {
   } catch (e) {
     console.error('[migrate] failed:', e)
   }
+  cleanupRolloverFloodOnce(_db)
   return _db
 }
 
@@ -278,6 +317,7 @@ export default {
 
   getOverdueTasks(date) {
     const db = getDb()
+    const yesterday = yesterdayOf(date)
     // 이미 오늘로 이월된 원본 id 모음 (멱등 보장)
     const rolledSources = new Set(
       db
@@ -288,17 +328,16 @@ export default {
         .all(date)
         .map((r) => r.rollover_source_id)
     )
-    // date 이전의 모든 미완료 — 주말/휴가로 며칠 비워도 잡힘.
     const rows = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE date < ?
+         WHERE date = ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
            AND end_date IS NULL`
       )
-      .all(date)
+      .all(yesterday)
     return rows.map(rowToTask).filter((t) => !rolledSources.has(t.id))
   },
 
@@ -579,16 +618,17 @@ export default {
   // ── 이월 ─────────────────────────────────────────────────
   rolloverTasks(toDate) {
     const db = getDb()
+    const yesterday = yesterdayOf(toDate)
     const overdueRows = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE date < ?
+         WHERE date = ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
            AND end_date IS NULL`
       )
-      .all(toDate)
+      .all(yesterday)
     const overdue = overdueRows.map(rowToTask)
     const existingSources = new Set(
       db
