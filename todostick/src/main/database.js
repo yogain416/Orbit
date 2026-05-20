@@ -2,7 +2,7 @@ import { join } from 'path'
 import { app } from 'electron'
 import { openDatabase } from './sqlite.js'
 import { migrateJsonToSqlite } from './migrate.js'
-import { autoRolloverOverdue as computeAutoRolloverOverdue, yesterdayOf } from './rollover.js'
+import { autoRolloverOverdue as computeAutoRolloverOverdue } from './rollover.js'
 import { buildRepeatInstancesForDate, shouldRepeatOnDate } from './repeat.js'
 
 // ── 모듈 전역 상태 ──────────────────────────────────────────
@@ -277,7 +277,6 @@ export default {
   },
 
   getOverdueTasks(date) {
-    const yesterday = yesterdayOf(date)
     const db = getDb()
     // 이미 오늘로 이월된 원본 id 모음 (멱등 보장)
     const rolledSources = new Set(
@@ -289,16 +288,17 @@ export default {
         .all(date)
         .map((r) => r.rollover_source_id)
     )
+    // date 이전의 모든 미완료 — 주말/휴가로 며칠 비워도 잡힘.
     const rows = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE date = ?
+         WHERE date < ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
            AND end_date IS NULL`
       )
-      .all(yesterday)
+      .all(date)
     return rows.map(rowToTask).filter((t) => !rolledSources.has(t.id))
   },
 
@@ -579,17 +579,16 @@ export default {
   // ── 이월 ─────────────────────────────────────────────────
   rolloverTasks(toDate) {
     const db = getDb()
-    const yesterday = yesterdayOf(toDate)
     const overdueRows = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE date = ?
+         WHERE date < ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
            AND end_date IS NULL`
       )
-      .all(yesterday)
+      .all(toDate)
     const overdue = overdueRows.map(rowToTask)
     const existingSources = new Set(
       db

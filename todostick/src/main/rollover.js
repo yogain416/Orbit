@@ -9,10 +9,9 @@ export function yesterdayOf(toDate) {
 }
 
 export function autoRolloverOverdue(tasks, toDate) {
-  const yesterday = yesterdayOf(toDate)
-
+  // toDate 이전의 모든 미완료를 대상으로 함 — 주말/휴가로 며칠 비워도 chain 끊기지 않게.
   const candidates = tasks.filter((t) =>
-    t.date === yesterday &&
+    t.date < toDate &&
     !t.is_completed &&
     !t.is_template &&
     !t.parent_id &&

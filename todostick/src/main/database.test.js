@@ -92,9 +92,27 @@ describe('autoRolloverOverdue', () => {
     expect(out[0].is_in_progress).toBe(false)
   })
 
-  it('어제보다 더 옛날 task는 복사하지 않는다 (어제만 대상)', () => {
+  it('며칠 이전의 미완료도 오늘로 복사된다 (주말/휴가로 chain 끊김 방지)', () => {
+    // 회귀: v1.7.0-rc1까지는 "어제만" 대상이어서, 일/이틀 비우면 그 이전 진행중 task가 누락됐음.
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-10', is_completed: false })
+    ]
+    const out = autoRolloverOverdue(tasks, '2026-05-17')
+    expect(out).toHaveLength(1)
+    expect(out[0].rollover_source_id).toBe('a')
+    expect(out[0].date).toBe('2026-05-17')
+  })
+
+  it('오늘 날짜의 task는 복사하지 않는다 (date < toDate)', () => {
+    const tasks = [
+      mkTask({ id: 'a', date: '2026-05-17', is_completed: false })
+    ]
+    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
+  })
+
+  it('미래 날짜 task는 복사하지 않는다', () => {
+    const tasks = [
+      mkTask({ id: 'a', date: '2026-05-20', is_completed: false })
     ]
     expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
   })
@@ -278,6 +296,26 @@ describe('database (SQLite-backed)', () => {
     // 다시 호출 → 멱등 (0개)
     const out2 = database.autoRolloverOverdue('2026-05-17')
     expect(out2).toHaveLength(0)
+  })
+
+  it('autoRolloverOverdue → 며칠 이전 진행중 task도 오늘로 복사 (회귀 테스트)', () => {
+    // 금요일에 진행중 켜놓고 일요일 지난 월요일에 켰을 때 동작해야 함.
+    const friTask = database.createTask({ title: '금요일진행중', date: '2026-05-15' })
+    database.setInProgress(friTask.id, true)
+    const out = database.autoRolloverOverdue('2026-05-18')
+    expect(out).toHaveLength(1)
+    expect(out[0].title).toBe('금요일진행중')
+    expect(out[0].is_in_progress).toBe(true)
+    expect(out[0].rollover_source_id).toBe(friTask.id)
+  })
+
+  it('getOverdueTasks → 며칠 이전 미완료도 잡힘', () => {
+    database.createTask({ title: '금요일', date: '2026-05-15' })
+    database.createTask({ title: '토요일', date: '2026-05-16' })
+    const overdue = database.getOverdueTasks('2026-05-18')
+    const titles = overdue.map((t) => t.title)
+    expect(titles).toContain('금요일')
+    expect(titles).toContain('토요일')
   })
 
   it('setCategories + getCategories round-trip', () => {
