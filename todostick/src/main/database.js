@@ -7,6 +7,17 @@ import { buildRepeatInstancesForDate, shouldRepeatOnDate } from './repeat.js'
 
 // ── 모듈 전역 상태 ──────────────────────────────────────────
 let _db = null
+// Plan 3 (sync engine): 현재 로그인 user의 id. 비로그인 시 null = 로컬-only.
+// main/index.js의 인증 hook에서 setCurrentUserId() 호출.
+let _currentUserId = null
+
+export function setCurrentUserId(uid) {
+  _currentUserId = uid || null
+}
+
+export function getCurrentUserId() {
+  return _currentUserId
+}
 
 function dbPath() {
   return join(app.getPath('userData'), 'orbit.db')
@@ -132,7 +143,7 @@ function markRolledAt(db, ids, now) {
 }
 
 const TASK_COLS = [
-  'id', 'title', 'memo', 'date', 'end_date', 'is_completed', 'is_in_progress', 'is_starred',
+  'id', 'user_id', 'title', 'memo', 'date', 'end_date', 'is_completed', 'is_in_progress', 'is_starred',
   'repeat_type', 'repeat_days', 'order_index', 'remind_at', 'color', 'category', 'is_habit',
   'start_time', 'end_time', 'is_template', 'parent_id', 'skipped_dates', 'rollover_source_id',
   'rolled_at',
@@ -169,8 +180,42 @@ function valForCol(col, value) {
   return value
 }
 
+// ── Plan 3: sync_queue enqueue ──────────────────────────────
+// currentUserId가 null이면 enqueue하지 않음 (오프라인/비로그인 = 로컬-only 모드).
+// payload는 JSON 문자열로 직렬화된 row 전체 (upsert) 또는 null (delete).
+function enqueueSync(db, tableName, op, rowId, payload) {
+  const uid = getCurrentUserId()
+  if (!uid) return
+  db.prepare(
+    `INSERT INTO sync_queue (user_id, table_name, op, row_id, payload, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(uid, tableName, op, rowId, payload ? JSON.stringify(payload) : null, nowIso())
+}
+
+// 로컬 row 전체를 sync payload로 직렬화 (boolean/array 정규화).
+function taskRowToPayload(row) {
+  const t = rowToTask(row)
+  return t
+}
+
+// ── Plan 3: 첫 로그인 시 v1.7.x 로컬 데이터의 NULL user_id를 채움 ─────
+export function claimOwnership(uid) {
+  if (!uid) throw new Error('claimOwnership requires a user id')
+  const db = getDb()
+  const result = { tasks: 0, categories: 0, monthly_goals: 0, see_memos: 0 }
+  db.transaction(() => {
+    result.tasks = db.prepare(`UPDATE tasks SET user_id = ? WHERE user_id IS NULL`).run(uid).changes
+    result.categories = db.prepare(`UPDATE categories SET user_id = ? WHERE user_id IS NULL`).run(uid).changes
+    result.monthly_goals = db.prepare(`UPDATE monthly_goals SET user_id = ? WHERE user_id IS NULL`).run(uid).changes
+    result.see_memos = db.prepare(`UPDATE see_memos SET user_id = ? WHERE user_id IS NULL`).run(uid).changes
+  })()
+  return result
+}
+
 function getAllTasks() {
-  return getDb().prepare('SELECT * FROM tasks').all().map(rowToTask)
+  // Plan 3: 현재 user_id 격리 — 같은 PC에 다른 계정 데이터가 있어도 안 섞임.
+  const uid = getCurrentUserId()
+  return getDb().prepare('SELECT * FROM tasks WHERE user_id IS ?').all(uid).map(rowToTask)
 }
 
 function insertTaskRow(db, task) {
@@ -195,13 +240,19 @@ function dateRange(startDate, endDate) {
 
 // 특정 날짜에 누락된 반복 인스턴스를 DB에 INSERT (멱등).
 // 멱등성: buildRepeatInstancesForDate가 이미 존재하는 인스턴스를 걸러냄.
+// Plan 3: 새 인스턴스에 현재 user_id 주입 (템플릿이 user-filtered 풀에서 왔으니 같은 user) + sync enqueue.
 function ensureRepeatInstancesForDate(date) {
   const db = getDb()
   const tasks = getAllTasks()
   const newInstances = buildRepeatInstancesForDate(tasks, date, generateId)
   if (newInstances.length === 0) return false
+  const uid = getCurrentUserId()
   db.transaction(() => {
-    for (const inst of newInstances) insertTaskRow(db, inst)
+    for (const inst of newInstances) {
+      inst.user_id = uid
+      insertTaskRow(db, inst)
+      enqueueSync(db, 'tasks', 'upsert', inst.id, taskRowToPayload(inst))
+    }
   })()
   return true
 }
@@ -313,22 +364,29 @@ function seedIfEmpty() {
   return true
 }
 
+// Plan 3: 현재 user_id를 row에 채워 mutation에 사용. 비로그인이면 NULL.
+function withUserId(task) {
+  return { ...task, user_id: getCurrentUserId() }
+}
+
 // ── default export ─────────────────────────────────────────
 export default {
   getDbPath: () => dbPath(),
   seedIfEmpty,
 
-  // ── 조회 ─────────────────────────────────────────────────
+  // ── 조회 (Plan 3: 모두 user_id 격리, SQLite의 `IS ?`가 NULL/값 둘 다 안전 비교) ──
   getTasksByDate(date) {
     ensureRepeatInstancesForDate(date)
+    const uid = getCurrentUserId()
     const rows = getDb()
       .prepare(
         `SELECT * FROM tasks
-         WHERE is_template = 0
+         WHERE user_id IS ?
+           AND is_template = 0
            AND (date = ?
                 OR (end_date IS NOT NULL AND date <= ? AND ? <= end_date))`
       )
-      .all(date, date, date)
+      .all(uid, date, date, date)
     return rows.map(rowToTask).sort(sortDayTasks)
   },
 
@@ -338,64 +396,71 @@ export default {
     const startDate = `${prefix}-01`
     const endDate = `${prefix}-${String(daysInMonth).padStart(2, '0')}`
     ensureRepeatInstancesForRange(startDate, endDate)
+    const uid = getCurrentUserId()
     const rows = getDb()
       .prepare(
         `SELECT * FROM tasks
-         WHERE is_template = 0
+         WHERE user_id IS ?
+           AND is_template = 0
            AND (date LIKE ?
                 OR (end_date IS NOT NULL AND date <= ? AND end_date >= ?))`
       )
-      .all(`${prefix}-%`, endDate, startDate)
+      .all(uid, `${prefix}-%`, endDate, startDate)
     return rows.map(rowToTask).sort(sortMultiDayTasks)
   },
 
   getTasksByRange(startDate, endDate) {
     ensureRepeatInstancesForRange(startDate, endDate)
+    const uid = getCurrentUserId()
     const rows = getDb()
       .prepare(
         `SELECT * FROM tasks
-         WHERE is_template = 0
+         WHERE user_id IS ?
+           AND is_template = 0
            AND ((date >= ? AND date <= ?)
                 OR (end_date IS NOT NULL AND date <= ? AND end_date >= ?))`
       )
-      .all(startDate, endDate, endDate, startDate)
+      .all(uid, startDate, endDate, endDate, startDate)
     return rows.map(rowToTask).sort(sortMultiDayTasks)
   },
 
   getOverdueTasks(date) {
     const db = getDb()
-    // 카피 삭제로 멱등 깨지는 문제는 rolled_at 컬럼이 처리하므로 existingSources 추적 불필요.
-    // rolled_at이 NULL인 (= 아직 이월 안 된) date 이전 미완료만 반환.
+    const uid = getCurrentUserId()
     const rows = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE date < ?
+         WHERE user_id IS ?
+           AND date < ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
            AND end_date IS NULL
            AND rolled_at IS NULL`
       )
-      .all(date)
+      .all(uid, date)
     return rows.map(rowToTask)
   },
 
   getTodayReminders(date) {
+    const uid = getCurrentUserId()
     const rows = getDb()
       .prepare(
         `SELECT * FROM tasks
-         WHERE date = ?
+         WHERE user_id IS ?
+           AND date = ?
            AND remind_at IS NOT NULL
            AND is_template = 0`
       )
-      .all(date)
+      .all(uid, date)
     return rows.map(rowToTask)
   },
 
   getCompletedTasks({ category, search } = {}) {
     const db = getDb()
-    let sql = `SELECT * FROM tasks WHERE is_completed = 1 AND is_template = 0`
-    const params = []
+    const uid = getCurrentUserId()
+    let sql = `SELECT * FROM tasks WHERE user_id IS ? AND is_completed = 1 AND is_template = 0`
+    const params = [uid]
     if (category) {
       sql += ` AND category = ?`
       params.push(category)
@@ -416,9 +481,10 @@ export default {
   },
 
   getPoolTasks(poolKey) {
+    const uid = getCurrentUserId()
     const rows = getDb()
-      .prepare(`SELECT * FROM tasks WHERE date = ? AND is_template = 0`)
-      .all(poolKey)
+      .prepare(`SELECT * FROM tasks WHERE user_id IS ? AND date = ? AND is_template = 0`)
+      .all(uid, poolKey)
     return rows
       .map(rowToTask)
       .sort((a, b) =>
@@ -426,7 +492,7 @@ export default {
       )
   },
 
-  // ── 쓰기 ─────────────────────────────────────────────────
+  // ── 쓰기 (Plan 3: user_id 주입 + sync_queue enqueue) ────────
   createTask({
     title,
     memo = '',
@@ -443,6 +509,7 @@ export default {
     end_time = null
   }) {
     const db = getDb()
+    const uid = getCurrentUserId()
     const habit = repeat_type !== 'none' && !!is_habit
     const isPoolKey = typeof date === 'string' && (date.startsWith('M:') || date.startsWith('W:'))
     const resolvedEndDate =
@@ -451,7 +518,7 @@ export default {
 
     if (repeat_type === 'none') {
       const task = {
-        id: generateId(),
+        id: generateId(), user_id: uid,
         title, memo, date, end_date: resolvedEndDate,
         is_completed: false, is_in_progress: false, is_starred: false,
         repeat_type, repeat_days: null, order_index,
@@ -462,7 +529,10 @@ export default {
         completion_note: null, completed_at: null,
         created_at: now, updated_at: now
       }
-      insertTaskRow(db, task)
+      db.transaction(() => {
+        insertTaskRow(db, task)
+        enqueueSync(db, 'tasks', 'upsert', task.id, taskRowToPayload(task))
+      })()
       return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(task.id))
     }
 
@@ -470,7 +540,7 @@ export default {
     const resolvedRepeatDays =
       repeat_type === 'daily' && repeat_days && repeat_days.length < 7 ? repeat_days : null
     const template = {
-      id: templateId,
+      id: templateId, user_id: uid,
       title, memo, date, end_date: null,
       is_completed: false, is_in_progress: false, is_starred: false,
       repeat_type, repeat_days: resolvedRepeatDays, order_index,
@@ -482,7 +552,7 @@ export default {
       created_at: now, updated_at: now
     }
     const instance = {
-      id: generateId(),
+      id: generateId(), user_id: uid,
       title, memo, date, end_date: null,
       is_completed: false, is_in_progress: false, is_starred: false,
       repeat_type, repeat_days: null, order_index,
@@ -495,7 +565,9 @@ export default {
     }
     db.transaction(() => {
       insertTaskRow(db, template)
+      enqueueSync(db, 'tasks', 'upsert', template.id, taskRowToPayload(template))
       insertTaskRow(db, instance)
+      enqueueSync(db, 'tasks', 'upsert', instance.id, taskRowToPayload(instance))
     })()
     return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(instance.id))
   },
@@ -509,47 +581,63 @@ export default {
     const prevRepeatType = task.repeat_type
     const now = nowIso()
 
-    // 동적 UPDATE — fields의 키만 갱신
+    // 동적 UPDATE — fields의 키만 갱신. user_id는 변경 금지(외부 입력으로 들어와도 무시).
     const setKeys = []
     const params = []
     for (const [key, val] of Object.entries(fields)) {
       if (!TASK_COLS.includes(key)) continue
+      if (key === 'user_id') continue // 소유자 변경 차단
       setKeys.push(`${key} = ?`)
       params.push(valForCol(key, val))
     }
     setKeys.push('updated_at = ?')
     params.push(now)
-    if (setKeys.length > 0) {
-      params.push(id)
-      db.prepare(`UPDATE tasks SET ${setKeys.join(', ')} WHERE id = ?`).run(...params)
-    }
 
-    // is_habit 변경 전파 (템플릿/인스턴스 모두)
-    if (Object.prototype.hasOwnProperty.call(fields, 'is_habit')) {
-      const templateId = task.is_template ? task.id : task.parent_id
-      if (templateId) {
-        const flag = fields.is_habit ? 1 : 0
-        db.prepare(
-          `UPDATE tasks SET is_habit = ?, updated_at = ?
-           WHERE id = ? OR parent_id = ?`
-        ).run(flag, now, templateId, templateId)
+    db.transaction(() => {
+      if (setKeys.length > 0) {
+        params.push(id)
+        db.prepare(`UPDATE tasks SET ${setKeys.join(', ')} WHERE id = ?`).run(...params)
       }
-    }
 
-    // 반복 제거: 템플릿의 repeat_type='none' 변경 시 미래 인스턴스 정리
-    if (wasTemplate && prevRepeatType !== 'none' && fields.repeat_type === 'none') {
-      const todayStr = new Date().toISOString().slice(0, 10)
-      db.transaction(() => {
-        db.prepare(
-          `DELETE FROM tasks WHERE parent_id = ? AND date > ?`
-        ).run(task.id, todayStr)
+      // is_habit 변경 전파 (템플릿/인스턴스 모두)
+      if (Object.prototype.hasOwnProperty.call(fields, 'is_habit')) {
+        const templateId = task.is_template ? task.id : task.parent_id
+        if (templateId) {
+          const flag = fields.is_habit ? 1 : 0
+          db.prepare(
+            `UPDATE tasks SET is_habit = ?, updated_at = ?
+             WHERE id = ? OR parent_id = ?`
+          ).run(flag, now, templateId, templateId)
+        }
+      }
+
+      // 반복 제거: 템플릿의 repeat_type='none' 변경 시 미래 인스턴스 정리
+      if (wasTemplate && prevRepeatType !== 'none' && fields.repeat_type === 'none') {
+        const todayStr = new Date().toISOString().slice(0, 10)
+        // 미래 인스턴스 삭제 — 각각 enqueue
+        const futureRows = db
+          .prepare('SELECT id FROM tasks WHERE parent_id = ? AND date > ?')
+          .all(task.id, todayStr)
+        db.prepare(`DELETE FROM tasks WHERE parent_id = ? AND date > ?`).run(task.id, todayStr)
+        for (const r of futureRows) enqueueSync(db, 'tasks', 'delete', r.id, null)
         // 템플릿 → 일반 task로 변환
         db.prepare(
           `UPDATE tasks SET is_template = 0, parent_id = NULL, skipped_dates = NULL, is_habit = 0, updated_at = ?
            WHERE id = ?`
         ).run(now, task.id)
-      })()
-    }
+      }
+
+      // 메인 row의 최종 상태 + 전파된 row들을 모두 enqueue
+      const updatedMain = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+      if (updatedMain) enqueueSync(db, 'tasks', 'upsert', id, taskRowToPayload(updatedMain))
+      if (Object.prototype.hasOwnProperty.call(fields, 'is_habit')) {
+        const templateId = task.is_template ? task.id : task.parent_id
+        if (templateId && templateId !== id) {
+          const tmplRow = db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId)
+          if (tmplRow) enqueueSync(db, 'tasks', 'upsert', templateId, taskRowToPayload(tmplRow))
+        }
+      }
+    })()
 
     return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(id))
   },
@@ -561,17 +649,21 @@ export default {
     const task = rowToTask(row)
     const now = nowIso()
     const newCompleted = !task.is_completed
-    if (newCompleted) {
-      db.prepare(
-        `UPDATE tasks SET is_completed = 1, completed_at = ?, completion_note = ?, is_in_progress = 0, updated_at = ?
-         WHERE id = ?`
-      ).run(now, completionNote || null, now, id)
-    } else {
-      db.prepare(
-        `UPDATE tasks SET is_completed = 0, completed_at = NULL, completion_note = NULL, updated_at = ?
-         WHERE id = ?`
-      ).run(now, id)
-    }
+    db.transaction(() => {
+      if (newCompleted) {
+        db.prepare(
+          `UPDATE tasks SET is_completed = 1, completed_at = ?, completion_note = ?, is_in_progress = 0, updated_at = ?
+           WHERE id = ?`
+        ).run(now, completionNote || null, now, id)
+      } else {
+        db.prepare(
+          `UPDATE tasks SET is_completed = 0, completed_at = NULL, completion_note = NULL, updated_at = ?
+           WHERE id = ?`
+        ).run(now, id)
+      }
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+      enqueueSync(db, 'tasks', 'upsert', id, taskRowToPayload(after))
+    })()
     return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(id))
   },
 
@@ -581,15 +673,19 @@ export default {
     if (!row) return null
     const now = nowIso()
     const flag = value ? 1 : 0
-    if (flag) {
-      db.prepare(
-        `UPDATE tasks SET is_in_progress = 1, is_completed = 0, updated_at = ? WHERE id = ?`
-      ).run(now, id)
-    } else {
-      db.prepare(
-        `UPDATE tasks SET is_in_progress = 0, updated_at = ? WHERE id = ?`
-      ).run(now, id)
-    }
+    db.transaction(() => {
+      if (flag) {
+        db.prepare(
+          `UPDATE tasks SET is_in_progress = 1, is_completed = 0, updated_at = ? WHERE id = ?`
+        ).run(now, id)
+      } else {
+        db.prepare(
+          `UPDATE tasks SET is_in_progress = 0, updated_at = ? WHERE id = ?`
+        ).run(now, id)
+      }
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+      enqueueSync(db, 'tasks', 'upsert', id, taskRowToPayload(after))
+    })()
     return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(id))
   },
 
@@ -598,28 +694,39 @@ export default {
     const row = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
     if (!row) return null
     const flag = value ? 1 : 0
-    db.prepare(
-      `UPDATE tasks SET is_starred = ?, updated_at = ? WHERE id = ?`
-    ).run(flag, nowIso(), id)
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE tasks SET is_starred = ?, updated_at = ? WHERE id = ?`
+      ).run(flag, nowIso(), id)
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+      enqueueSync(db, 'tasks', 'upsert', id, taskRowToPayload(after))
+    })()
     return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(id))
   },
 
   deleteTask(id) {
     const db = getDb()
     const row = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
-    if (row && row.parent_id) {
-      const task = rowToTask(row)
-      const tmplRow = db.prepare('SELECT * FROM tasks WHERE id=?').get(task.parent_id)
-      if (tmplRow) {
-        const tmpl = rowToTask(tmplRow)
-        const skipped = Array.isArray(tmpl.skipped_dates) ? tmpl.skipped_dates : []
-        skipped.push(task.date)
-        db.prepare(
-          `UPDATE tasks SET skipped_dates = ?, updated_at = ? WHERE id = ?`
-        ).run(JSON.stringify(skipped), nowIso(), tmpl.id)
+    if (!row) return { id }
+    db.transaction(() => {
+      // 반복 인스턴스 삭제 시 템플릿 skipped_dates 갱신 + 템플릿도 upsert로 sync
+      if (row.parent_id) {
+        const task = rowToTask(row)
+        const tmplRow = db.prepare('SELECT * FROM tasks WHERE id=?').get(task.parent_id)
+        if (tmplRow) {
+          const tmpl = rowToTask(tmplRow)
+          const skipped = Array.isArray(tmpl.skipped_dates) ? tmpl.skipped_dates : []
+          skipped.push(task.date)
+          db.prepare(
+            `UPDATE tasks SET skipped_dates = ?, updated_at = ? WHERE id = ?`
+          ).run(JSON.stringify(skipped), nowIso(), tmpl.id)
+          const tmplAfter = db.prepare('SELECT * FROM tasks WHERE id=?').get(tmpl.id)
+          enqueueSync(db, 'tasks', 'upsert', tmpl.id, taskRowToPayload(tmplAfter))
+        }
       }
-    }
-    db.prepare('DELETE FROM tasks WHERE id = ?').run(id)
+      db.prepare('DELETE FROM tasks WHERE id = ?').run(id)
+      enqueueSync(db, 'tasks', 'delete', id, null)
+    })()
     return { id }
   },
 
@@ -629,16 +736,20 @@ export default {
     if (!row) return { id }
     const task = rowToTask(row)
     const templateId = task.is_template ? task.id : task.parent_id || null
-    if (templateId) {
-      db.transaction(() => {
+    db.transaction(() => {
+      if (templateId) {
+        const futureRows = db
+          .prepare('SELECT id FROM tasks WHERE parent_id = ? AND date >= ?')
+          .all(templateId, fromDate)
         db.prepare('DELETE FROM tasks WHERE id = ?').run(templateId)
-        db.prepare(
-          `DELETE FROM tasks WHERE parent_id = ? AND date >= ?`
-        ).run(templateId, fromDate)
-      })()
-    } else {
-      db.prepare('DELETE FROM tasks WHERE id = ?').run(id)
-    }
+        enqueueSync(db, 'tasks', 'delete', templateId, null)
+        db.prepare(`DELETE FROM tasks WHERE parent_id = ? AND date >= ?`).run(templateId, fromDate)
+        for (const r of futureRows) enqueueSync(db, 'tasks', 'delete', r.id, null)
+      } else {
+        db.prepare('DELETE FROM tasks WHERE id = ?').run(id)
+        enqueueSync(db, 'tasks', 'delete', id, null)
+      }
+    })()
     return { id }
   },
 
@@ -649,33 +760,39 @@ export default {
       `UPDATE tasks SET order_index = ?, updated_at = ? WHERE id = ?`
     )
     db.transaction(() => {
-      orderedIds.forEach((id, index) => stmt.run(index, now, id))
+      orderedIds.forEach((id, index) => {
+        stmt.run(index, now, id)
+        const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+        if (after) enqueueSync(db, 'tasks', 'upsert', id, taskRowToPayload(after))
+      })
     })()
     return true
   },
 
-  // ── 이월 ─────────────────────────────────────────────────
+  // ── 이월 (Plan 3: user 격리 + 새 row와 source.rolled_at 변경 모두 enqueue) ──
   rolloverTasks(toDate) {
     const db = getDb()
+    const uid = getCurrentUserId()
     const overdueRows = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE date < ?
+         WHERE user_id IS ?
+           AND date < ?
            AND is_completed = 0
            AND is_template = 0
            AND parent_id IS NULL
            AND end_date IS NULL
            AND rolled_at IS NULL`
       )
-      .all(toDate)
+      .all(uid, toDate)
     const toCopy = overdueRows.map(rowToTask)
     if (toCopy.length === 0) return []
     const maxOrder = db
-      .prepare(`SELECT count(*) as c FROM tasks WHERE date = ?`)
-      .get(toDate).c
+      .prepare(`SELECT count(*) as c FROM tasks WHERE user_id IS ? AND date = ?`)
+      .get(uid, toDate).c
     const now = nowIso()
     const newTasks = toCopy.map((t, i) => ({
-      id: generateId(),
+      id: generateId(), user_id: uid,
       title: t.title, memo: t.memo, date: toDate, end_date: null,
       is_completed: false, is_in_progress: !!t.is_in_progress, is_starred: false,
       repeat_type: 'none', repeat_days: null, order_index: maxOrder + i,
@@ -687,8 +804,16 @@ export default {
       created_at: now, updated_at: now
     }))
     db.transaction(() => {
-      for (const nt of newTasks) insertTaskRow(db, nt)
-      markRolledAt(db, toCopy.map((t) => t.id), now)
+      for (const nt of newTasks) {
+        insertTaskRow(db, nt)
+        enqueueSync(db, 'tasks', 'upsert', nt.id, taskRowToPayload(nt))
+      }
+      const sourceIds = toCopy.map((t) => t.id)
+      markRolledAt(db, sourceIds, now)
+      for (const sid of sourceIds) {
+        const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(sid)
+        if (after) enqueueSync(db, 'tasks', 'upsert', sid, taskRowToPayload(after))
+      }
     })()
     return newTasks
   },
@@ -696,20 +821,20 @@ export default {
   rolloverSelectedTasks(taskIds, toDate) {
     const db = getDb()
     if (!taskIds || taskIds.length === 0) return []
+    const uid = getCurrentUserId()
     const placeholders = taskIds.map(() => '?').join(',')
     // 사용자가 명시적으로 선택한 task만 — 이미 rolled_at이 있어도 따라가지 않고 그대로 카피 생성.
-    // (사용자 의도가 명시적이므로)
     const selectedRows = db
-      .prepare(`SELECT * FROM tasks WHERE id IN (${placeholders}) AND end_date IS NULL`)
-      .all(...taskIds)
+      .prepare(`SELECT * FROM tasks WHERE user_id IS ? AND id IN (${placeholders}) AND end_date IS NULL`)
+      .all(uid, ...taskIds)
     const toCopy = selectedRows.map(rowToTask)
     if (toCopy.length === 0) return []
     const maxOrder = db
-      .prepare(`SELECT count(*) as c FROM tasks WHERE date = ?`)
-      .get(toDate).c
+      .prepare(`SELECT count(*) as c FROM tasks WHERE user_id IS ? AND date = ?`)
+      .get(uid, toDate).c
     const now = nowIso()
     const newTasks = toCopy.map((t, i) => ({
-      id: generateId(),
+      id: generateId(), user_id: uid,
       title: t.title, memo: t.memo, date: toDate, end_date: null,
       is_completed: false, is_in_progress: !!t.is_in_progress, is_starred: false,
       repeat_type: 'none', repeat_days: null, order_index: maxOrder + i,
@@ -721,22 +846,42 @@ export default {
       created_at: now, updated_at: now
     }))
     db.transaction(() => {
-      for (const nt of newTasks) insertTaskRow(db, nt)
-      markRolledAt(db, toCopy.map((t) => t.id), now)
+      for (const nt of newTasks) {
+        insertTaskRow(db, nt)
+        enqueueSync(db, 'tasks', 'upsert', nt.id, taskRowToPayload(nt))
+      }
+      const sourceIds = toCopy.map((t) => t.id)
+      markRolledAt(db, sourceIds, now)
+      for (const sid of sourceIds) {
+        const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(sid)
+        if (after) enqueueSync(db, 'tasks', 'upsert', sid, taskRowToPayload(after))
+      }
     })()
     return newTasks
   },
 
   autoRolloverOverdue(toDate) {
     const db = getDb()
+    const uid = getCurrentUserId()
     const tasks = getAllTasks()
-    const newTasks = computeAutoRolloverOverdue(tasks, toDate)
-    if (newTasks.length === 0) return []
+    const newTasksRaw = computeAutoRolloverOverdue(tasks, toDate)
+    if (newTasksRaw.length === 0) return []
+    // rollover.js는 user_id 모름 → 여기서 주입
+    const newTasks = newTasksRaw.map((nt) => withUserId(nt))
     const now = nowIso()
     db.transaction(() => {
-      for (const nt of newTasks) insertTaskRow(db, nt)
-      markRolledAt(db, newTasks.map((nt) => nt.rollover_source_id), now)
+      for (const nt of newTasks) {
+        insertTaskRow(db, nt)
+        enqueueSync(db, 'tasks', 'upsert', nt.id, taskRowToPayload(nt))
+      }
+      const sourceIds = newTasks.map((nt) => nt.rollover_source_id)
+      markRolledAt(db, sourceIds, now)
+      for (const sid of sourceIds) {
+        const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(sid)
+        if (after) enqueueSync(db, 'tasks', 'upsert', sid, taskRowToPayload(after))
+      }
     })()
+    void uid // (현재 user_id 변수 keep — 디버그/추후 use)
     return newTasks
   },
 
@@ -744,12 +889,13 @@ export default {
   getHabitMatrix(fromDate, toDate) {
     ensureRepeatInstancesForRange(fromDate, toDate)
     const db = getDb()
+    const uid = getCurrentUserId()
     const templates = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE is_template = 1 AND is_habit = 1 AND repeat_type != 'none'`
+         WHERE user_id IS ? AND is_template = 1 AND is_habit = 1 AND repeat_type != 'none'`
       )
-      .all()
+      .all(uid)
       .map(rowToTask)
 
     const todayStr = new Date().toISOString().slice(0, 10)
@@ -757,10 +903,10 @@ export default {
       const instances = db
         .prepare(
           `SELECT * FROM tasks
-           WHERE is_template = 0 AND parent_id = ?
+           WHERE user_id IS ? AND is_template = 0 AND parent_id = ?
              AND date >= ? AND date <= ?`
         )
-        .all(tmpl.id, fromDate, toDate)
+        .all(uid, tmpl.id, fromDate, toDate)
         .map(rowToTask)
       const byDate = {}
       for (const inst of instances) {
@@ -801,6 +947,7 @@ export default {
 
   toggleHabitOnDate(templateId, date) {
     const db = getDb()
+    const uid = getCurrentUserId()
     const tmplRow = db
       .prepare(`SELECT * FROM tasks WHERE id = ? AND is_template = 1`)
       .get(templateId)
@@ -814,7 +961,7 @@ export default {
     if (!instRow) {
       const now = nowIso()
       const inst = {
-        id: generateId(),
+        id: generateId(), user_id: uid,
         title: tmpl.title, memo: tmpl.memo, date, end_date: null,
         is_completed: true, is_in_progress: false, is_starred: false,
         repeat_type: tmpl.repeat_type, repeat_days: null, order_index: tmpl.order_index,
@@ -826,25 +973,33 @@ export default {
         completion_note: null, completed_at: now,
         created_at: now, updated_at: now
       }
-      insertTaskRow(db, inst)
+      db.transaction(() => {
+        insertTaskRow(db, inst)
+        enqueueSync(db, 'tasks', 'upsert', inst.id, taskRowToPayload(inst))
+      })()
       return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(inst.id))
     }
     const inst = rowToTask(instRow)
     const now = nowIso()
     const newCompleted = !inst.is_completed
-    db.prepare(
-      `UPDATE tasks SET is_completed = ?, completed_at = ?, updated_at = ?
-       WHERE id = ?`
-    ).run(newCompleted ? 1 : 0, newCompleted ? now : null, now, inst.id)
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE tasks SET is_completed = ?, completed_at = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(newCompleted ? 1 : 0, newCompleted ? now : null, now, inst.id)
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(inst.id)
+      enqueueSync(db, 'tasks', 'upsert', inst.id, taskRowToPayload(after))
+    })()
     return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(inst.id))
   },
 
   // ── Categories ───────────────────────────────────────────
   getCategories() {
     const db = getDb()
-    const rows = db.prepare('SELECT id, label, color FROM categories').all()
+    const uid = getCurrentUserId()
+    const rows = db.prepare('SELECT id, label, color FROM categories WHERE user_id IS ?').all(uid)
     if (rows.length > 0) return rows
-    // fallback: 마이그레이션 호환 — settings의 categories 키
+    // fallback: 마이그레이션 호환 — settings의 categories 키 (user 무관, PC 단일 시 시절 데이터)
     const setting = db.prepare("SELECT value FROM settings WHERE key='categories'").get()
     if (!setting) return []
     try {
@@ -857,21 +1012,30 @@ export default {
 
   setCategories(categories) {
     const db = getDb()
+    const uid = getCurrentUserId()
+    const now = nowIso()
     db.transaction(() => {
-      db.prepare('DELETE FROM categories').run()
-      const stmt = db.prepare('INSERT INTO categories (id, label, color) VALUES (?, ?, ?)')
-      for (const c of categories) stmt.run(c.id, c.label, c.color || null)
+      // 기존 user의 categories 삭제 → row별 delete 이벤트
+      const existing = db.prepare('SELECT id FROM categories WHERE user_id IS ?').all(uid)
+      db.prepare('DELETE FROM categories WHERE user_id IS ?').run(uid)
+      for (const e of existing) enqueueSync(db, 'categories', 'delete', e.id, null)
+      // 신규 categories 삽입 → row별 upsert
+      const stmt = db.prepare('INSERT INTO categories (id, user_id, label, color) VALUES (?, ?, ?, ?)')
+      for (const c of categories) {
+        stmt.run(c.id, uid, c.label, c.color || null)
+        enqueueSync(db, 'categories', 'upsert', c.id, {
+          id: c.id, user_id: uid, label: c.label, color: c.color || null, updated_at: now
+        })
+      }
     })()
   },
 
-  // ── 설정 (key/value) ─────────────────────────────────────
+  // ── 설정 (key/value) — settings는 PC별 (user 격리 없음) ────
   getSetting(key) {
     const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key)
     if (!row) return undefined
     const raw = row.value
     if (raw === null || raw === undefined) return raw
-    // object/array만 JSON 파싱 — 일반 문자열은 그대로 반환.
-    // ('true', '123' 같은 사용자 입력 문자열이 boolean/number로 오인되는 것 방지)
     const first = raw.charAt(0)
     if (first === '{' || first === '[') {
       try {
@@ -890,57 +1054,93 @@ export default {
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, stored)
   },
 
-  // ── PDS: See 회고 ────────────────────────────────────────
+  // ── PDS: See 회고 (user_id + date 복합 PK) ────────────────
   getSeeMemo(date) {
+    const uid = getCurrentUserId()
     const row = getDb()
-      .prepare('SELECT good, bad, next FROM see_memos WHERE date = ?')
-      .get(date)
+      .prepare('SELECT good, bad, next FROM see_memos WHERE user_id IS ? AND date = ?')
+      .get(uid, date)
     if (!row) return { good: '', bad: '', next: '' }
     return { good: row.good || '', bad: row.bad || '', next: row.next || '' }
   },
 
   setSeeMemo(date, obj) {
     const db = getDb()
+    const uid = getCurrentUserId()
     const good = (obj && obj.good) || ''
     const bad = (obj && obj.bad) || ''
     const next = (obj && obj.next) || ''
-    db.prepare(
-      `INSERT OR REPLACE INTO see_memos (date, good, bad, next, updated_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(date, good, bad, next, nowIso())
+    const now = nowIso()
+    db.transaction(() => {
+      // SQLite는 NULL을 다른 NULL과 구별하므로 INSERT OR REPLACE를 위해 user_id IS NULL 분기 필요.
+      // 단순화: 기존 row 있으면 UPDATE, 없으면 INSERT.
+      const existing = db.prepare('SELECT 1 FROM see_memos WHERE user_id IS ? AND date = ?').get(uid, date)
+      if (existing) {
+        db.prepare(
+          `UPDATE see_memos SET good = ?, bad = ?, next = ?, updated_at = ?
+           WHERE user_id IS ? AND date = ?`
+        ).run(good, bad, next, now, uid, date)
+      } else {
+        db.prepare(
+          `INSERT INTO see_memos (user_id, date, good, bad, next, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(uid, date, good, bad, next, now)
+      }
+      enqueueSync(db, 'see_memos', 'upsert', `${uid}|${date}`, {
+        user_id: uid, date, good, bad, next, updated_at: now
+      })
+    })()
   },
 
   // ── PDS: Look Back ──────────────────────────────────────
   getMonthlyStats(months) {
     const db = getDb()
+    const uid = getCurrentUserId()
     const totalStmt = db.prepare(
       `SELECT count(*) as c FROM tasks
-       WHERE date LIKE ? AND is_template = 0`
+       WHERE user_id IS ? AND date LIKE ? AND is_template = 0`
     )
     const doneStmt = db.prepare(
       `SELECT count(*) as c FROM tasks
-       WHERE date LIKE ? AND is_template = 0 AND is_completed = 1`
+       WHERE user_id IS ? AND date LIKE ? AND is_template = 0 AND is_completed = 1`
     )
     return months.map((ym) => {
       const pattern = `${ym}-%`
-      const total = totalStmt.get(pattern).c
-      const done = doneStmt.get(pattern).c
+      const total = totalStmt.get(uid, pattern).c
+      const done = doneStmt.get(uid, pattern).c
       return { ym, total, done, rate: total > 0 ? Math.round((done / total) * 100) : 0 }
     })
   },
 
-  // ── PDS: Look Forward ───────────────────────────────────
+  // ── PDS: Look Forward (user_id + ym 복합 PK) ──────────────
   getMonthlyGoal(ym) {
-    const row = getDb().prepare('SELECT text FROM monthly_goals WHERE ym = ?').get(ym)
+    const uid = getCurrentUserId()
+    const row = getDb()
+      .prepare('SELECT text FROM monthly_goals WHERE user_id IS ? AND ym = ?')
+      .get(uid, ym)
     return row ? row.text || '' : ''
   },
 
   setMonthlyGoal(ym, text) {
-    getDb()
-      .prepare(
-        `INSERT OR REPLACE INTO monthly_goals (ym, text, updated_at)
-         VALUES (?, ?, ?)`
-      )
-      .run(ym, text, nowIso())
+    const db = getDb()
+    const uid = getCurrentUserId()
+    const now = nowIso()
+    db.transaction(() => {
+      const existing = db.prepare('SELECT 1 FROM monthly_goals WHERE user_id IS ? AND ym = ?').get(uid, ym)
+      if (existing) {
+        db.prepare(
+          `UPDATE monthly_goals SET text = ?, updated_at = ?
+           WHERE user_id IS ? AND ym = ?`
+        ).run(text, now, uid, ym)
+      } else {
+        db.prepare(
+          `INSERT INTO monthly_goals (user_id, ym, text, updated_at)
+           VALUES (?, ?, ?, ?)`
+        ).run(uid, ym, text, now)
+      }
+      enqueueSync(db, 'monthly_goals', 'upsert', `${uid}|${ym}`, {
+        user_id: uid, ym, text, updated_at: now
+      })
+    })()
   }
 }

@@ -4,7 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { autoRolloverOverdue, yesterdayOf } from './rollover.js'
 import { openDatabase } from './sqlite.js'
-import database, { __setDbForTest, __resetDbForTest } from './database.js'
+import database, { __setDbForTest, __resetDbForTest, setCurrentUserId, claimOwnership } from './database.js'
 
 function mkTask(overrides) {
   return {
@@ -167,6 +167,7 @@ describe('database (SQLite-backed)', () => {
   })
 
   afterEach(() => {
+    setCurrentUserId(null) // 다음 테스트 오염 방지
     __resetDbForTest()
     testDb?.close()
     rmSync(tmp, { recursive: true, force: true })
@@ -373,6 +374,131 @@ describe('database (SQLite-backed)', () => {
     const list = database.getTasksByDate('2026-05-17')
     expect(list[0].id).toBe(b.id)
     expect(list[1].id).toBe(a.id)
+  })
+
+  // ── Plan 3 (sync engine) — user_id + sync_queue ──────────
+  describe('Plan 3: user_id + sync_queue', () => {
+    it('setCurrentUserId 미설정(null) → user_id NULL + sync_queue 빈 상태 (기존 v1.7.x 동작 보존)', () => {
+      const t = database.createTask({ title: 'local', date: '2026-05-21' })
+      const row = testDb.prepare('SELECT user_id FROM tasks WHERE id=?').get(t.id)
+      expect(row.user_id).toBeNull()
+      const queued = testDb.prepare('SELECT count(*) as c FROM sync_queue').get().c
+      expect(queued).toBe(0)
+    })
+
+    it('setCurrentUserId(uid) 후 createTask → row.user_id = uid + sync_queue에 upsert 적재', () => {
+      const uid = '11111111-1111-1111-1111-111111111111'
+      setCurrentUserId(uid)
+      const t = database.createTask({ title: '동기화 task', date: '2026-05-21' })
+      const row = testDb.prepare('SELECT user_id FROM tasks WHERE id=?').get(t.id)
+      expect(row.user_id).toBe(uid)
+
+      const events = testDb.prepare('SELECT * FROM sync_queue').all()
+      expect(events).toHaveLength(1)
+      expect(events[0].user_id).toBe(uid)
+      expect(events[0].table_name).toBe('tasks')
+      expect(events[0].op).toBe('upsert')
+      expect(events[0].row_id).toBe(t.id)
+      const payload = JSON.parse(events[0].payload)
+      expect(payload.id).toBe(t.id)
+      expect(payload.title).toBe('동기화 task')
+      expect(payload.user_id).toBe(uid)
+    })
+
+    it('updateTask → sync_queue에 upsert 적재 (전체 row payload)', () => {
+      const uid = 'uid-update'
+      setCurrentUserId(uid)
+      const t = database.createTask({ title: '원본', date: '2026-05-21' })
+      // 최초 createTask 이벤트는 비우고 update만 확인
+      testDb.prepare('DELETE FROM sync_queue').run()
+      database.updateTask(t.id, { title: '수정됨' })
+      const events = testDb.prepare('SELECT * FROM sync_queue').all()
+      expect(events).toHaveLength(1)
+      expect(events[0].op).toBe('upsert')
+      const payload = JSON.parse(events[0].payload)
+      expect(payload.title).toBe('수정됨')
+    })
+
+    it('deleteTask → sync_queue에 delete 적재 (payload는 null/{} 허용)', () => {
+      const uid = 'uid-del'
+      setCurrentUserId(uid)
+      const t = database.createTask({ title: 'del', date: '2026-05-21' })
+      testDb.prepare('DELETE FROM sync_queue').run()
+      database.deleteTask(t.id)
+      const events = testDb.prepare('SELECT * FROM sync_queue WHERE op=?').all('delete')
+      expect(events).toHaveLength(1)
+      expect(events[0].row_id).toBe(t.id)
+      expect(events[0].table_name).toBe('tasks')
+    })
+
+    it('getTasksByDate는 currentUserId의 row만 반환 (다른 user_id의 row 제외)', () => {
+      // user A로 task 만들고
+      setCurrentUserId('user-A')
+      database.createTask({ title: 'A의 task', date: '2026-05-21' })
+      // user B로 전환 후 다른 task 만들기
+      setCurrentUserId('user-B')
+      database.createTask({ title: 'B의 task', date: '2026-05-21' })
+      // 현재 user_id가 B → A의 task는 안 보여야
+      const list = database.getTasksByDate('2026-05-21')
+      const titles = list.map((t) => t.title)
+      expect(titles).toContain('B의 task')
+      expect(titles).not.toContain('A의 task')
+    })
+
+    it('getTasksByDate currentUserId가 null → NULL user_id row만 반환 (로컬-only)', () => {
+      // 비로그인 상태로 row 생성
+      database.createTask({ title: 'local-only', date: '2026-05-21' })
+      // user 있는 row 추가
+      setCurrentUserId('user-X')
+      database.createTask({ title: 'user-X의 task', date: '2026-05-21' })
+      // 다시 비로그인으로
+      setCurrentUserId(null)
+      const list = database.getTasksByDate('2026-05-21')
+      const titles = list.map((t) => t.title)
+      expect(titles).toContain('local-only')
+      expect(titles).not.toContain('user-X의 task')
+    })
+
+    it('claimOwnership(uid) → 모든 NULL user_id row를 uid로 채움 (첫 로그인 시 시나리오)', () => {
+      // v1.7.x 데이터 시뮬레이션 — currentUserId 없이 row 생성
+      database.createTask({ title: '기존 데이터 1', date: '2026-05-21' })
+      database.createTask({ title: '기존 데이터 2', date: '2026-05-22' })
+      database.setSeeMemo('2026-05-21', { good: 'g', bad: 'b', next: 'n' })
+      database.setMonthlyGoal('2026-05', '목표')
+      database.setCategories([{ id: 'work', label: '업무', color: 'blue' }])
+
+      // 첫 로그인 → claimOwnership
+      const uid = 'first-login-uid'
+      const claimed = claimOwnership(uid)
+      expect(claimed.tasks).toBe(2)
+      expect(claimed.see_memos).toBe(1)
+      expect(claimed.monthly_goals).toBe(1)
+      expect(claimed.categories).toBe(1)
+
+      // 이후 setCurrentUserId(uid) 상태에서 조회 시 보임
+      setCurrentUserId(uid)
+      expect(database.getTasksByDate('2026-05-21')).toHaveLength(1)
+      expect(database.getSeeMemo('2026-05-21').good).toBe('g')
+      expect(database.getMonthlyGoal('2026-05')).toBe('목표')
+      expect(database.getCategories()).toHaveLength(1)
+    })
+
+    it('setSeeMemo / setMonthlyGoal도 user_id 격리 + sync_queue 적재', () => {
+      setCurrentUserId('uid-pds')
+      database.setSeeMemo('2026-05-21', { good: 'g', bad: 'b', next: 'n' })
+      database.setMonthlyGoal('2026-05', '5월 목표')
+
+      const see = testDb.prepare('SELECT user_id, good FROM see_memos WHERE date=?').get('2026-05-21')
+      expect(see.user_id).toBe('uid-pds')
+      const goal = testDb.prepare('SELECT user_id, text FROM monthly_goals WHERE ym=?').get('2026-05')
+      expect(goal.user_id).toBe('uid-pds')
+
+      // sync_queue에 두 이벤트
+      const events = testDb.prepare('SELECT table_name FROM sync_queue ORDER BY id').all()
+      const tables = events.map((e) => e.table_name)
+      expect(tables).toContain('see_memos')
+      expect(tables).toContain('monthly_goals')
+    })
   })
 
   it('deleteTaskAndFuture → template + 미래 instances 삭제, 과거 보존', () => {
