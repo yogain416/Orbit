@@ -114,6 +114,12 @@ function getDb() {
   return _db
 }
 
+// Plan 3: sync.js가 better-sqlite3 raw handle을 필요로 한다 (sync_queue/sync_meta 직접 조작).
+// database.js 외부에서 호출되는 공용 핸들 게터.
+export function getRawDb() {
+  return getDb()
+}
+
 // 테스트 전용 hook — production에선 호출되지 않음.
 // getDb()는 _db가 set이면 그대로 사용 → app.getPath 의존을 우회 가능.
 export function __setDbForTest(db) {
@@ -210,6 +216,66 @@ export function claimOwnership(uid) {
     result.see_memos = db.prepare(`UPDATE see_memos SET user_id = ? WHERE user_id IS NULL`).run(uid).changes
   })()
   return result
+}
+
+// ── Plan 3: 첫 로그인 시 로컬 전체를 sync_queue로 적재 ────────────
+// v1.7.x에선 enqueueSync가 currentUserId=null이라 no-op. → 첫 로그인 직후 1회
+// 모든 로컬 row를 upsert 큐로 밀어넣어야 Supabase로 올라간다.
+// sync_meta의 `initial_sync_done:<uid>` 플래그로 멱등 — 두 번째 로그인부터는 skip.
+export function performInitialSync(uid) {
+  if (!uid) throw new Error('performInitialSync requires a user id')
+  const db = getDb()
+  const flagKey = `initial_sync_done:${uid}`
+  const flag = db.prepare(`SELECT value FROM sync_meta WHERE key = ?`).get(flagKey)
+  if (flag) return { skipped: true, reason: 'already_done' }
+
+  const now = nowIso()
+  const counts = { tasks: 0, categories: 0, monthly_goals: 0, see_memos: 0 }
+  const insertSync = db.prepare(
+    `INSERT INTO sync_queue (user_id, table_name, op, row_id, payload, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  )
+  const upsertMeta = db.prepare(
+    `INSERT INTO sync_meta (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  )
+
+  db.transaction(() => {
+    // tasks: rowToTask로 boolean/array 정규화한 JS object → JSON
+    const tasks = db.prepare(`SELECT * FROM tasks WHERE user_id = ?`).all(uid)
+    for (const row of tasks) {
+      const payload = rowToTask(row)
+      insertSync.run(uid, 'tasks', 'upsert', row.id, JSON.stringify(payload), now)
+      counts.tasks++
+    }
+    // categories: 로컬에 updated_at 없으므로 now를 부여
+    const cats = db.prepare(`SELECT id, label, color FROM categories WHERE user_id = ?`).all(uid)
+    for (const c of cats) {
+      const payload = { id: c.id, user_id: uid, label: c.label, color: c.color || null, updated_at: now }
+      insertSync.run(uid, 'categories', 'upsert', c.id, JSON.stringify(payload), now)
+      counts.categories++
+    }
+    const mgs = db.prepare(`SELECT ym, text, updated_at FROM monthly_goals WHERE user_id = ?`).all(uid)
+    for (const m of mgs) {
+      const payload = { user_id: uid, ym: m.ym, text: m.text || '', updated_at: m.updated_at || now }
+      insertSync.run(uid, 'monthly_goals', 'upsert', `${uid}|${m.ym}`, JSON.stringify(payload), now)
+      counts.monthly_goals++
+    }
+    const sms = db.prepare(`SELECT date, good, bad, next, updated_at FROM see_memos WHERE user_id = ?`).all(uid)
+    for (const s of sms) {
+      const payload = {
+        user_id: uid, date: s.date,
+        good: s.good || '', bad: s.bad || '', next: s.next || '',
+        updated_at: s.updated_at || now
+      }
+      insertSync.run(uid, 'see_memos', 'upsert', `${uid}|${s.date}`, JSON.stringify(payload), now)
+      counts.see_memos++
+    }
+
+    upsertMeta.run(flagKey, now)
+  })()
+
+  return { skipped: false, counts }
 }
 
 function getAllTasks() {

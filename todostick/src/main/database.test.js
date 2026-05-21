@@ -4,7 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { autoRolloverOverdue, yesterdayOf } from './rollover.js'
 import { openDatabase } from './sqlite.js'
-import database, { __setDbForTest, __resetDbForTest, setCurrentUserId, claimOwnership } from './database.js'
+import database, { __setDbForTest, __resetDbForTest, setCurrentUserId, claimOwnership, performInitialSync } from './database.js'
 
 function mkTask(overrides) {
   return {
@@ -498,6 +498,75 @@ describe('database (SQLite-backed)', () => {
       const tables = events.map((e) => e.table_name)
       expect(tables).toContain('see_memos')
       expect(tables).toContain('monthly_goals')
+    })
+
+    // ── Plan 3 Task 5: performInitialSync ───────────────────
+    describe('performInitialSync', () => {
+      it('첫 로그인 시 모든 로컬 row를 sync_queue로 enqueue', () => {
+        // v1.7.x 데이터 시뮬레이션 — 비로그인 상태로 row 생성 (sync_queue 적재 안 됨)
+        database.createTask({ title: 't1', date: '2026-05-21' })
+        database.createTask({ title: 't2', date: '2026-05-22' })
+        database.setSeeMemo('2026-05-21', { good: 'g', bad: 'b', next: 'n' })
+        database.setMonthlyGoal('2026-05', '월간')
+        database.setCategories([{ id: 'work', label: '업무', color: 'blue' }])
+
+        // 첫 로그인: claim + initial sync
+        const uid = 'first-uid'
+        claimOwnership(uid)
+        const result = performInitialSync(uid)
+
+        expect(result.skipped).toBe(false)
+        expect(result.counts.tasks).toBe(2)
+        expect(result.counts.see_memos).toBe(1)
+        expect(result.counts.monthly_goals).toBe(1)
+        expect(result.counts.categories).toBe(1)
+
+        // sync_queue에 5 row (tasks 2 + see_memos 1 + monthly_goals 1 + categories 1)
+        const events = testDb.prepare('SELECT table_name, op FROM sync_queue ORDER BY id').all()
+        expect(events).toHaveLength(5)
+        expect(events.every((e) => e.op === 'upsert')).toBe(true)
+        const tables = events.map((e) => e.table_name).sort()
+        expect(tables).toEqual(['categories', 'monthly_goals', 'see_memos', 'tasks', 'tasks'])
+
+        // initial_sync_done:<uid> 플래그 설정됨
+        const flag = testDb
+          .prepare(`SELECT value FROM sync_meta WHERE key = ?`)
+          .get(`initial_sync_done:${uid}`)
+        expect(flag).toBeTruthy()
+      })
+
+      it('두 번째 호출은 멱등 — skip', () => {
+        const uid = 'uid-idemp'
+        claimOwnership(uid)
+        database.createTask({ title: 't', date: '2026-05-21' })
+        // 첫 호출
+        const first = performInitialSync(uid)
+        expect(first.skipped).toBe(false)
+        const queueAfterFirst = testDb.prepare('SELECT count(*) as c FROM sync_queue').get().c
+
+        // 두 번째 호출 — skip이어야 큐가 중복 적재되지 않음
+        const second = performInitialSync(uid)
+        expect(second.skipped).toBe(true)
+        const queueAfterSecond = testDb.prepare('SELECT count(*) as c FROM sync_queue').get().c
+        expect(queueAfterSecond).toBe(queueAfterFirst)
+      })
+
+      it('다른 user의 row는 enqueue하지 않음', () => {
+        // user-A row 추가
+        setCurrentUserId('user-A')
+        database.createTask({ title: 'A의 task', date: '2026-05-21' })
+        // user-B row 추가
+        setCurrentUserId('user-B')
+        database.createTask({ title: 'B의 task', date: '2026-05-21' })
+        // sync_queue 비움 — initial sync 효과만 확인
+        testDb.prepare('DELETE FROM sync_queue').run()
+        setCurrentUserId(null)
+
+        const result = performInitialSync('user-A')
+        expect(result.counts.tasks).toBe(1)
+        const events = testDb.prepare('SELECT user_id, row_id FROM sync_queue').all()
+        expect(events.every((e) => e.user_id === 'user-A')).toBe(true)
+      })
     })
   })
 

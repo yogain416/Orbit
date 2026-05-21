@@ -70,5 +70,11 @@ contextBridge.exposeInMainWorld('api', {
     signOut: () => ipcRenderer.invoke('auth:signOut'),
     onStateChanged: (cb) => ipcRenderer.on('auth:state-changed', cb),
     offStateChanged: (cb) => ipcRenderer.removeListener('auth:state-changed', cb)
+  },
+  sync: {
+    status: () => ipcRenderer.invoke('sync:status'),
+    runNow: () => ipcRenderer.invoke('sync:runNow'),
+    onStatusChanged: (cb) => ipcRenderer.on('sync:status-changed', cb),
+    offStatusChanged: (cb) => ipcRenderer.removeListener('sync:status-changed', cb)
   }
 })

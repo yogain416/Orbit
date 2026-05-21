@@ -11,6 +11,7 @@ import TaskModal from './components/TaskModal'
 import StickerPopup from './components/StickerPopup'
 import SettingsModal from './components/SettingsModal'
 import UserMenu from './components/UserMenu'
+import SyncStatusBadge from './components/SyncStatusBadge'
 import ReminderToastContainer, { playFunSound } from './components/ReminderToast'
 import { formatDate, getTodayStr } from './utils/date'
 
@@ -183,6 +184,7 @@ function MainApp({ user }) {
         >
           ⚙️
         </button>
+        <SyncStatusBadge />
         <UserMenu user={user} onSignOut={handleSignOut} />
       </header>
 

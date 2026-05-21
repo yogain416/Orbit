@@ -4,8 +4,10 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalSho
 import { migrateUserData } from './userdata-migration.js'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import db from './database.js'
+import db, { setCurrentUserId, claimOwnership, performInitialSync, getRawDb } from './database.js'
 import { getAuth } from './auth.js'
+import { getSupabaseClient } from './supabase.js'
+import { createSyncEngine } from './sync.js'
 
 // Supabase 콘솔의 Redirect URLs에 등록된 스킴. spec/auth.js의 REDIRECT_URL과 호스트가 일치해야 한다.
 const AUTH_PROTOCOL_SCHEME = 'app'
@@ -14,6 +16,61 @@ let mainWindow = null
 let stickerWindow = null
 let tray = null
 let reminderTimers = []
+
+// ── Plan 3 (sync engine): 워커 + 현재 user id 추적 ────────────
+// engine은 lazy-init — auth 세션이 처음 잡힐 때 만들어진다.
+let _syncEngine = null
+let _currentUid = null
+
+function getOrCreateSyncEngine() {
+  if (_syncEngine) return _syncEngine
+  _syncEngine = createSyncEngine({
+    getClient: () => getSupabaseClient(),
+    getDb: () => getRawDb(),
+    getUserId: () => _currentUid
+  })
+  // status 변경 시 모든 창에 broadcast — SyncStatusBadge가 구독.
+  _syncEngine.onChange((status) => {
+    mainWindow?.webContents.send('sync:status-changed', status)
+    stickerWindow?.webContents.send('sync:status-changed', status)
+  })
+  return _syncEngine
+}
+
+// 인증된 user에 sync 시작 — claim + initial sync + start 워커.
+// 멱등 — 여러 번 호출되어도 안전.
+async function startSyncForUser(uid) {
+  if (!uid) return
+  if (_currentUid === uid && _syncEngine) return // 이미 동일 user로 동작 중
+  _currentUid = uid
+  setCurrentUserId(uid)
+  try {
+    claimOwnership(uid)
+    performInitialSync(uid)
+  } catch (e) {
+    console.error('[sync] initial sync prep failed:', e)
+  }
+  const engine = getOrCreateSyncEngine()
+  engine.start()
+}
+
+function stopSync() {
+  _syncEngine?.stop()
+  _currentUid = null
+  setCurrentUserId(null)
+}
+
+// mutation 직후 즉시 push 트리거 — 큐 쌓임 + 30s polling 기다리지 않고 보냄.
+// 단, runOnce 동시 실행을 막기 위해 짧은 debounce.
+let _flushTimer = null
+function triggerSyncFlush() {
+  if (!_syncEngine || !_currentUid) return
+  if (_flushTimer) return
+  _flushTimer = setTimeout(() => {
+    _flushTimer = null
+    _syncEngine?.runOnce().catch(() => {})
+  }, 300)
+}
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -218,11 +275,19 @@ async function handleDeepLink(url) {
   }
 }
 
-// 인증 상태에 따라 사용자 데이터를 보여주는 창(현재는 스티커)을 토글한다.
-// LoginView가 뜬 상태에서 사용자 데이터가 노출되는 걸 막기 위함.
+// 인증 상태에 따라 사용자 데이터를 보여주는 창(현재는 스티커)을 토글하고
+// sync 워커도 시작/중단한다.
 async function refreshUserWindows() {
   try {
     const session = await getAuth().getSession()
+    const uid = session?.user?.id || null
+
+    if (uid) {
+      await startSyncForUser(uid)
+    } else {
+      stopSync()
+    }
+
     if (session && !stickerWindow) {
       createStickerWindow()
     } else if (!session && stickerWindow) {
@@ -324,22 +389,41 @@ ipcMain.handle('tasks:getByWeek', (_, startDate, endDate) => db.getTasksByRange(
 ipcMain.handle('tasks:create', (_, task) => {
   const result = db.createTask(task)
   if (task.remind_at) scheduleReminders()
+  triggerSyncFlush()
   return result
 })
 ipcMain.handle('tasks:update', (_, id, fields) => {
   const result = db.updateTask(id, fields)
   if (fields.remind_at !== undefined) scheduleReminders()
+  triggerSyncFlush()
   return result
 })
-ipcMain.handle('tasks:delete', (_, id) => db.deleteTask(id))
-ipcMain.handle('tasks:toggle', (_, id, note) => db.toggleTask(id, note))
-ipcMain.handle('tasks:setInProgress', (_, id, value) => db.setInProgress(id, value))
-ipcMain.handle('tasks:setStarred', (_, id, value) => db.setStarred(id, value))
+ipcMain.handle('tasks:delete', (_, id) => {
+  const result = db.deleteTask(id)
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('tasks:toggle', (_, id, note) => {
+  const result = db.toggleTask(id, note)
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('tasks:setInProgress', (_, id, value) => {
+  const result = db.setInProgress(id, value)
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('tasks:setStarred', (_, id, value) => {
+  const result = db.setStarred(id, value)
+  triggerSyncFlush()
+  return result
+})
 ipcMain.handle('tasks:autoRolloverOverdue', (_, toDate) => {
   const result = db.autoRolloverOverdue(toDate)
   if (result.length > 0) {
     mainWindow?.webContents.send('tasks:refresh')
     stickerWindow?.webContents.send('tasks:refresh')
+    triggerSyncFlush()
   }
   return result
 })
@@ -350,27 +434,41 @@ ipcMain.handle('tasks:rollover', (_, toDate) => {
   const result = db.rolloverTasks(toDate)
   mainWindow?.webContents.send('tasks:refresh')
   stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
   return result
 })
 ipcMain.handle('tasks:rolloverSelected', (_, taskIds, toDate) => {
   const result = db.rolloverSelectedTasks(taskIds, toDate)
   mainWindow?.webContents.send('tasks:refresh')
   stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
   return result
 })
 
 // IPC: 순서 변경
-ipcMain.handle('tasks:reorder', (_, date, orderedIds) => db.reorderTasks(date, orderedIds))
+ipcMain.handle('tasks:reorder', (_, date, orderedIds) => {
+  const result = db.reorderTasks(date, orderedIds)
+  triggerSyncFlush()
+  return result
+})
 
 // IPC: 반복 할일 이후 모두 삭제
-ipcMain.handle('tasks:deleteAndFuture', (_, id, fromDate) => db.deleteTaskAndFuture(id, fromDate))
+ipcMain.handle('tasks:deleteAndFuture', (_, id, fromDate) => {
+  const result = db.deleteTaskAndFuture(id, fromDate)
+  triggerSyncFlush()
+  return result
+})
 
 // IPC: 완료 기록 조회
 ipcMain.handle('tasks:getCompleted', (_, filters) => db.getCompletedTasks(filters))
 
 // IPC: 카테고리 관리
 ipcMain.handle('categories:get', () => db.getCategories())
-ipcMain.handle('categories:set', (_, categories) => db.setCategories(categories))
+ipcMain.handle('categories:set', (_, categories) => {
+  const result = db.setCategories(categories)
+  triggerSyncFlush()
+  return result
+})
 
 // IPC: 플래너 풀
 ipcMain.handle('tasks:getPool', (_, poolKey) => db.getPoolTasks(poolKey))
@@ -420,12 +518,20 @@ ipcMain.handle('shortcuts:set', (_, shortcuts) => {
 
 // IPC: PDS — See 회고
 ipcMain.handle('see:get', (_, date) => db.getSeeMemo(date))
-ipcMain.handle('see:set', (_, date, text) => { db.setSeeMemo(date, text); return true })
+ipcMain.handle('see:set', (_, date, text) => {
+  db.setSeeMemo(date, text)
+  triggerSyncFlush()
+  return true
+})
 
 // IPC: PDS — Look Back / Look Forward
 ipcMain.handle('review:getStats', (_, months) => db.getMonthlyStats(months))
 ipcMain.handle('review:getGoal', (_, ym) => db.getMonthlyGoal(ym))
-ipcMain.handle('review:setGoal', (_, ym, text) => { db.setMonthlyGoal(ym, text); return true })
+ipcMain.handle('review:setGoal', (_, ym, text) => {
+  db.setMonthlyGoal(ym, text)
+  triggerSyncFlush()
+  return true
+})
 
 // IPC: 환경 정보 (dev/prod 구분)
 ipcMain.handle('env:info', () => ({ isDev, dbPath: db.getDbPath() }))
@@ -436,6 +542,7 @@ ipcMain.handle('habits:toggle', (_, templateId, date) => {
   const result = db.toggleHabitOnDate(templateId, date)
   mainWindow?.webContents.send('tasks:refresh')
   stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
   return result
 })
 
@@ -463,7 +570,18 @@ ipcMain.handle('auth:getUser', async () => {
 })
 ipcMain.handle('auth:signOut', async () => {
   await getAuth().signOut()
+  stopSync()
   mainWindow?.webContents.send('auth:state-changed', { session: null })
   refreshUserWindows()
   return true
+})
+
+// IPC: 동기화 상태 + 수동 실행
+ipcMain.handle('sync:status', () => {
+  if (!_syncEngine) return { queueLength: 0, lastSyncedAt: null, lastError: null, running: false }
+  return _syncEngine.getStatus()
+})
+ipcMain.handle('sync:runNow', async () => {
+  if (!_syncEngine) return { skipped: true, reason: 'no_engine' }
+  return await _syncEngine.runOnce()
 })
