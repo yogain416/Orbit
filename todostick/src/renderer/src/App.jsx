@@ -123,8 +123,8 @@ function MainApp({ user }) {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50">
-      {/* 헤더 */}
-      <header className="flex items-center gap-4 px-5 py-2.5 bg-white border-b border-slate-200 shadow-sm">
+      {/* 헤더 — 좁아져도 깨지지 않도록 gap/padding 최소화 + 라벨 반응형 */}
+      <header className="flex items-center gap-2 px-3 py-2 bg-white border-b border-slate-200 shadow-sm">
         {/* 로고 */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className="text-lg text-indigo-500">◎</span>
@@ -139,26 +139,26 @@ function MainApp({ user }) {
           )}
         </div>
 
-        {/* 날짜 네비게이션 */}
-        <div className="flex items-center gap-2 flex-1">
-          <span className="text-sm font-medium text-slate-600">{formatDate(currentDate)}</span>
+        {/* 날짜 네비게이션 — flex-1로 가변, 길어지면 truncate */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-sm font-medium text-slate-600 truncate">{formatDate(currentDate)}</span>
           {!isToday && (
             <button
               onClick={goToToday}
-              className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-colors font-medium"
+              className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-colors font-medium flex-shrink-0"
             >
               오늘로
             </button>
           )}
         </div>
 
-        {/* 뷰 전환 */}
+        {/* 뷰 전환 — 좁아질수록 px 축소 */}
         <div className="flex rounded-lg overflow-hidden border border-slate-200 flex-shrink-0">
           {VIEWS.map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+              className={`px-2.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
                 view === v
                   ? 'bg-indigo-600 text-white'
                   : 'bg-white text-slate-500 hover:bg-slate-50'
@@ -169,13 +169,14 @@ function MainApp({ user }) {
           ))}
         </div>
 
-        {/* 추가 버튼 */}
+        {/* 추가 버튼 — lg 미만에서는 + 아이콘만 */}
         <button
           onClick={() => openAddModal(getTodayStr(currentDate))}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0"
-          title="Ctrl+N"
+          className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0"
+          title="Ctrl+N — 할일 추가"
         >
-          <span className="text-sm leading-none">+</span> 추가
+          <span className="text-sm leading-none">+</span>
+          <span className="hidden lg:inline">추가</span>
         </button>
         <button
           onClick={() => setSettingsOpen(true)}

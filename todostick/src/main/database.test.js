@@ -214,6 +214,32 @@ describe('database (SQLite-backed)', () => {
     expect(list[0].is_in_progress).toBe(true)
   })
 
+  // v1.8.1: 완료 task는 아래, 미완료는 위 정렬
+  it('getTasksByDate → 완료된 task는 미완료보다 아래로 정렬', () => {
+    const a = database.createTask({ title: 'A', date: '2026-05-17' })
+    const b = database.createTask({ title: 'B', date: '2026-05-17' })
+    database.createTask({ title: 'C', date: '2026-05-17' })
+    // B만 완료
+    database.toggleTask(b.id)
+    const list = database.getTasksByDate('2026-05-17')
+    expect(list).toHaveLength(3)
+    // 미완료 두 개가 먼저, B(완료)는 마지막
+    expect(list[list.length - 1].id).toBe(b.id)
+    expect(list[list.length - 1].is_completed).toBe(true)
+    // 미완료 영역 안에 A가 들어있어야
+    expect(list.slice(0, 2).some((t) => t.id === a.id)).toBe(true)
+  })
+
+  it('getTasksByDate → 완료 + 진행중 동시 존재 시 진행중이 가장 위, 완료가 가장 아래', () => {
+    const a = database.createTask({ title: 'A', date: '2026-05-17' })
+    const b = database.createTask({ title: 'B', date: '2026-05-17' })
+    const c = database.createTask({ title: 'C', date: '2026-05-17' })
+    database.setInProgress(b.id, true) // B = 진행중
+    database.toggleTask(c.id) // C = 완료
+    const list = database.getTasksByDate('2026-05-17')
+    expect(list.map((t) => t.id)).toEqual([b.id, a.id, c.id])
+  })
+
   it('getTasksByDate → 반복 템플릿 있으면 자동 인스턴스 생성 (멱등)', () => {
     database.createTask({ title: '매일', date: '2026-05-15', repeat_type: 'daily' })
     // 17일 조회 → 17일 인스턴스 자동 생성
@@ -443,6 +469,58 @@ describe('database (SQLite-backed)', () => {
       const titles = list.map((t) => t.title)
       expect(titles).toContain('B의 task')
       expect(titles).not.toContain('A의 task')
+    })
+
+    // v1.8.1: 다른 ID로 로그인 전환 시 데이터 누출 없음 — 완전 격리 회귀 테스트
+    it('user 전환 후 조회 — 이전 user의 task가 누출되지 않음 (모든 view)', () => {
+      // user-A 활동
+      setCurrentUserId('user-A')
+      database.createTask({ title: 'A의 일별', date: '2026-05-21' })
+      database.createTask({ title: 'A의 다른 날', date: '2026-06-01' })
+      database.setSeeMemo('2026-05-21', { good: 'A의 회고', bad: '', next: '' })
+      database.setMonthlyGoal('2026-05', 'A의 목표')
+      database.setCategories([{ id: 'a-cat', label: 'A 카테고리', color: 'red' }])
+
+      // user-B로 전환
+      setCurrentUserId('user-B')
+
+      // 모든 조회 메서드가 B의 빈 결과만 반환
+      expect(database.getTasksByDate('2026-05-21')).toHaveLength(0)
+      expect(database.getTasksByMonth(2026, 5)).toHaveLength(0)
+      expect(database.getTasksByMonth(2026, 6)).toHaveLength(0)
+      expect(database.getTasksByRange('2026-05-01', '2026-12-31')).toHaveLength(0)
+      expect(database.getOverdueTasks('2026-12-31')).toHaveLength(0)
+      expect(database.getCompletedTasks()).toHaveLength(0)
+      expect(database.getSeeMemo('2026-05-21')).toEqual({ good: '', bad: '', next: '' })
+      expect(database.getMonthlyGoal('2026-05')).toBe('')
+      expect(database.getCategories()).toHaveLength(0)
+      // habits matrix도 빈 결과
+      expect(database.getHabitMatrix('2026-05-01', '2026-05-31')).toHaveLength(0)
+    })
+
+    it('user 전환 후 mutation — 새 user의 row만 만들고 sync_queue도 새 user로 격리', () => {
+      setCurrentUserId('user-A')
+      database.createTask({ title: 'A의 task', date: '2026-05-21' })
+
+      // user-B로 전환 후 mutation
+      setCurrentUserId('user-B')
+      const bTask = database.createTask({ title: 'B의 task', date: '2026-05-21' })
+
+      // B의 task는 user_id='user-B'
+      const row = testDb.prepare('SELECT user_id FROM tasks WHERE id=?').get(bTask.id)
+      expect(row.user_id).toBe('user-B')
+
+      // sync_queue: B의 task만 user-B 큐에 있음
+      const bQueue = testDb.prepare('SELECT count(*) as c FROM sync_queue WHERE user_id=?').get('user-B').c
+      const aQueue = testDb.prepare('SELECT count(*) as c FROM sync_queue WHERE user_id=?').get('user-A').c
+      expect(bQueue).toBeGreaterThan(0)
+      expect(aQueue).toBeGreaterThan(0) // A의 mutation도 별도 큐에 살아있음
+
+      // B 시점에 A의 큐가 B 작업에 섞이지 않음 — 정확히 A는 A, B는 B
+      const bQueueRows = testDb
+        .prepare('SELECT row_id FROM sync_queue WHERE user_id=? ORDER BY id')
+        .all('user-B')
+      expect(bQueueRows.every((r) => r.row_id === bTask.id)).toBe(true)
     })
 
     it('getTasksByDate currentUserId가 null → NULL user_id row만 반환 (로컬-only)', () => {

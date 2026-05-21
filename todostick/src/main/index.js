@@ -74,10 +74,10 @@ function triggerSyncFlush() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 650,
-    minWidth: 700,
-    minHeight: 500,
+    width: 980,
+    height: 680,
+    minWidth: 820,
+    minHeight: 520,
     show: false,
     autoHideMenuBar: true,
     title: isDev ? 'Orbit [DEV]' : 'Orbit',

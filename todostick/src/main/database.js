@@ -333,8 +333,13 @@ function ensureRepeatInstancesForRange(fromDate, toDate) {
 
 // 정렬 비교자 (특정 날짜 한정 — getTasksByDate에서 사용).
 function sortDayTasks(a, b) {
-  const aInProg = !!a.is_in_progress && !a.is_completed
-  const bInProg = !!b.is_in_progress && !b.is_completed
+  // 1순위: 완료된 task는 아래로 — 미완료 우선 (v1.8.1)
+  const aDone = !!a.is_completed
+  const bDone = !!b.is_completed
+  if (aDone !== bDone) return aDone ? 1 : -1
+  // 진행중 우선 (단 완료 아닐 때만)
+  const aInProg = !!a.is_in_progress && !aDone
+  const bInProg = !!b.is_in_progress && !bDone
   if (aInProg !== bInProg) return aInProg ? -1 : 1
   const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
   if (star) return star
@@ -345,8 +350,12 @@ function sortDayTasks(a, b) {
 // 정렬 비교자 (날짜 묶음 — getTasksByMonth/Range에서 사용).
 function sortMultiDayTasks(a, b) {
   if (a.date !== b.date) return a.date.localeCompare(b.date)
-  const aInProg = !!a.is_in_progress && !a.is_completed
-  const bInProg = !!b.is_in_progress && !b.is_completed
+  // 같은 날짜 안에서는 미완료 우선 (v1.8.1)
+  const aDone = !!a.is_completed
+  const bDone = !!b.is_completed
+  if (aDone !== bDone) return aDone ? 1 : -1
+  const aInProg = !!a.is_in_progress && !aDone
+  const bInProg = !!b.is_in_progress && !bDone
   if (aInProg !== bInProg) return aInProg ? -1 : 1
   const star = (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)
   if (star) return star

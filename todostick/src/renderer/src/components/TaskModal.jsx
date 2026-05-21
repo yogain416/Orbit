@@ -19,6 +19,17 @@ const REPEAT_OPTIONS = [
   { value: 'monthly', label: '매월' }
 ]
 
+// 'HH:MM' + 60분 (자정 넘으면 23:59로 클램프 — 일정이 다음날로 넘어가는 건 사용자가 수동 조정)
+function addOneHour(timeStr) {
+  if (!timeStr) return ''
+  const [h, m] = timeStr.split(':').map(Number)
+  const total = h * 60 + m + 60
+  const cap = Math.min(total, 23 * 60 + 59)
+  const nh = Math.floor(cap / 60)
+  const nm = cap % 60
+  return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`
+}
+
 export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) {
   const [title, setTitle] = useState(task?.title || '')
   const [memo, setMemo] = useState(task?.memo || '')
@@ -163,7 +174,14 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
               <input
                 type="time"
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setStartTime(next)
+                  // v1.8.1: 종료 시간이 비어 있을 때만 자동 +1시간 — 사용자가 직접 정한 endTime은 보존.
+                  if (next && !endTime) {
+                    setEndTime(addOneHour(next))
+                  }
+                }}
                 className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
               />
               <span className="text-gray-400 text-xs flex-shrink-0">~</span>
