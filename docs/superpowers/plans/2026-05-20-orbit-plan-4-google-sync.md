@@ -18,6 +18,9 @@
 | **Google Tasks ↔ task (할일) 매핑** | calendar event 매핑과 별도. task.id ↔ google_tasks 항목의 id | Google이 캘린더와 Tasks를 분리해 운영 |
 | **단방향 먼저 → 양방향** | Phase A: Orbit → Google. Phase B: Google → Orbit | 위험 분산. Phase B가 양방향 sync의 복잡도 핵심 |
 | **start_time/end_time 있는 task → Calendar event**, 없으면 → Tasks | Orbit의 데이터 모델과 자연 매핑 | 사용자 직관 |
+| **선택적 sync (opt-in, 기본 OFF)** ⭐ 2026-05-22 추가 | `tasks.sync_to_google` 컬럼으로 레코드별 토글. 사용자가 명시적으로 체크한 task만 Google로 push | 반복/다일/카테고리 매핑 등 호환 안 되는 케이스를 사용자가 미리 차단. silent 손상 방지 |
+| **ON → OFF 토글 시 Google에서 삭제** | google_event_id/google_tasks_id 있으면 Google API delete 호출 후 매핑 NULL화 | "Google에서 빼고 싶다"는 사용자 의도 직관 일치 |
+| **Pull로 들어온 신규 event/task는 항상 sync_to_google = 1** | Google이 원본이므로 매핑 유지가 자연스러움 | 외부 source에서 들어왔으므로 sync 의도 자명 |
 
 ---
 
@@ -38,6 +41,7 @@
 | `todostick/src/renderer/src/components/SettingsModal.jsx` | "Google 연결 해제" 옵션 | 수정 |
 
 새 SQLite 컬럼 (또는 별도 테이블):
+- `tasks.sync_to_google INTEGER DEFAULT 0` ⭐ **opt-in 플래그 (선택적 sync)**
 - `tasks.google_event_id TEXT` — Calendar event id 매핑
 - `tasks.google_tasks_id TEXT` — Google Tasks 항목 id 매핑
 - 새 테이블 `google_sync_meta`: `last_calendar_sync_at`, `last_tasks_sync_at`
@@ -77,33 +81,52 @@ Supabase의 `signInWithOAuth`로 Google 로그인 후, session에 provider_token
 
 ---
 
-## Task 3: 매핑 컬럼 + DB 스키마 v3→v4
+## Task 3: 매핑 컬럼 + DB 스키마 v3→v4 (선택적 sync 플래그 포함)
 
 **Files:**
 - Modify: `todostick/src/main/sqlite.js`
 - Modify: `todostick/src/main/database.js`
+- Modify: `todostick/src/renderer/src/components/TaskModal.jsx`
 
-- ALTER TABLE tasks ADD COLUMN google_event_id TEXT, google_tasks_id TEXT
-- 새 테이블 google_sync_meta (key, value)
+- ALTER TABLE tasks ADD COLUMN:
+  - `sync_to_google INTEGER DEFAULT 0` ⭐ opt-in 플래그
+  - `google_event_id TEXT`
+  - `google_tasks_id TEXT`
+- 새 테이블 `google_sync_meta` (key, value)
 - `applyMigrations` v4 단계 추가
+- TaskModal에 "📅 Google 캘린더/Tasks에 동기화" 체크박스 추가
+- database.js: createTask/updateTask가 `sync_to_google` 받도록
+
+**검증:** sqlite.test.js의 'tasks 테이블에 sync_to_google 컬럼 존재 + default 0' 테스트.
 
 ---
 
-## Task 4: Orbit → Google push (단방향 먼저)
+## Task 4: Orbit → Google push (단방향 먼저, 선택적 sync 적용)
 
 **Files:**
 - Create: `todostick/src/main/google-sync.js`
+- Modify: `todostick/src/main/database.js` — `setSyncToGoogle(taskId, value)` 메서드
 
 로직:
 - `pushOrbitToGoogle({ userId })`:
-  - DB에서 google_event_id IS NULL인 task 중 start_time 있는 것 → Calendar에 insert → 응답 id 저장
-  - google_tasks_id IS NULL인 task 중 start_time 없는 것 → Tasks에 insert → id 저장
+  - **필터: `sync_to_google = 1`인 task만 처리** ⭐
+  - DB에서 `sync_to_google = 1 AND google_event_id IS NULL`인 task 중 start_time 있는 것 → Calendar insert → id 저장
+  - `sync_to_google = 1 AND google_tasks_id IS NULL`인 task 중 start_time 없는 것 → Tasks insert → id 저장
   - 이미 매핑된 task가 로컬에서 변경됨 → updated_at 기준으로 update API 호출
-  - 로컬에서 삭제된 task (sync_queue의 delete event) → Google API delete
+  - 로컬에서 삭제된 task (sync_queue의 delete event) → Google API delete + 매핑 NULL화
 
-- 처음 sync는 batch. 이후는 sync_queue의 변경 이벤트 기반.
+- **토글 OFF 처리** (`setSyncToGoogle(id, 0)` 호출 시):
+  - google_event_id 있으면 → Calendar event delete + google_event_id NULL
+  - google_tasks_id 있으면 → Tasks item delete + google_tasks_id NULL
+  - sync_to_google = 0 저장
+  - 이 시퀀스는 `pushOrbitToGoogle` 안에서 처리하거나 별도 `unlinkFromGoogle(taskId)` 메서드로
 
-**검증:** 로컬 task 만들고 → Google 캘린더에 자동 등장하는지 (수동 검증).
+- 처음 sync는 batch. 이후는 sync_queue + sync_to_google 플래그 기반.
+
+**검증:**
+- 단위: `sync_to_google = 0`인 task는 push 안 됨, `1`이면 push됨
+- 단위: toggle OFF → google delete API 호출됨 + 매핑 NULL
+- 수동: 로컬 task를 체크박스로 sync on → Google 캘린더에 자동 등장하는지
 
 ---
 
@@ -117,14 +140,15 @@ Supabase의 `signInWithOAuth`로 Google 로그인 후, session에 provider_token
   - Calendar listEvents(syncToken) — incremental
   - 각 event:
     - extendedProperties.private.orbit_id가 있으면 → 기존 task 업데이트 (last-write-wins)
-    - 없으면 → 새 task 만들고 google_event_id 매핑
+    - 없으면 → 새 task 만들고 google_event_id 매핑, **`sync_to_google = 1`로 생성** ⭐
     - status=cancelled면 → 로컬 task 삭제 (또는 mark deleted)
   - Tasks도 동일 패턴 (listTasks with showHidden/showCompleted)
   - syncToken을 google_sync_meta에 저장
 
+- Google에서 들어온 신규 task는 항상 sync_to_google=1 — Google이 원본이므로 sync 의도 자명. 사용자가 PC에서 OFF로 토글 시 → Google 삭제 (Task 4 토글 OFF 로직과 동일).
 - 폰에서 만든 일정이 PC에 들어오는지 검증 — Plan 4의 핵심 가치.
 
-**검증:** 폰 Google 캘린더 앱으로 일정 추가 → PC Orbit이 30초~1분 내 표시 확인.
+**검증:** 폰 Google 캘린더 앱으로 일정 추가 → PC Orbit이 30초~1분 내 표시 (sync_to_google=1로) 확인.
 
 ---
 

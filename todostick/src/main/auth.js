@@ -1,5 +1,8 @@
 import { shell } from 'electron'
 import { getSupabaseClient } from './supabase.js'
+import { getSecureStorage } from './secure-storage.js'
+import { createGoogleTokens } from './google-tokens.js'
+import { config } from './config.js'
 
 // Google OAuth scopes — email/profile은 Supabase profiles 생성용,
 // calendar/tasks는 Plan 4의 Google sync에서 직접 호출하기 위해 미리 받아둠.
@@ -12,7 +15,8 @@ export const REDIRECT_URL = 'app://orbit/auth/callback'
 
 export function createAuth({
   getClient = getSupabaseClient,
-  openExternal = (url) => shell.openExternal(url)
+  openExternal = (url) => shell.openExternal(url),
+  tokenStore = null
 } = {}) {
   return {
     async signInWithGoogle() {
@@ -45,6 +49,10 @@ export function createAuth({
       const client = getClient()
       const { data, error } = await client.auth.exchangeCodeForSession(code)
       if (error) throw error
+      // Google provider_token / provider_refresh_token이 session에 함께 옴 — Plan 4용으로 보관
+      if (tokenStore && data?.session) {
+        try { tokenStore.saveFromSession(data.session) } catch { /* secure-storage 실패해도 로그인 자체는 성공 처리 */ }
+      }
       return data
     },
 
@@ -64,18 +72,33 @@ export function createAuth({
       const client = getClient()
       const { error } = await client.auth.signOut()
       if (error) throw error
+      if (tokenStore) {
+        try { tokenStore.clear() } catch { /* signOut 후 토큰 정리 실패는 무시 (다음 로그인 시 덮어씌워짐) */ }
+      }
     }
   }
 }
 
 let _auth = null
+let _googleTokens = null
+
+export function getGoogleTokensSingleton() {
+  if (_googleTokens) return _googleTokens
+  _googleTokens = createGoogleTokens({
+    storage: getSecureStorage(),
+    clientId: config.googleClientId,
+    clientSecret: config.googleClientSecret
+  })
+  return _googleTokens
+}
 
 export function getAuth() {
   if (_auth) return _auth
-  _auth = createAuth()
+  _auth = createAuth({ tokenStore: getGoogleTokensSingleton() })
   return _auth
 }
 
 export function __resetAuthForTest() {
   _auth = null
+  _googleTokens = null
 }
