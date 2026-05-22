@@ -1,0 +1,8 @@
+# bkit plugin metadata (audit / state / checkpoints / decisions / runtime / workflows)
+.bkit/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

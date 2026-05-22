@@ -1,8 +1,86 @@
-# TodoStick Changelog
+# Orbit Changelog
 
-브랜치 `todostick` 의 변경 이력. Orbit 앱은 `orbit` 브랜치의 자체 CHANGELOG 참조.
+`todostick`(v1.5.2까지) → `Orbit`(v1.6.0+)으로 리브랜드된 앱의 변경 이력.
+구 `orbit` 브랜치(회의노트/스티커 초기 prototype)와는 분리된 main 라인.
 
 ## [Unreleased]
+
+### 진행 중 — Plan 4: Google Calendar/Tasks 양방향 sync
+- 브랜치: `feat/orbit-plan-4-google-sync` (예정)
+- 목표 버전: v1.9.0 (또는 v2.0.0)
+- 핵심: PC↔Supabase에 더해 폰 Google 캘린더/Tasks와도 sync. **선택적 sync(opt-in)** 도입 — `tasks.sync_to_google` 컬럼으로 레코드별 토글, OFF 전환 시 Google에서 삭제
+- 상세: `docs/superpowers/plans/2026-05-20-orbit-plan-4-google-sync.md`
+
+## [1.8.1] — 2026-05-22
+
+### Polish
+- 정렬 / 격리 / 폰트 / 타임블록 4종 폴리시 (commit `0cdad9f`)
+
+## [1.8.0] — 2026-05-21 — Sync Engine
+
+### Added — Plan 3 완료
+- ☁️ **Local SQLite ↔ Supabase 양방향 sync**
+  - `sync_queue` 로컬 테이블 — 모든 mutation 큐잉, 30초 주기 워커가 push
+  - last-write-wins (updated_at 기준) 충돌 해결
+  - 백그라운드 push + pull, exponential backoff (1s → 30분 상한)
+  - 오프라인 모드 자동 회복 — 인터넷 복구 시 큐 자동 flush
+- 🔐 **멀티 계정 격리** — 모든 데이터 테이블에 `user_id` 컬럼 추가
+  - 로컬 SQLite도 user_id 필터링 → 로그아웃 후 다른 계정 로그인 시 데이터 섞이지 않음
+  - Supabase RLS (`auth.uid() = user_id`)와 일관
+- 🟢 **`SyncStatusBadge`** 헤더 UI — 동기화 상태(🟢 동기화됨 / 🔵 진행 중 / 🟡 오프라인 / 🔴 에러) 표시
+- 로그인 직후 초기 sync — 기존 로컬 데이터를 Supabase로 batch upsert (멱등)
+
+### Schema
+- SQLite v2 → v3 마이그레이션 (`user_id` 컬럼 + `sync_queue` 테이블 + `sync_meta`)
+- Supabase: `tasks`, `categories`, `monthly_goals`, `see_memos` + RLS + `updated_at` 트리거
+
+### 신규 파일
+- `src/main/sync.js` + `sync.test.js` — sync 워커 (DI 가능한 팩토리, Supabase mock 테스트)
+- `src/renderer/src/components/SyncStatusBadge.jsx`
+- `docs/supabase/2026-05-2X-sync-tables.sql`
+
+## [1.7.4] — 2026-05-19
+
+### Added
+- DB에 `rolled_at` 컬럼 도입 — 이월 시점 추적 + 잔여 4건 일회성 cleanup
+
+## [1.7.3] — 2026-05-18
+
+### Fixed
+- 🐛 rollover 폭주 hotfix — 자동 이월이 무한 반복되던 케이스 차단
+- 일회성 데이터 cleanup 스크립트
+
+## [1.7.2] — 2026-05-18
+
+### Security
+- 🔒 인증 없는 상태에서 스티커 창 데이터가 노출되던 문제 차단
+
+## [1.7.1] — 2026-05-17
+
+### Fixed
+- 🐛 `.env`가 packaged 앱에 포함되지 않아 prod에서 OAuth 실패하던 문제 — `extraResources`로 .env를 빌드에 포함
+
+## [1.7.0] — 2026-05-17 — 인증 토대
+
+### Added — Plan 2 완료
+- 🔐 **Google OAuth 로그인** (Supabase 경유, PKCE flow + deep link callback)
+- 🗄️ **SQLite 백엔드** 전면 교체 (JSON 파일 → better-sqlite3)
+  - JSON → SQLite 자동 마이그레이션 함수
+  - 스키마 정의 + `openDatabase` + applyMigrations
+- 🔑 secure-storage — Electron `safeStorage` 기반 파일 백엔드 저장소
+- 👤 헤더 우측 사용자 칩 + 로그아웃 드롭다운
+- 환경변수 로딩 모듈 (`dotenv` 기반)
+- 반복 인스턴스 생성 로직 순수 함수로 분리
+
+### Fixed
+- 🐛 어제 이전 미완료 task도 자동 이월 — 주말/휴가로 인한 chain 끊김 방지
+- 🐛 tray destroy 후 호출되는 race condition (`isDestroyed` 가드)
+- 🐛 Electron 20.x 내장 Node용 ws transport 주입 (Supabase realtime 회피)
+
+## [1.6.1] — 2026-05-14
+
+### Added
+- userData 자동 마이그레이션 + 타임존 통일
 
 ## [1.5.2] — 2026-05-12
 
