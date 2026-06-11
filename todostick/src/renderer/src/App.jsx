@@ -128,7 +128,7 @@ function MainApp({ user }) {
         {/* 로고 */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className="text-lg text-indigo-500">◎</span>
-          <span className="font-bold text-indigo-600 text-base tracking-tight">Orbit</span>
+          <span className="font-extrabold text-indigo-600 text-base tracking-tight">Orbit</span>
           {envInfo.isDev && (
             <span
               title={`개발 모드 — DB: ${envInfo.dbPath}`}

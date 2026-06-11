@@ -2,7 +2,7 @@ import { join } from 'path'
 import { app } from 'electron'
 import { openDatabase } from './sqlite.js'
 import { migrateJsonToSqlite } from './migrate.js'
-import { autoRolloverOverdue as computeAutoRolloverOverdue, yesterdayOf } from './rollover.js'
+import { getRolloverCandidates as computeRolloverCandidates, buildRolloverCopies, yesterdayOf } from './rollover.js'
 import { buildRepeatInstancesForDate, shouldRepeatOnDate } from './repeat.js'
 
 // ── 모듈 전역 상태 ──────────────────────────────────────────
@@ -65,6 +65,43 @@ function cleanupRolloverFloodOnce(db) {
   }
 }
 
+// v3→v4 마이그레이션: 기존 settings.memo (단일 메모) → notes 테이블의 첫 노트로 시드.
+// 멱등성: meta 'notes_seeded_from_memo_v1' 플래그로 한 번만 실행. settings.memo 값은 보존(원본 안전).
+function seedNotesFromLegacyMemoOnce(db) {
+  try {
+    const already = db
+      .prepare("SELECT value FROM meta WHERE key='notes_seeded_from_memo_v1'")
+      .get()
+    if (already) return 0
+
+    const memoRow = db.prepare("SELECT value FROM settings WHERE key='memo'").get()
+    const legacyMemo = memoRow && memoRow.value ? String(memoRow.value).trim() : ''
+
+    let inserted = 0
+    if (legacyMemo) {
+      const now = new Date().toISOString()
+      const id = 'note_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+      db.prepare(
+        `INSERT INTO notes (id, user_id, title, content, order_index, created_at, updated_at)
+         VALUES (?, NULL, ?, ?, 0, ?, ?)`
+      ).run(id, '기본 메모', legacyMemo, now, now)
+      inserted = 1
+    }
+
+    db.prepare(
+      "INSERT OR REPLACE INTO meta (key, value) VALUES ('notes_seeded_from_memo_v1', '1')"
+    ).run()
+
+    if (inserted > 0) {
+      console.log('[seed] legacy memo → notes 1건 시드 완료')
+    }
+    return inserted
+  } catch (e) {
+    console.error('[seed] notes_from_memo failed:', e)
+    return 0
+  }
+}
+
 // rolled_at 컬럼이 새로 추가되었으므로 (v1.7.4 schema_version=2), 기존 DB의 '이미 이월된 적 있는'
 // 원본들을 모두 마킹해서 다시 자동 이월 candidate가 되지 않게 한다.
 // 한 번이라도 카피된 원본 = rollover_source_id로 참조된 원본.
@@ -111,6 +148,7 @@ function getDb() {
   }
   cleanupRolloverFloodOnce(_db)
   backfillRolledAtOnce(_db)
+  seedNotesFromLegacyMemoOnce(_db)
   return _db
 }
 
@@ -139,6 +177,32 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+// 로컬(사용자 시계) 기준 'YYYY-MM-DD'. 렌더러의 getTodayStr와 동일 기준 —
+// UTC(toISOString) todayStr와 섞이면 KST 오전 0~9시에 하루가 어긋나므로 습관 로직은 이걸 쓴다.
+function todayStrLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 주어진 로컬 날짜의 '어제'. (중지 재개 시 갭 계산용)
+function prevDateStr(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() - 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// ISO 주(월요일 시작)의 시작/끝 'YYYY-MM-DD'. 주 N회 목표 진척 계산용.
+function isoWeekRange(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  const day = d.getDay() // 0=일
+  const monday = new Date(d)
+  monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  const fmt = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+  return { start: fmt(monday), end: fmt(sunday) }
+}
+
 // 원본 task에 rolled_at 마킹 — 한 번 이월된 원본은 다시 이월되지 않게.
 function markRolledAt(db, ids, now) {
   if (!ids || ids.length === 0) return
@@ -151,6 +215,7 @@ function markRolledAt(db, ids, now) {
 const TASK_COLS = [
   'id', 'user_id', 'title', 'memo', 'date', 'end_date', 'is_completed', 'is_in_progress', 'is_starred',
   'repeat_type', 'repeat_days', 'order_index', 'remind_at', 'color', 'category', 'is_habit',
+  'weekly_goal',
   'start_time', 'end_time', 'is_template', 'parent_id', 'skipped_dates', 'rollover_source_id',
   'rolled_at',
   'completion_note', 'completed_at', 'created_at', 'updated_at'
@@ -499,24 +564,6 @@ export default {
     return rows.map(rowToTask).sort(sortMultiDayTasks)
   },
 
-  getOverdueTasks(date) {
-    const db = getDb()
-    const uid = getCurrentUserId()
-    const rows = db
-      .prepare(
-        `SELECT * FROM tasks
-         WHERE user_id IS ?
-           AND date < ?
-           AND is_completed = 0
-           AND is_template = 0
-           AND parent_id IS NULL
-           AND end_date IS NULL
-           AND rolled_at IS NULL`
-      )
-      .all(uid, date)
-    return rows.map(rowToTask)
-  },
-
   getTodayReminders(date) {
     const uid = getCurrentUserId()
     const rows = getDb()
@@ -844,104 +891,26 @@ export default {
     return true
   },
 
-  // ── 이월 (Plan 3: user 격리 + 새 row와 source.rolled_at 변경 모두 enqueue) ──
-  rolloverTasks(toDate) {
-    const db = getDb()
-    const uid = getCurrentUserId()
-    const overdueRows = db
-      .prepare(
-        `SELECT * FROM tasks
-         WHERE user_id IS ?
-           AND date < ?
-           AND is_completed = 0
-           AND is_template = 0
-           AND parent_id IS NULL
-           AND end_date IS NULL
-           AND rolled_at IS NULL`
-      )
-      .all(uid, toDate)
-    const toCopy = overdueRows.map(rowToTask)
-    if (toCopy.length === 0) return []
-    const maxOrder = db
-      .prepare(`SELECT count(*) as c FROM tasks WHERE user_id IS ? AND date = ?`)
-      .get(uid, toDate).c
-    const now = nowIso()
-    const newTasks = toCopy.map((t, i) => ({
-      id: generateId(), user_id: uid,
-      title: t.title, memo: t.memo, date: toDate, end_date: null,
-      is_completed: false, is_in_progress: !!t.is_in_progress, is_starred: false,
-      repeat_type: 'none', repeat_days: null, order_index: maxOrder + i,
-      remind_at: null, color: t.color || null, category: t.category || null,
-      is_habit: false, start_time: null, end_time: null,
-      is_template: false, parent_id: null, skipped_dates: null,
-      rollover_source_id: t.id, rolled_at: null,
-      completion_note: null, completed_at: null,
-      created_at: now, updated_at: now
-    }))
-    db.transaction(() => {
-      for (const nt of newTasks) {
-        insertTaskRow(db, nt)
-        enqueueSync(db, 'tasks', 'upsert', nt.id, taskRowToPayload(nt))
-      }
-      const sourceIds = toCopy.map((t) => t.id)
-      markRolledAt(db, sourceIds, now)
-      for (const sid of sourceIds) {
-        const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(sid)
-        if (after) enqueueSync(db, 'tasks', 'upsert', sid, taskRowToPayload(after))
-      }
-    })()
-    return newTasks
-  },
-
-  rolloverSelectedTasks(taskIds, toDate) {
-    const db = getDb()
-    if (!taskIds || taskIds.length === 0) return []
-    const uid = getCurrentUserId()
-    const placeholders = taskIds.map(() => '?').join(',')
-    // 사용자가 명시적으로 선택한 task만 — 이미 rolled_at이 있어도 따라가지 않고 그대로 카피 생성.
-    const selectedRows = db
-      .prepare(`SELECT * FROM tasks WHERE user_id IS ? AND id IN (${placeholders}) AND end_date IS NULL`)
-      .all(uid, ...taskIds)
-    const toCopy = selectedRows.map(rowToTask)
-    if (toCopy.length === 0) return []
-    const maxOrder = db
-      .prepare(`SELECT count(*) as c FROM tasks WHERE user_id IS ? AND date = ?`)
-      .get(uid, toDate).c
-    const now = nowIso()
-    const newTasks = toCopy.map((t, i) => ({
-      id: generateId(), user_id: uid,
-      title: t.title, memo: t.memo, date: toDate, end_date: null,
-      is_completed: false, is_in_progress: !!t.is_in_progress, is_starred: false,
-      repeat_type: 'none', repeat_days: null, order_index: maxOrder + i,
-      remind_at: null, color: t.color || null, category: t.category || null,
-      is_habit: false, start_time: null, end_time: null,
-      is_template: false, parent_id: null, skipped_dates: null,
-      rollover_source_id: t.id, rolled_at: null,
-      completion_note: null, completed_at: null,
-      created_at: now, updated_at: now
-    }))
-    db.transaction(() => {
-      for (const nt of newTasks) {
-        insertTaskRow(db, nt)
-        enqueueSync(db, 'tasks', 'upsert', nt.id, taskRowToPayload(nt))
-      }
-      const sourceIds = toCopy.map((t) => t.id)
-      markRolledAt(db, sourceIds, now)
-      for (const sid of sourceIds) {
-        const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(sid)
-        if (after) enqueueSync(db, 'tasks', 'upsert', sid, taskRowToPayload(after))
-      }
-    })()
-    return newTasks
-  },
-
-  autoRolloverOverdue(toDate) {
-    const db = getDb()
-    const uid = getCurrentUserId()
+  // ── 이월 (v1.9.0: 사용자 선택형 — 자동 이월 제거) ──
+  // 후보 조회 (UI 모달이 사용자에게 보여줄 목록). 변경 없음, read-only.
+  getRolloverCandidates(toDate) {
     const tasks = getAllTasks()
-    const newTasksRaw = computeAutoRolloverOverdue(tasks, toDate)
-    if (newTasksRaw.length === 0) return []
-    // rollover.js는 user_id 모름 → 여기서 주입
+    return computeRolloverCandidates(tasks, toDate)
+  },
+
+  // 선택된 source id만 toDate로 카피하고 원본을 rolled_at으로 마킹.
+  // sourceIds에 없는 task는 그대로 미완료로 남아 다음에 다시 후보가 됨.
+  rolloverSelectedTasks(sourceIds, toDate) {
+    if (!Array.isArray(sourceIds) || sourceIds.length === 0) return []
+    const db = getDb()
+    const tasks = getAllTasks()
+    // 후보 중 사용자가 고른 것만 — 잘못된/이미 이월된 id는 자동 필터.
+    const validCandidates = computeRolloverCandidates(tasks, toDate)
+    const pickSet = new Set(sourceIds)
+    const sources = validCandidates.filter((t) => pickSet.has(t.id))
+    if (sources.length === 0) return []
+    const existingOnTo = tasks.filter((t) => t.date === toDate).length
+    const newTasksRaw = buildRolloverCopies(sources, toDate, existingOnTo)
     const newTasks = newTasksRaw.map((nt) => withUserId(nt))
     const now = nowIso()
     db.transaction(() => {
@@ -949,15 +918,85 @@ export default {
         insertTaskRow(db, nt)
         enqueueSync(db, 'tasks', 'upsert', nt.id, taskRowToPayload(nt))
       }
-      const sourceIds = newTasks.map((nt) => nt.rollover_source_id)
-      markRolledAt(db, sourceIds, now)
-      for (const sid of sourceIds) {
+      const sids = newTasks.map((nt) => nt.rollover_source_id)
+      markRolledAt(db, sids, now)
+      for (const sid of sids) {
         const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(sid)
         if (after) enqueueSync(db, 'tasks', 'upsert', sid, taskRowToPayload(after))
       }
     })()
-    void uid // (현재 user_id 변수 keep — 디버그/추후 use)
     return newTasks
+  },
+
+  // ── 반복 일정 관리 ────────────────────────────────────────
+  // 모든 반복 템플릿(습관 포함)을 시리즈 단위로 나열. 일반 반복 일정 관리 화면용.
+  // 각 항목: 다음 발생일(next_date) + 완료 횟수 등 경량 메타.
+  getRecurringTemplates() {
+    const db = getDb()
+    const uid = getCurrentUserId()
+    const today = todayStrLocal()
+    const templates = db
+      .prepare(
+        `SELECT * FROM tasks
+         WHERE user_id IS ? AND is_template = 1 AND repeat_type != 'none'
+         ORDER BY is_habit DESC, order_index ASC, created_at ASC`
+      )
+      .all(uid)
+      .map(rowToTask)
+
+    return templates.map((tmpl) => {
+      // 다음 발생일 — 오늘부터 최대 400일 스캔(중지/skip/요일/종료일 반영).
+      let nextDate = null
+      if (!tmpl.weekly_goal) {
+        const cur = new Date(today + 'T00:00:00')
+        for (let i = 0; i < 400; i++) {
+          const d = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`
+          if ((shouldRepeatOnDate(tmpl, d) || tmpl.date === d) && !(tmpl.skipped_dates || []).includes(d)) {
+            nextDate = d
+            break
+          }
+          cur.setDate(cur.getDate() + 1)
+        }
+      }
+      const doneCount = db
+        .prepare(`SELECT count(*) AS c FROM tasks WHERE parent_id = ? AND is_completed = 1`)
+        .get(tmpl.id).c
+      return {
+        id: tmpl.id,
+        title: tmpl.title,
+        color: tmpl.color || null,
+        category: tmpl.category || null,
+        repeat_type: tmpl.repeat_type,
+        repeat_days: tmpl.repeat_days || null,
+        weekly_goal: tmpl.weekly_goal || null,
+        is_habit: !!tmpl.is_habit,
+        start_date: tmpl.date,
+        remind_at: tmpl.remind_at || null,
+        paused: !!tmpl.end_date,
+        paused_at: tmpl.end_date || null,
+        order_index: tmpl.order_index || 0,
+        next_date: nextDate,
+        done_count: doneCount
+      }
+    })
+  },
+
+  // 템플릿의 습관 추적 on/off 토글 (템플릿 + 인스턴스 전파). '습관으로 전환'용.
+  setTemplateIsHabit(templateId, isHabit) {
+    const db = getDb()
+    const row = db.prepare(`SELECT * FROM tasks WHERE id = ? AND is_template = 1`).get(templateId)
+    if (!row) return null
+    const now = nowIso()
+    const flag = isHabit ? 1 : 0
+    db.transaction(() => {
+      db.prepare(`UPDATE tasks SET is_habit = ?, updated_at = ? WHERE id = ? OR parent_id = ?`)
+        .run(flag, now, templateId, templateId)
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId)
+      enqueueSync(db, 'tasks', 'upsert', templateId, taskRowToPayload(after))
+      const insts = db.prepare('SELECT * FROM tasks WHERE parent_id = ?').all(templateId)
+      for (const r of insts) enqueueSync(db, 'tasks', 'upsert', r.id, taskRowToPayload(r))
+    })()
+    return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId))
   },
 
   // ── 습관 트래커 ───────────────────────────────────────────
@@ -968,13 +1007,16 @@ export default {
     const templates = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE user_id IS ? AND is_template = 1 AND is_habit = 1 AND repeat_type != 'none'`
+         WHERE user_id IS ? AND is_template = 1 AND is_habit = 1 AND repeat_type != 'none'
+         ORDER BY order_index ASC, created_at ASC`
       )
       .all(uid)
       .map(rowToTask)
 
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const todayStr = todayStrLocal()
+    const week = isoWeekRange(todayStr)
     return templates.map((tmpl) => {
+      const isGoal = !!tmpl.weekly_goal // 주 N회 목표형 — 고정 요일이 아니라 빈도로 추적
       const instances = db
         .prepare(
           `SELECT * FROM tasks
@@ -994,15 +1036,19 @@ export default {
       }
       const skipped = new Set(tmpl.skipped_dates || [])
       const days = []
+      let weekDone = 0
       for (const date of dateRange(fromDate, toDate)) {
-        const expected = shouldRepeatOnDate(tmpl, date) || tmpl.date === date
+        // 목표형은 특정 요일을 강제하지 않음 → 완료/휴식 외엔 항상 off (miss 없음).
+        const expected = isGoal ? tmpl.date === date : (shouldRepeatOnDate(tmpl, date) || tmpl.date === date)
+        const isDone = !!byDate[date]?.is_completed
         let status
-        if (skipped.has(date)) status = 'skip'
+        if (isDone) status = 'done' // 완료는 항상 최우선 — 중지/목표형에서도 잔디 유지
+        else if (skipped.has(date)) status = 'skip'
         else if (!expected) status = 'off'
-        else if (byDate[date]?.is_completed) status = 'done'
         else if (date > todayStr) status = 'future'
         else if (date === todayStr) status = 'today'
         else status = 'miss'
+        if (isGoal && isDone && date >= week.start && date <= week.end) weekDone += 1
         days.push({ date, status, instance: byDate[date] || null })
       }
       return {
@@ -1013,14 +1059,21 @@ export default {
           category: tmpl.category || null,
           repeat_type: tmpl.repeat_type,
           repeat_days: tmpl.repeat_days || null,
-          start_date: tmpl.date
+          weekly_goal: tmpl.weekly_goal || null,
+          order_index: tmpl.order_index || 0,
+          start_date: tmpl.date,
+          // end_date가 찍혀 있으면 '중지됨' — 기록은 보존하되 이후 추적을 멈춘 습관.
+          paused: !!tmpl.end_date,
+          paused_at: tmpl.end_date || null
         },
+        // 주 N회 목표형 진척 (이번 ISO 주)
+        weekProgress: isGoal ? { done: weekDone, target: tmpl.weekly_goal } : null,
         days
       }
     })
   },
 
-  toggleHabitOnDate(templateId, date) {
+  toggleHabitOnDate(templateId, date, note = undefined) {
     const db = getDb()
     const uid = getCurrentUserId()
     const tmplRow = db
@@ -1045,7 +1098,7 @@ export default {
         is_habit: true, start_time: null, end_time: null,
         is_template: false, parent_id: templateId,
         skipped_dates: null, rollover_source_id: null,
-        completion_note: null, completed_at: now,
+        completion_note: note ?? null, completed_at: now,
         created_at: now, updated_at: now
       }
       db.transaction(() => {
@@ -1057,15 +1110,171 @@ export default {
     const inst = rowToTask(instRow)
     const now = nowIso()
     const newCompleted = !inst.is_completed
+    // note가 명시되면(완료 메모 저장) 완료 상태를 유지/설정하고 메모만 갱신, 아니면 완료 토글.
+    const noteProvided = note !== undefined
+    const completed = noteProvided ? true : newCompleted
+    const nextNote = noteProvided ? (note || null) : inst.completion_note ?? null
     db.transaction(() => {
       db.prepare(
-        `UPDATE tasks SET is_completed = ?, completed_at = ?, updated_at = ?
+        `UPDATE tasks SET is_completed = ?, completed_at = ?, completion_note = ?, updated_at = ?
          WHERE id = ?`
-      ).run(newCompleted ? 1 : 0, newCompleted ? now : null, now, inst.id)
+      ).run(completed ? 1 : 0, completed ? (inst.completed_at || now) : null, completed ? nextNote : null, now, inst.id)
       const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(inst.id)
       enqueueSync(db, 'tasks', 'upsert', inst.id, taskRowToPayload(after))
     })()
     return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(inst.id))
+  },
+
+  // 습관 '중지/재개' — 기록(인스턴스)은 보존하고 end_date만 토글한다.
+  // paused=true: end_date=오늘(로컬) → 이후 날짜는 'off'(미래 인스턴스 생성 중단), 트래커엔 계속 표시.
+  // paused=false: end_date=null → 재개. 단, 중지했던 구간(end_date+1 ~ 어제)을 skipped_dates에
+  //   병합해 '회색 skip'으로 남긴다 → 재개 시 그 기간이 빨간 miss로 소급되는 걸 막는다.
+  setHabitPaused(templateId, paused) {
+    const db = getDb()
+    const row = db.prepare(`SELECT * FROM tasks WHERE id = ? AND is_template = 1`).get(templateId)
+    if (!row) return null
+    const tmpl = rowToTask(row)
+    const now = nowIso()
+    const today = todayStrLocal()
+    let endDate
+    let skipped = Array.isArray(tmpl.skipped_dates) ? [...tmpl.skipped_dates] : []
+    if (paused) {
+      endDate = today
+    } else {
+      endDate = null
+      // 중지 기간을 휴식(skip)으로 채움 — 잔디는 회색, 통계엔 불계산.
+      if (tmpl.end_date && tmpl.end_date < today) {
+        const set = new Set(skipped)
+        for (const d of dateRange(tmpl.end_date, prevDateStr(today))) {
+          if (d > tmpl.end_date) set.add(d) // 중지 당일(end_date)은 제외, 그 다음날부터
+        }
+        skipped = [...set].sort()
+      }
+    }
+    db.transaction(() => {
+      db.prepare(`UPDATE tasks SET end_date = ?, skipped_dates = ?, updated_at = ? WHERE id = ?`)
+        .run(endDate, JSON.stringify(skipped), now, templateId)
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId)
+      enqueueSync(db, 'tasks', 'upsert', templateId, taskRowToPayload(after))
+    })()
+    return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId))
+  },
+
+  // 특정 날짜를 휴식(skip)으로 토글 — 아파서 못한 날 등 streak을 깨지 않게.
+  // skipped_dates 배열에 date를 추가/제거. 'done'인 날은 skip 처리하지 않는다(완료 우선).
+  setHabitSkip(templateId, date, skip) {
+    const db = getDb()
+    const row = db.prepare(`SELECT * FROM tasks WHERE id = ? AND is_template = 1`).get(templateId)
+    if (!row) return null
+    const tmpl = rowToTask(row)
+    const now = nowIso()
+    const set = new Set(Array.isArray(tmpl.skipped_dates) ? tmpl.skipped_dates : [])
+    if (skip) set.add(date)
+    else set.delete(date)
+    const skipped = [...set].sort()
+    db.transaction(() => {
+      db.prepare(`UPDATE tasks SET skipped_dates = ?, updated_at = ? WHERE id = ?`)
+        .run(JSON.stringify(skipped), now, templateId)
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId)
+      enqueueSync(db, 'tasks', 'upsert', templateId, taskRowToPayload(after))
+    })()
+    return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId))
+  },
+
+  // 트래커에서 직접 새 습관 생성 — 반복 템플릿(is_habit=1)만 만든다(인스턴스는 토글/자동생성).
+  // weekly_goal이 있으면 '주 N회 목표형' (고정 요일 없음 → repeat_type='daily'로 두되 자동 인스턴스 안 생김).
+  createHabit({ title, color = null, repeat_type = 'daily', repeat_days = null, weekly_goal = null }) {
+    const db = getDb()
+    const uid = getCurrentUserId()
+    const now = nowIso()
+    const goal = weekly_goal && weekly_goal > 0 ? Math.round(weekly_goal) : null
+    const rtype = goal ? 'daily' : repeat_type
+    const resolvedDays =
+      !goal && rtype === 'daily' && repeat_days && repeat_days.length > 0 && repeat_days.length < 7
+        ? repeat_days
+        : null
+    // 새 습관은 맨 위로 — 기존 최소 order_index - 1
+    const minRow = db
+      .prepare(`SELECT MIN(order_index) AS m FROM tasks WHERE user_id IS ? AND is_template = 1 AND is_habit = 1`)
+      .get(uid)
+    const order_index = (minRow?.m ?? 0) - 1
+    const template = {
+      id: generateId(), user_id: uid,
+      title: String(title || '').trim() || '새 습관', memo: '', date: todayStrLocal(), end_date: null,
+      is_completed: false, is_in_progress: false, is_starred: false,
+      repeat_type: rtype, repeat_days: resolvedDays, order_index,
+      remind_at: null, color, category: null, is_habit: true, weekly_goal: goal,
+      start_time: null, end_time: null,
+      is_template: true, parent_id: null,
+      skipped_dates: [], rollover_source_id: null,
+      completion_note: null, completed_at: null,
+      created_at: now, updated_at: now
+    }
+    db.transaction(() => {
+      insertTaskRow(db, template)
+      enqueueSync(db, 'tasks', 'upsert', template.id, taskRowToPayload(template))
+    })()
+    return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(template.id))
+  },
+
+  // 습관 편집 — 템플릿의 title/color/반복/목표를 갱신하고 title/color는 인스턴스에도 전파.
+  updateHabit(templateId, { title, color, repeat_type, repeat_days, weekly_goal }) {
+    const db = getDb()
+    const row = db.prepare(`SELECT * FROM tasks WHERE id = ? AND is_template = 1`).get(templateId)
+    if (!row) return null
+    const now = nowIso()
+    const goal = weekly_goal && weekly_goal > 0 ? Math.round(weekly_goal) : null
+    const rtype = goal ? 'daily' : (repeat_type || 'daily')
+    const resolvedDays =
+      !goal && rtype === 'daily' && repeat_days && repeat_days.length > 0 && repeat_days.length < 7
+        ? repeat_days
+        : null
+    const cleanTitle = String(title ?? '').trim() || '새 습관'
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE tasks SET title = ?, color = ?, repeat_type = ?, repeat_days = ?, weekly_goal = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(cleanTitle, color ?? null, rtype, resolvedDays ? JSON.stringify(resolvedDays) : null, goal, now, templateId)
+      // title/color는 day/week 뷰의 인스턴스에도 반영
+      db.prepare(`UPDATE tasks SET title = ?, color = ?, updated_at = ? WHERE parent_id = ?`)
+        .run(cleanTitle, color ?? null, now, templateId)
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId)
+      enqueueSync(db, 'tasks', 'upsert', templateId, taskRowToPayload(after))
+      const insts = db.prepare('SELECT * FROM tasks WHERE parent_id = ?').all(templateId)
+      for (const r of insts) enqueueSync(db, 'tasks', 'upsert', r.id, taskRowToPayload(r))
+    })()
+    return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId))
+  },
+
+  // 습관 카드 순서 변경 — 템플릿의 order_index를 배열 순서대로 부여.
+  reorderHabits(orderedIds) {
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) return true
+    const db = getDb()
+    const now = nowIso()
+    const stmt = db.prepare(`UPDATE tasks SET order_index = ?, updated_at = ? WHERE id = ? AND is_template = 1`)
+    db.transaction(() => {
+      orderedIds.forEach((id, index) => {
+        stmt.run(index, now, id)
+        const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+        if (after) enqueueSync(db, 'tasks', 'upsert', id, taskRowToPayload(after))
+      })
+    })()
+    return true
+  },
+
+  // 습관 완전 삭제 — 템플릿 + 모든 인스턴스(과거/미래)를 제거한다.
+  deleteHabit(templateId) {
+    const db = getDb()
+    const row = db.prepare(`SELECT * FROM tasks WHERE id = ? AND is_template = 1`).get(templateId)
+    if (!row) return { id: templateId }
+    db.transaction(() => {
+      const instRows = db.prepare('SELECT id FROM tasks WHERE parent_id = ?').all(templateId)
+      db.prepare('DELETE FROM tasks WHERE parent_id = ?').run(templateId)
+      for (const r of instRows) enqueueSync(db, 'tasks', 'delete', r.id, null)
+      db.prepare('DELETE FROM tasks WHERE id = ?').run(templateId)
+      enqueueSync(db, 'tasks', 'delete', templateId, null)
+    })()
+    return { id: templateId }
   },
 
   // ── Categories ───────────────────────────────────────────
@@ -1217,5 +1426,62 @@ export default {
         user_id: uid, ym, text, updated_at: now
       })
     })()
+  },
+
+  // ── 메모 노트 (notes) — 사용자별 메모 N개 관리. 로컬-only, sync 미적용.
+  listNotes() {
+    const uid = getCurrentUserId()
+    return getDb()
+      .prepare(
+        'SELECT id, title, content, order_index, created_at, updated_at FROM notes WHERE user_id IS ? ORDER BY order_index ASC, updated_at DESC'
+      )
+      .all(uid)
+  },
+
+  getNote(id) {
+    return getDb()
+      .prepare('SELECT id, title, content, order_index, created_at, updated_at FROM notes WHERE id = ?')
+      .get(id)
+  },
+
+  createNote(input) {
+    const db = getDb()
+    const uid = getCurrentUserId()
+    const now = nowIso()
+    const id = 'note_' + generateId()
+    const title = (input && input.title) || ''
+    const content = (input && input.content) || ''
+    // 새 노트는 가장 위쪽에 — 기존 최소 order_index보다 1 작게
+    const minRow = db
+      .prepare('SELECT MIN(order_index) AS m FROM notes WHERE user_id IS ?')
+      .get(uid)
+    const order = (minRow && minRow.m !== null ? minRow.m : 0) - 1
+    db.prepare(
+      `INSERT INTO notes (id, user_id, title, content, order_index, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, uid, title, content, order, now, now)
+    return { id, title, content, order_index: order, created_at: now, updated_at: now }
+  },
+
+  updateNote(id, patch) {
+    const db = getDb()
+    const now = nowIso()
+    const fields = []
+    const params = []
+    if (patch && patch.title !== undefined) { fields.push('title = ?'); params.push(patch.title) }
+    if (patch && patch.content !== undefined) { fields.push('content = ?'); params.push(patch.content) }
+    if (patch && patch.order_index !== undefined) { fields.push('order_index = ?'); params.push(patch.order_index) }
+    if (fields.length === 0) return null
+    fields.push('updated_at = ?')
+    params.push(now, id)
+    db.prepare(`UPDATE notes SET ${fields.join(', ')} WHERE id = ?`).run(...params)
+    return db
+      .prepare('SELECT id, title, content, order_index, created_at, updated_at FROM notes WHERE id = ?')
+      .get(id)
+  },
+
+  deleteNote(id) {
+    getDb().prepare('DELETE FROM notes WHERE id = ?').run(id)
+    return true
   }
 }

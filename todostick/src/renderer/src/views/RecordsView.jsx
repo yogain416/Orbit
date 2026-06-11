@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { DEFAULT_CATEGORIES, getCategoryById, categoryStyle } from '../utils/categories'
+import MarkdownView from '../components/MarkdownView'
 
 export default function RecordsView() {
   const [tasks, setTasks] = useState([])
@@ -223,12 +224,13 @@ function RecordCard({ task, onUpdated, categories }) {
           ) : (
             <>
               {currentNote && (
-                <p
-                  className="text-xs text-green-700 leading-relaxed whitespace-pre-wrap bg-green-50 rounded-lg px-3 py-2.5 border border-green-100 cursor-pointer hover:border-green-300"
+                <div
+                  className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2.5 border border-green-100 cursor-pointer hover:border-green-300"
                   onClick={() => setEditing(true)}
                 >
-                  ✅ {currentNote}
-                </p>
+                  <div className="mb-0.5">✅</div>
+                  <MarkdownView text={currentNote} />
+                </div>
               )}
               {!currentNote && (
                 <button
@@ -239,9 +241,9 @@ function RecordCard({ task, onUpdated, categories }) {
                 </button>
               )}
               {task.memo && (
-                <p className="text-xs text-slate-500 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
-                  {task.memo}
-                </p>
+                <div className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+                  <MarkdownView text={task.memo} />
+                </div>
               )}
             </>
           )}

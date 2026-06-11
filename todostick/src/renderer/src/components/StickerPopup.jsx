@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getTodayStr } from '../utils/date'
+import RichMemoEditor from './RichMemoEditor'
 
 const STICKER_W = 280
 const STICKER_H_FULL = 360
@@ -36,6 +37,10 @@ export default function StickerPopup() {
   const [completionNoteTask, setCompletionNoteTask] = useState(null)
   const [activeTab, setActiveTab] = useState('today')
   const [memoText, setMemoText] = useState('')
+  // 메모 노트 목록 + 현재 선택된 노트 id. notes[].id가 currentNoteId가 됨.
+  const [notes, setNotes] = useState([])
+  const [currentNoteId, setCurrentNoteId] = useState(null)
+  const [showNotesList, setShowNotesList] = useState(false)
   const [seeGood, setSeeGood] = useState('')
   const [seeBad, setSeeBad] = useState('')
   const [seeNext, setSeeNext] = useState('')
@@ -47,10 +52,67 @@ export default function StickerPopup() {
     setTasks(data)
   }, [today])
 
+  // 노트 목록 로드. 비어있으면 '새 메모' 빈 노트 1개 자동 생성 → 메모 탭이 항상 사용 가능한 상태로.
   const loadMemo = useCallback(async () => {
-    const text = await window.api.memo.get()
-    setMemoText(text || '')
+    let list = await window.api.notes.list()
+    if (!list || list.length === 0) {
+      const created = await window.api.notes.create({ title: '새 메모', content: '' })
+      list = [created]
+    }
+    setNotes(list)
+    // 현재 선택 노트 유지 (목록에 있으면) — 아니면 첫 노트
+    setCurrentNoteId((prev) => {
+      if (prev && list.some((n) => n.id === prev)) return prev
+      return list[0].id
+    })
+    const sel = list.find((n) => n.id === currentNoteId) || list[0]
+    setMemoText(sel.content || '')
+  }, [currentNoteId])
+
+  const switchNote = useCallback((id) => {
+    const found = notes.find((n) => n.id === id)
+    if (!found) return
+    setCurrentNoteId(id)
+    setMemoText(found.content || '')
+    setShowNotesList(false)
+  }, [notes])
+
+  const createNewNote = useCallback(async () => {
+    const created = await window.api.notes.create({ title: '새 메모', content: '' })
+    const list = await window.api.notes.list()
+    setNotes(list)
+    setCurrentNoteId(created.id)
+    setMemoText('')
+    setShowNotesList(false)
   }, [])
+
+  const deleteCurrentNote = useCallback(async () => {
+    if (!currentNoteId) return
+    if (!window.confirm('이 메모를 삭제할까요?')) return
+    await window.api.notes.delete(currentNoteId)
+    const list = await window.api.notes.list()
+    if (list.length === 0) {
+      // 마지막 노트 삭제 후 빈 새 노트 1개 자동 생성
+      const created = await window.api.notes.create({ title: '새 메모', content: '' })
+      setNotes([created])
+      setCurrentNoteId(created.id)
+      setMemoText('')
+    } else {
+      setNotes(list)
+      setCurrentNoteId(list[0].id)
+      setMemoText(list[0].content || '')
+    }
+  }, [currentNoteId])
+
+  const renameCurrentNote = useCallback(async () => {
+    if (!currentNoteId) return
+    const current = notes.find((n) => n.id === currentNoteId)
+    const newTitle = window.prompt('메모 제목', current?.title || '새 메모')
+    if (newTitle === null) return
+    await window.api.notes.update(currentNoteId, { title: newTitle })
+    const list = await window.api.notes.list()
+    setNotes(list)
+  }, [currentNoteId, notes])
 
   const loadSee = useCallback(async () => {
     const obj = await window.api.see.get(today)
@@ -184,7 +246,11 @@ export default function StickerPopup() {
   }
 
   const handleMemoBlur = async () => {
-    await window.api.memo.set(memoText)
+    if (!currentNoteId) return
+    await window.api.notes.update(currentNoteId, { content: memoText })
+    // 목록의 updated_at 갱신 위해 다시 fetch (가벼움 — N개 + 짧음)
+    const list = await window.api.notes.list()
+    setNotes(list)
   }
 
   const handleSeeSave = async () => {
@@ -347,54 +413,104 @@ export default function StickerPopup() {
               <p className="text-xs text-yellow-700 font-semibold flex-shrink-0">📝 Plan → Do → See</p>
               <div className="flex flex-col gap-0.5">
                 <label className="text-xs text-yellow-800 font-medium">✅ 잘된 점</label>
-                <textarea
-                  data-scroll
+                <RichMemoEditor
                   value={seeGood}
-                  onChange={(e) => { setSeeGood(e.target.value); seeRef.current.good = e.target.value }}
+                  onChange={(v) => { setSeeGood(v); seeRef.current.good = v }}
                   onBlur={handleSeeSave}
-                  rows={2}
-                  placeholder="오늘 잘한 것들..."
-                  className="resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
+                  containerClassName="bg-white border border-yellow-200 rounded px-2 py-1 text-xs text-gray-700 leading-relaxed min-h-[3rem]"
                 />
               </div>
               <div className="flex flex-col gap-0.5">
                 <label className="text-xs text-amber-700 font-medium">😅 아쉬운 점</label>
-                <textarea
-                  data-scroll
+                <RichMemoEditor
                   value={seeBad}
-                  onChange={(e) => { setSeeBad(e.target.value); seeRef.current.bad = e.target.value }}
+                  onChange={(v) => { setSeeBad(v); seeRef.current.bad = v }}
                   onBlur={handleSeeSave}
-                  rows={2}
-                  placeholder="오늘 아쉬웠던 것들..."
-                  className="resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
+                  containerClassName="bg-white border border-yellow-200 rounded px-2 py-1 text-xs text-gray-700 leading-relaxed min-h-[3rem]"
                 />
               </div>
               <div className="flex flex-col gap-0.5">
                 <label className="text-xs text-indigo-700 font-medium">🔜 내일 개선할 것</label>
-                <textarea
-                  data-scroll
+                <RichMemoEditor
                   value={seeNext}
-                  onChange={(e) => { setSeeNext(e.target.value); seeRef.current.next = e.target.value }}
+                  onChange={(v) => { setSeeNext(v); seeRef.current.next = v }}
                   onBlur={handleSeeSave}
-                  rows={2}
-                  placeholder="내일 개선할 점..."
-                  className="resize-none text-xs bg-white border border-yellow-200 rounded px-2 py-1 outline-none text-gray-700 leading-relaxed"
+                  containerClassName="bg-white border border-yellow-200 rounded px-2 py-1 text-xs text-gray-700 leading-relaxed min-h-[3rem]"
                 />
               </div>
             </div>
           )}
 
-          {/* 메모 탭 */}
+          {/* 메모 탭 — 노션 스타일 라이브 마크다운 + 노트 N개 관리 */}
           {activeTab === 'memo' && (
-            <div className="flex-1 bg-yellow-50 px-2 pt-2 pb-1 flex flex-col">
-              <textarea
-                data-scroll
-                value={memoText}
-                onChange={(e) => setMemoText(e.target.value)}
-                onBlur={handleMemoBlur}
-                placeholder="자유롭게 메모하세요..."
-                className="flex-1 resize-none text-xs bg-yellow-50 outline-none text-gray-700 placeholder-gray-400 leading-relaxed"
-              />
+            <div className="flex-1 bg-yellow-50 px-2 pt-1.5 pb-1 flex flex-col overflow-hidden">
+              {/* 노트 선택 헤더 — 드롭다운 + 새로/삭제 */}
+              <div className="flex items-center gap-1 mb-1 flex-shrink-0">
+                <button
+                  onClick={() => setShowNotesList((v) => !v)}
+                  title="다른 메모로 전환"
+                  className="flex-1 flex items-center gap-1 text-xs text-gray-700 hover:bg-yellow-100 px-1.5 py-0.5 rounded truncate"
+                >
+                  <span className="opacity-60 flex-shrink-0">📒</span>
+                  <span className="truncate font-medium">
+                    {notes.find((n) => n.id === currentNoteId)?.title || '새 메모'}
+                  </span>
+                  <span className="opacity-40 text-[10px] flex-shrink-0 ml-auto">{notes.length}</span>
+                  <span className="opacity-40 flex-shrink-0">▾</span>
+                </button>
+                <button
+                  onClick={renameCurrentNote}
+                  title="제목 바꾸기"
+                  className="text-xs text-gray-500 hover:bg-yellow-100 px-1.5 py-0.5 rounded"
+                >
+                  ✎
+                </button>
+                <button
+                  onClick={createNewNote}
+                  title="새 메모"
+                  className="text-xs text-indigo-600 hover:bg-indigo-100 px-1.5 py-0.5 rounded font-bold"
+                >
+                  +
+                </button>
+                <button
+                  onClick={deleteCurrentNote}
+                  title="이 메모 삭제"
+                  className="text-xs text-red-500 hover:bg-red-50 px-1.5 py-0.5 rounded"
+                >
+                  🗑
+                </button>
+              </div>
+
+              {/* 노트 목록 드롭다운 */}
+              {showNotesList && (
+                <div data-scroll className="flex-shrink-0 mb-1 max-h-32 overflow-y-auto bg-white border border-yellow-200 rounded text-xs">
+                  {notes.map((n) => (
+                    <button
+                      key={n.id}
+                      onClick={() => switchNote(n.id)}
+                      className={`w-full text-left px-2 py-1 truncate hover:bg-yellow-50 ${
+                        n.id === currentNoteId ? 'bg-yellow-100 font-medium' : ''
+                      }`}
+                    >
+                      {n.title || '제목 없음'}
+                      <span className="ml-1 opacity-40 text-[10px]">
+                        {(n.updated_at || '').slice(5, 10)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 본문 — RichMemoEditor (툴바 포함) */}
+              <div data-scroll className="flex-1 overflow-y-auto">
+                <RichMemoEditor
+                  key={currentNoteId /* 노트 전환 시 에디터 재초기화 */}
+                  value={memoText}
+                  onChange={setMemoText}
+                  onBlur={handleMemoBlur}
+                  containerClassName="bg-yellow-50 text-xs text-gray-700 leading-relaxed"
+                />
+              </div>
             </div>
           )}
 
@@ -515,8 +631,8 @@ function StickerTask({ task, onToggle, onToggleInProgress, onToggleStarred, onDe
         </button>
       )}
 
-      <span className={`flex-1 text-xs leading-tight line-clamp-2 min-w-0 ${
-        task.is_completed ? 'line-through text-gray-400' : 'text-gray-700'
+      <span className={`flex-1 text-xs font-semibold leading-tight line-clamp-2 min-w-0 ${
+        task.is_completed ? 'line-through text-gray-400' : 'text-gray-800'
       }`}>
         {task.title}
       </span>

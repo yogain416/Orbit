@@ -202,7 +202,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
       <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0">
         <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">‹</button>
         <div className="text-center">
-          <span className="text-base font-bold text-slate-800">{year}년 {month + 1}월</span>
+          <span className="text-base font-extrabold tracking-tight text-slate-800">{year}년 {month + 1}월</span>
         </div>
         <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">›</button>
       </div>
@@ -564,7 +564,7 @@ function MonthPoolTask({ task, weeks, onAssign, onToggle, onDelete }) {
         >
           {task.is_completed && <span className="text-[8px]">✓</span>}
         </button>
-        <span className={`flex-1 text-xs truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+        <span className={`flex-1 text-xs font-medium truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
           {task.title}
         </span>
         <button
@@ -618,7 +618,7 @@ function MonthScheduledTask({ task, onToggle, onDelete }) {
       >
         {task.is_completed && <span className="text-[8px]">✓</span>}
       </button>
-      <span className={`flex-1 text-xs truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+      <span className={`flex-1 text-xs font-medium truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
         {task.title}
         {isRepeat && <span className="ml-1 text-violet-400 text-[10px]">🔁</span>}
       </span>

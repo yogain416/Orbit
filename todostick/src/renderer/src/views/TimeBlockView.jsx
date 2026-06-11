@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toDateStr, getTodayStr } from '../utils/date'
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6) // 6 ~ 23시
@@ -271,6 +271,48 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
   const untimedTasks = tasks.filter(t => !t.start_time)
   const totalHeight = HOURS.length * PX_PER_HOUR
 
+  // 시간 충돌 → 가로 column 분할 (Google Calendar 스타일)
+  // ① transitive 충돌 그룹 식별  ② 그룹 내 greedy column 배정 (끝난 column은 재사용)
+  const layoutMap = useMemo(() => {
+    const sorted = timedTasks
+      .map(t => {
+        const start = timeToMinutes(t.start_time)
+        const endRaw = timeToMinutes(t.end_time)
+        return { task: t, start, end: endRaw || (start + 60) }
+      })
+      .filter(it => it.start !== null)
+      .sort((a, b) => a.start - b.start || a.end - b.end)
+
+    const groups = []
+    for (const item of sorted) {
+      // 그룹 내 한 항목이라도 시간이 겹치면 같은 그룹 (transitive)
+      const g = groups.find(gr => gr.items.some(gi => gi.start < item.end && gi.end > item.start))
+      if (g) g.items.push(item)
+      else groups.push({ items: [item] })
+    }
+
+    const map = new Map()
+    for (const g of groups) {
+      const colEnds = [] // colEnds[i] = i번째 column이 마지막으로 점유한 끝 시간
+      for (const item of g.items) {
+        // 이미 끝난 column 재사용 (item.start >= colEnd면 그 자리 비어있음)
+        let col = colEnds.findIndex(end => end <= item.start)
+        if (col === -1) {
+          col = colEnds.length
+          colEnds.push(item.end)
+        } else {
+          colEnds[col] = item.end
+        }
+        item.col = col
+      }
+      const totalCols = colEnds.length
+      for (const item of g.items) {
+        map.set(item.task.id, { col: item.col, totalCols })
+      }
+    }
+    return map
+  }, [timedTasks])
+
   const preview = dragState && (() => {
     const minPx = Math.min(dragState.startPx, dragState.endPx)
     const maxPx = Math.max(dragState.startPx, dragState.endPx)
@@ -292,7 +334,7 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
       <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0">
         <button onClick={prevDay} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">‹</button>
         <div className="text-center flex items-center gap-2">
-          <span className="text-base font-bold text-slate-800">{dateStr}</span>
+          <span className="text-base font-extrabold tracking-tight text-slate-800">{dateStr}</span>
           {dateStr === today && (
             <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">오늘</span>
           )}
@@ -437,30 +479,51 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
               const height = Math.max((endMin - startMin) * PX_PER_MIN, 22)
               if (top < 0 || top > totalHeight) return null
               const colorClass = task.color ? BLOCK_COLORS[task.color] : DEFAULT_BLOCK
+              // 15~30분 짧은 블록 — 한 줄에 시간+제목 인라인. 두 줄이면 22px에 안 들어감
+              const isShort = height < 36
+              const endTimeStr = taskIsResizing ? minutesToStr(resizeTask.previewEnd) : task.end_time
+
+              // 시간 충돌 column 분할 — 단일 column이면 totalCols=1 → 전체 너비
+              const layout = layoutMap.get(task.id) || { col: 0, totalCols: 1 }
+              const LEFT_PAD = 4, RIGHT_PAD = 12, COL_GAP = 2
+              const colWidth = `((100% - ${LEFT_PAD + RIGHT_PAD}px - ${(layout.totalCols - 1) * COL_GAP}px) / ${layout.totalCols})`
+              const leftCss = `calc(${LEFT_PAD}px + ${layout.col} * (${colWidth} + ${COL_GAP}px))`
+              const widthCss = `calc(${colWidth})`
 
               return (
                 <div
                   key={task.id}
                   onMouseDown={(e) => startMove(task, e)}
-                  className={`absolute left-1 right-3 rounded-md border-l-4 px-2 py-0.5 overflow-hidden z-10 select-none ${colorClass} ${task.is_completed ? 'opacity-50' : ''} ${
+                  className={`absolute rounded-md border-l-4 overflow-hidden z-10 select-none ${
+                    isShort ? 'px-1.5 py-0' : 'px-2 py-0.5'
+                  } ${colorClass} ${task.is_completed ? 'opacity-50' : ''} ${
                     taskIsMoving && moveTask.moved
                       ? 'opacity-25 pointer-events-none'
                       : 'cursor-grab active:cursor-grabbing hover:brightness-95 transition-all'
                   }`}
-                  style={{ top, height }}
+                  style={{ top, height, left: leftCss, width: widthCss }}
                 >
-                  <p className="text-xs font-semibold truncate leading-tight">{task.title}</p>
-                  <p className="text-xs opacity-60 leading-tight">
-                    {task.start_time}
-                    {task.end_time
-                      ? ` ~ ${taskIsResizing ? minutesToStr(resizeTask.previewEnd) : task.end_time}`
-                      : ''}
-                  </p>
-                  {/* 리사이즈 핸들 */}
+                  {isShort ? (
+                    <p className="text-[11px] font-semibold truncate leading-none mt-0.5">
+                      <span className="opacity-60 mr-1">{task.start_time}</span>
+                      {task.title}
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-semibold truncate leading-tight">{task.title}</p>
+                      <p className="text-xs opacity-60 leading-tight">
+                        {task.start_time}
+                        {task.end_time ? ` ~ ${endTimeStr}` : ''}
+                      </p>
+                    </>
+                  )}
+                  {/* 리사이즈 핸들 — 짧은 블록에선 더 얇게 */}
                   <div
                     onMouseDown={(e) => startResize(task, e)}
                     title="드래그로 종료 시간 조절"
-                    className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-end justify-center pb-0.5"
+                    className={`absolute bottom-0 left-0 right-0 cursor-ns-resize flex items-end justify-center ${
+                      isShort ? 'h-1.5' : 'h-3 pb-0.5'
+                    }`}
                   >
                     <div className="w-8 h-0.5 bg-current opacity-25 rounded-full" />
                   </div>

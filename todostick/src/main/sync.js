@@ -215,6 +215,10 @@ async function pushOneRow(client, db, row) {
     if (row.op === 'upsert') {
       const payload = parsePayload(row.payload)
       if (!payload) throw new Error('upsert payload empty')
+      // 로컬 전용 컬럼 — Supabase tasks 테이블엔 없으므로 push 전에 제거(없는 컬럼 업서트 에러 방지).
+      if (row.table_name === 'tasks' && payload && 'weekly_goal' in payload) {
+        delete payload.weekly_goal
+      }
       const onConflict = onConflictFor(row.table_name)
       const { error } = await client
         .from(row.table_name)

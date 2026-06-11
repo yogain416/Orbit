@@ -78,7 +78,7 @@ export function TaskChip({ task, categories, onClick, onContextMenu, cellDate, w
         >
           <span className="text-yellow-600 text-[10px] flex-shrink-0">★</span>
           {hasTime && <span className="text-[10px] text-yellow-700 font-medium flex-shrink-0">{task.start_time}</span>}
-          <span className="text-[11px] text-yellow-900 truncate">{task.title}</span>
+          <span className="text-[11px] font-medium text-yellow-900 truncate">{task.title}</span>
         </button>
         <HoverTip>{fullTitle}</HoverTip>
       </div>
@@ -98,7 +98,7 @@ export function TaskChip({ task, categories, onClick, onContextMenu, cellDate, w
           <span className={`text-[10px] font-medium flex-shrink-0 ${isCompleted ? 'line-through text-slate-400' : 'text-slate-600'}`}>
             {task.start_time}
           </span>
-          <span className={`text-[11px] truncate ${isCompleted ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+          <span className={`text-[11px] font-medium truncate ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
             {task.title}
           </span>
         </button>
@@ -115,7 +115,7 @@ export function TaskChip({ task, categories, onClick, onContextMenu, cellDate, w
         className={`flex items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-100 transition-colors min-w-0 w-full ${isCompleted ? 'opacity-50' : ''}`}
       >
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-        <span className={`text-[11px] truncate ${isCompleted ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+        <span className={`text-[11px] font-medium truncate ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
           {task.title}
         </span>
       </button>

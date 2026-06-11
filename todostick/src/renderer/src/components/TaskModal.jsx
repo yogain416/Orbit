@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getTodayStr } from '../utils/date'
 import { DEFAULT_CATEGORIES, categoryStyle } from '../utils/categories'
+import RichMemoEditor from './RichMemoEditor'
 
 const COLORS = [
   { value: null, bg: 'bg-slate-200', label: '없음' },
@@ -361,29 +362,20 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
             )}
           </div>
 
-          {/* 메모 */}
+          {/* 메모 — 노션 스타일 라이브 마크다운 (# + space → H1, **굵게**, - [ ] 체크박스 …) */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">메모</label>
-            <textarea
-              value={memo}
-              onChange={(e) => setMemo(e.target.value)}
-              placeholder="추가 메모 (선택)"
-              rows={3}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 resize-none"
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-500">메모</label>
+              <span className="text-[11px] text-gray-400">노션 스타일 — # 제목, **굵게**, - 리스트, - [ ] 체크박스</span>
+            </div>
+            <RichMemoEditor value={memo} onChange={setMemo} tone="indigo" />
           </div>
 
           {/* 완료 메모 (완료된 할일 편집 시만 표시) */}
           {isEdit && task.is_completed && (
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block">완료 메모</label>
-              <textarea
-                value={completionNote}
-                onChange={(e) => setCompletionNote(e.target.value)}
-                placeholder="완료 후 기록 (운동 결과, 소감 등)"
-                rows={3}
-                className="w-full border border-green-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-400 resize-none bg-green-50"
-              />
+              <RichMemoEditor value={completionNote} onChange={setCompletionNote} tone="green" />
             </div>
           )}
         </div>
@@ -408,3 +400,4 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
     </div>
   )
 }
+

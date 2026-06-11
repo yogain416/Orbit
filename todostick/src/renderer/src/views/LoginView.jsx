@@ -24,7 +24,7 @@ export default function LoginView() {
       <div className="w-full max-w-md mx-auto px-8">
         <div className="text-center mb-10">
           <div className="text-5xl text-indigo-500 mb-3">◎</div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Orbit</h1>
+          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Orbit</h1>
           <p className="mt-2 text-sm text-slate-500">개인과 팀의 일정·할일·프로젝트를 잇는 운영 OS</p>
         </div>
 

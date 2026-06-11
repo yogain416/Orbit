@@ -70,6 +70,7 @@ export default function SyncStatusBadge() {
   }, [])
 
   const dotColor = (() => {
+    if (status.devMode) return 'bg-slate-400'
     if (status.lastError) return 'bg-rose-500'
     if (status.running) return 'bg-blue-500 animate-pulse'
     if (status.queueLength > 0) return 'bg-amber-400'
@@ -77,6 +78,7 @@ export default function SyncStatusBadge() {
   })()
 
   const label = (() => {
+    if (status.devMode) return '[DEV] 로컬 전용'
     if (status.lastError) return '동기화 오류'
     if (status.running) return '동기화 중'
     if (status.queueLength > 0) return `대기 중 ${status.queueLength}건`
@@ -112,28 +114,39 @@ export default function SyncStatusBadge() {
               <span className={`block w-2.5 h-2.5 rounded-full ${dotColor}`} />
               <span className="text-sm font-semibold text-slate-800">{label}</span>
             </div>
-            <div className="mt-1.5 text-xs text-slate-500">
-              마지막 동기화: {formatRelativeTime(status.lastSyncedAt)}
-            </div>
-            {status.queueLength > 0 && (
-              <div className="text-xs text-slate-500">
-                보낼 변경: {status.queueLength}건
+            {status.devMode ? (
+              <div className="mt-1.5 text-xs text-slate-500 leading-relaxed">
+                개발 빌드에서는 Supabase 동기화가 꺼져 있습니다.
+                <br />release 환경과의 데이터 혼선을 막기 위함.
               </div>
-            )}
-            {status.lastError && (
-              <div className="mt-1.5 text-xs text-rose-600 break-words">
-                {status.lastError}
-              </div>
+            ) : (
+              <>
+                <div className="mt-1.5 text-xs text-slate-500">
+                  마지막 동기화: {formatRelativeTime(status.lastSyncedAt)}
+                </div>
+                {status.queueLength > 0 && (
+                  <div className="text-xs text-slate-500">
+                    보낼 변경: {status.queueLength}건
+                  </div>
+                )}
+                {status.lastError && (
+                  <div className="mt-1.5 text-xs text-rose-600 break-words">
+                    {status.lastError}
+                  </div>
+                )}
+              </>
             )}
           </div>
-          <button
-            type="button"
-            onClick={handleRunNow}
-            disabled={busy || status.running}
-            className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {busy || status.running ? '동기화 중…' : '지금 동기화'}
-          </button>
+          {!status.devMode && (
+            <button
+              type="button"
+              onClick={handleRunNow}
+              disabled={busy || status.running}
+              className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {busy || status.running ? '동기화 중…' : '지금 동기화'}
+            </button>
+          )}
         </div>
       )}
     </div>

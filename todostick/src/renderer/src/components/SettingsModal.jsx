@@ -23,7 +23,7 @@ export default function SettingsModal({ onClose }) {
 
         {/* 탭 */}
         <div className="flex border-b border-gray-100 px-6">
-          {[['shortcuts', '단축키'], ['categories', '카테고리']].map(([key, label]) => (
+          {[['shortcuts', '단축키'], ['categories', '카테고리'], ['general', '일반']].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -38,11 +38,9 @@ export default function SettingsModal({ onClose }) {
           ))}
         </div>
 
-        {tab === 'shortcuts' ? (
-          <ShortcutsTab onClose={onClose} />
-        ) : (
-          <CategoriesTab onClose={onClose} />
-        )}
+        {tab === 'shortcuts' && <ShortcutsTab onClose={onClose} />}
+        {tab === 'categories' && <CategoriesTab onClose={onClose} />}
+        {tab === 'general' && <GeneralTab onClose={onClose} />}
       </div>
     </div>
   )
@@ -263,6 +261,57 @@ function CategoriesTab({ onClose }) {
             <span>{categories.length >= 10 ? '최대 10개까지 가능합니다' : '새 카테고리 추가'}</span>
           </button>
         )}
+      </div>
+
+      <div className="flex justify-end px-6 py-4 border-t border-gray-100">
+        <button onClick={onClose} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+          닫기
+        </button>
+      </div>
+    </>
+  )
+}
+
+function GeneralTab({ onClose }) {
+  const [autoLaunch, setAutoLaunch] = useState(true)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    window.api.app?.getAutoLaunch().then((v) => { setAutoLaunch(!!v); setLoading(false) }).catch(() => setLoading(false))
+  }, [])
+
+  const toggle = async () => {
+    const next = !autoLaunch
+    setAutoLaunch(next)
+    try {
+      const applied = await window.api.app.setAutoLaunch(next)
+      setAutoLaunch(!!applied)
+    } catch {
+      setAutoLaunch(!next) // 실패 시 롤백
+    }
+  }
+
+  return (
+    <>
+      <div className="px-6 py-4 flex flex-col gap-3 overflow-y-auto flex-1">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-700">컴퓨터 시작 시 자동 실행</p>
+            <p className="text-xs text-gray-400">Windows에 로그인하면 Orbit이 자동으로 켜집니다.</p>
+          </div>
+          <button
+            onClick={toggle}
+            disabled={loading}
+            role="switch"
+            aria-checked={autoLaunch}
+            className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-50 ${autoLaunch ? 'bg-indigo-600' : 'bg-gray-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoLaunch ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-1">
+          꺼져 있어도 트레이 아이콘에서 언제든 다시 열 수 있어요. 개발 모드에서는 적용되지 않습니다.
+        </p>
       </div>
 
       <div className="flex justify-end px-6 py-4 border-t border-gray-100">

@@ -180,7 +180,7 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
       <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0">
         <button onClick={prevWeek} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">‹</button>
         <div className="text-center">
-          <span className="text-base font-bold text-slate-800">{weekLabel}</span>
+          <span className="text-base font-extrabold tracking-tight text-slate-800">{weekLabel}</span>
           <span className="ml-2 text-xs text-slate-400">{start} ~ {end}</span>
         </div>
         <button onClick={nextWeek} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">›</button>
@@ -316,7 +316,7 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
                   onDragOver={(e) => handleDayDragOver(e, dateStr)}
                   onDrop={(e) => handleDayDrop(e, dateStr)}
                   onDragLeave={() => setDragOverDate(null)}
-                  className={`flex flex-col rounded-xl border cursor-pointer transition-all hover:shadow-md ${
+                  className={`group flex flex-col rounded-xl border cursor-pointer transition-all hover:shadow-md ${
                     dragOverDate === dateStr ? 'border-indigo-400 bg-indigo-50 shadow-md' :
                     isToday ? 'border-indigo-400 bg-indigo-50 shadow-sm' :
                     'border-slate-200 bg-white hover:border-indigo-200'
@@ -356,6 +356,19 @@ export default function WeekView({ currentDate, onDateChange, onDateClick, onAdd
                         }`}
                       >
                         {isCollapsed ? '▸' : '▾'}
+                      </button>
+                    )}
+                    {onAddTask && !isCollapsed && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onAddTask(dateStr) }}
+                        title="할일 추가"
+                        className={`absolute top-1 ${isToday ? 'right-1' : 'right-7'} w-5 h-5 flex items-center justify-center rounded text-sm font-bold opacity-0 group-hover:opacity-100 transition-all ${
+                          isToday
+                            ? 'text-indigo-100 hover:bg-indigo-600'
+                            : 'text-indigo-400 hover:bg-indigo-100 hover:text-indigo-600'
+                        }`}
+                      >
+                        +
                       </button>
                     )}
                   </div>
@@ -527,7 +540,7 @@ const WeekSidebarPoolTask = memo(function WeekSidebarPoolTask({ task, days, onTo
         >
           {task.is_completed && <span className="text-[8px]">✓</span>}
         </button>
-        <span className={`flex-1 text-xs truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+        <span className={`flex-1 text-xs font-medium truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
           {task.title}
         </span>
         <button
@@ -565,7 +578,7 @@ const WeekSidebarDayTask = memo(function WeekSidebarDayTask({ task, onToggle, on
       >
         {task.is_completed && <span className="text-[8px]">✓</span>}
       </button>
-      <span className={`flex-1 text-xs truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+      <span className={`flex-1 text-xs font-medium truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
         {task.title}
         {(task.parent_id || task.is_template) && <span className="ml-1 text-indigo-400 text-[10px]">🔁</span>}
       </span>

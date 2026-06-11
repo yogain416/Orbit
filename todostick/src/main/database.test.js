@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { autoRolloverOverdue, yesterdayOf } from './rollover.js'
+import { getRolloverCandidates, buildRolloverCopies, yesterdayOf } from './rollover.js'
 import { openDatabase } from './sqlite.js'
 import database, { __setDbForTest, __resetDbForTest, setCurrentUserId, claimOwnership, performInitialSync } from './database.js'
 
@@ -28,113 +28,94 @@ function mkTask(overrides) {
   }
 }
 
-describe('autoRolloverOverdue', () => {
-  it('어제 미완료 일반 task를 오늘로 자동 복사한다', () => {
+describe('getRolloverCandidates', () => {
+  it('어제 미완료 일반 task는 후보에 포함된다', () => {
     const tasks = [
       mkTask({ id: 'a', title: '회의 준비', date: '2026-05-16', is_completed: false })
     ]
-    const newTasks = autoRolloverOverdue(tasks, '2026-05-17')
-    expect(newTasks).toHaveLength(1)
-    expect(newTasks[0].title).toBe('회의 준비')
-    expect(newTasks[0].date).toBe('2026-05-17')
-    expect(newTasks[0].is_completed).toBe(false)
-    expect(newTasks[0].rollover_source_id).toBe('a')
+    const out = getRolloverCandidates(tasks, '2026-05-17')
+    expect(out).toHaveLength(1)
+    expect(out[0].id).toBe('a')
   })
 
-  it('어제 이미 완료된 task는 복사하지 않는다', () => {
+  it('어제 이미 완료된 task는 후보에서 제외', () => {
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-16', is_completed: true })
     ]
-    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
+    expect(getRolloverCandidates(tasks, '2026-05-17')).toHaveLength(0)
   })
 
-  it('반복 인스턴스(parent_id 있음)는 복사하지 않는다', () => {
+  it('반복 인스턴스(parent_id 있음)는 제외', () => {
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-16', parent_id: 'tmpl1' })
     ]
-    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
+    expect(getRolloverCandidates(tasks, '2026-05-17')).toHaveLength(0)
   })
 
-  it('템플릿(is_template)은 복사하지 않는다', () => {
+  it('템플릿(is_template)은 제외', () => {
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-16', is_template: true })
     ]
-    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
+    expect(getRolloverCandidates(tasks, '2026-05-17')).toHaveLength(0)
   })
 
-  it('다일 이벤트(end_date 있음)는 복사하지 않는다', () => {
+  it('다일 이벤트(end_date 있음)는 제외', () => {
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-16', end_date: '2026-05-18' })
     ]
-    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
+    expect(getRolloverCandidates(tasks, '2026-05-17')).toHaveLength(0)
   })
 
-  it('이미 rolled_at이 마킹된 원본은 복사하지 않는다 (영구 멱등)', () => {
-    // 카피 삭제로 멱등 깨지던 문제 해결 — 원본의 rolled_at만 보면 됨.
+  it('이미 rolled_at 마킹된 원본은 제외 (영구 멱등)', () => {
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-16', is_completed: false, rolled_at: '2026-05-17T00:00:00Z' })
     ]
-    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
+    expect(getRolloverCandidates(tasks, '2026-05-17')).toHaveLength(0)
   })
 
-  it('어제 미완료 task의 is_in_progress 상태를 보존한다', () => {
-    const tasks = [
-      mkTask({ id: 'a', date: '2026-05-16', is_in_progress: true })
-    ]
-    const out = autoRolloverOverdue(tasks, '2026-05-17')
-    expect(out[0].is_in_progress).toBe(true)
-  })
-
-  it('일반 미완료의 is_in_progress는 false 유지', () => {
-    const tasks = [
-      mkTask({ id: 'a', date: '2026-05-16', is_in_progress: false })
-    ]
-    const out = autoRolloverOverdue(tasks, '2026-05-17')
-    expect(out[0].is_in_progress).toBe(false)
-  })
-
-  it('며칠 이전 미완료도 복사된다 (rolled_at으로 멱등 보장, v1.7.4 정공법)', () => {
-    // v1.7.3에선 폭주 위험 때문에 어제만으로 제한했으나, rolled_at 컬럼 도입 후
-    // 'date < toDate && !rolled_at'로 확장. 카피 삭제해도 source가 마킹되어 다시 안 옴.
+  it('며칠 이전 미완료도 후보에 포함된다', () => {
     const tasks = [
       mkTask({ id: 'a', date: '2026-05-10', is_completed: false })
     ]
-    const out = autoRolloverOverdue(tasks, '2026-05-17')
+    const out = getRolloverCandidates(tasks, '2026-05-17')
     expect(out).toHaveLength(1)
+  })
+
+  it('오늘/미래 날짜는 제외', () => {
+    const tasks = [
+      mkTask({ id: 'a', date: '2026-05-17', is_completed: false }),
+      mkTask({ id: 'b', date: '2026-05-20', is_completed: false })
+    ]
+    expect(getRolloverCandidates(tasks, '2026-05-17')).toHaveLength(0)
+  })
+})
+
+describe('buildRolloverCopies', () => {
+  it('source의 핵심 필드를 보존하고 새 id로 복사한다', () => {
+    const sources = [mkTask({ id: 'a', title: '회의 준비', date: '2026-05-16', is_in_progress: true })]
+    const out = buildRolloverCopies(sources, '2026-05-17', 0)
+    expect(out).toHaveLength(1)
+    expect(out[0].title).toBe('회의 준비')
+    expect(out[0].date).toBe('2026-05-17')
+    expect(out[0].is_completed).toBe(false)
+    expect(out[0].is_in_progress).toBe(true)
     expect(out[0].rollover_source_id).toBe('a')
-  })
-
-  it('오늘 날짜의 task는 복사하지 않는다', () => {
-    const tasks = [
-      mkTask({ id: 'a', date: '2026-05-17', is_completed: false })
-    ]
-    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
-  })
-
-  it('미래 날짜 task는 복사하지 않는다', () => {
-    const tasks = [
-      mkTask({ id: 'a', date: '2026-05-20', is_completed: false })
-    ]
-    expect(autoRolloverOverdue(tasks, '2026-05-17')).toHaveLength(0)
-  })
-
-  it('order_index를 오늘 끝에 붙인다', () => {
-    const tasks = [
-      mkTask({ id: 'a', date: '2026-05-16', order_index: 5 }),
-      mkTask({ id: 'b', date: '2026-05-17', order_index: 0 }),
-      mkTask({ id: 'c', date: '2026-05-17', order_index: 1 })
-    ]
-    const out = autoRolloverOverdue(tasks, '2026-05-17')
-    expect(out[0].order_index).toBe(2)
-  })
-
-  it('새 id를 생성한다 (원본 id 재사용 X)', () => {
-    const tasks = [
-      mkTask({ id: 'a', date: '2026-05-16' })
-    ]
-    const out = autoRolloverOverdue(tasks, '2026-05-17')
     expect(out[0].id).not.toBe('a')
     expect(out[0].id).toBeTruthy()
+  })
+
+  it('existingMaxOrder부터 order_index를 매긴다', () => {
+    const sources = [
+      mkTask({ id: 'a', date: '2026-05-16' }),
+      mkTask({ id: 'b', date: '2026-05-16' })
+    ]
+    const out = buildRolloverCopies(sources, '2026-05-17', 3)
+    expect(out[0].order_index).toBe(3)
+    expect(out[1].order_index).toBe(4)
+  })
+
+  it('빈 배열을 받으면 빈 배열 반환', () => {
+    expect(buildRolloverCopies([], '2026-05-17', 0)).toEqual([])
   })
 })
 
@@ -295,59 +276,57 @@ describe('database (SQLite-backed)', () => {
     expect(JSON.parse(tmplRow.skipped_dates)).toContain('2026-05-15')
   })
 
-  it('getOverdueTasks → 어제 미완료 task 반환 (rolled_at 마킹된 것 제외)', () => {
-    database.createTask({ title: '미완', date: '2026-05-16' })
-    const done = database.createTask({ title: '완료', date: '2026-05-16' })
-    database.toggleTask(done.id)
-    const rolled = database.createTask({ title: '이미이월', date: '2026-05-16' })
-    // 이미 이월된 source는 rolled_at이 마킹됨
-    testDb.prepare(`UPDATE tasks SET rolled_at = ? WHERE id = ?`).run('2026-05-17T00:00:00Z', rolled.id)
-
-    const overdue = database.getOverdueTasks('2026-05-17')
-    const titles = overdue.map((t) => t.title)
-    expect(titles).toContain('미완')
-    expect(titles).not.toContain('완료')
-    expect(titles).not.toContain('이미이월')
+  it('getRolloverCandidates → 미완료 일반 task만 반환 (완료/템플릿 제외)', () => {
+    const t1 = database.createTask({ title: '미완료', date: '2026-05-16' })
+    const t2 = database.createTask({ title: '완료됨', date: '2026-05-16' })
+    database.toggleTask(t2.id)
+    const out = database.getRolloverCandidates('2026-05-17')
+    expect(out).toHaveLength(1)
+    expect(out[0].id).toBe(t1.id)
   })
 
-  it('autoRolloverOverdue → 어제 미완료 task를 오늘로 복사 + 멱등', () => {
-    database.createTask({ title: '못함', date: '2026-05-16' })
-    const out1 = database.autoRolloverOverdue('2026-05-17')
-    expect(out1).toHaveLength(1)
-    expect(out1[0].title).toBe('못함')
-    // 다시 호출 → 멱등 (0개)
-    const out2 = database.autoRolloverOverdue('2026-05-17')
-    expect(out2).toHaveLength(0)
+  it('rolloverSelectedTasks → 선택된 id만 카피하고 원본을 rolled_at 마킹', () => {
+    const t1 = database.createTask({ title: '이월할 것', date: '2026-05-16' })
+    const t2 = database.createTask({ title: '이월 안 함', date: '2026-05-16' })
+
+    const out = database.rolloverSelectedTasks([t1.id], '2026-05-17')
+    expect(out).toHaveLength(1)
+    expect(out[0].title).toBe('이월할 것')
+    expect(out[0].rollover_source_id).toBe(t1.id)
+
+    // t1은 rolled_at 마킹, t2는 그대로
+    const r1 = testDb.prepare('SELECT rolled_at FROM tasks WHERE id=?').get(t1.id)
+    const r2 = testDb.prepare('SELECT rolled_at FROM tasks WHERE id=?').get(t2.id)
+    expect(r1.rolled_at).toBeTruthy()
+    expect(r2.rolled_at).toBeNull()
+
+    // 후보 다시 조회 시 t2는 남아있음
+    const remaining = database.getRolloverCandidates('2026-05-17')
+    expect(remaining.map((t) => t.id)).toEqual([t2.id])
   })
 
-  it('autoRolloverOverdue → 며칠 이전 미완료도 이월된다 + source가 rolled_at으로 마킹됨', () => {
+  it('rolloverSelectedTasks → 빈 배열 전달 시 아무것도 하지 않는다', () => {
+    database.createTask({ title: '미완료', date: '2026-05-16' })
+    const out = database.rolloverSelectedTasks([], '2026-05-17')
+    expect(out).toHaveLength(0)
+  })
+
+  it('rolloverSelectedTasks → 잘못된 id(이미 이월/존재하지 않음)는 무시한다', () => {
+    const t1 = database.createTask({ title: '정상', date: '2026-05-16' })
+    // 1차 이월
+    database.rolloverSelectedTasks([t1.id], '2026-05-17')
+    // 같은 id로 또 이월 시도 — rolled_at이 set이라 후보 아님 → 무시
+    const out = database.rolloverSelectedTasks([t1.id, 'nonexistent-id'], '2026-05-17')
+    expect(out).toHaveLength(0)
+  })
+
+  it('rolloverSelectedTasks → 며칠 이전 미완료도 선택 시 이월된다', () => {
     const friTask = database.createTask({ title: '금요일진행중', date: '2026-05-15' })
     database.setInProgress(friTask.id, true)
-    const out = database.autoRolloverOverdue('2026-05-18')
+    const out = database.rolloverSelectedTasks([friTask.id], '2026-05-18')
     expect(out).toHaveLength(1)
     expect(out[0].title).toBe('금요일진행중')
-
-    // source의 rolled_at이 마킹되었는지 확인 (다시 안 옴)
-    const sourceRow = testDb.prepare('SELECT rolled_at FROM tasks WHERE id=?').get(friTask.id)
-    expect(sourceRow.rolled_at).toBeTruthy()
-
-    // 카피를 삭제해도 다시 이월되지 않음 (영구 멱등)
-    database.deleteTask(out[0].id)
-    const out2 = database.autoRolloverOverdue('2026-05-18')
-    expect(out2).toHaveLength(0)
-  })
-
-  it('getOverdueTasks → 며칠 이전 미완료도 잡힘 + rolled_at은 제외', () => {
-    database.createTask({ title: '금요일', date: '2026-05-15' })
-    database.createTask({ title: '토요일', date: '2026-05-16' })
-    const overdue1 = database.getOverdueTasks('2026-05-18')
-    expect(overdue1.map((t) => t.title)).toEqual(expect.arrayContaining(['금요일', '토요일']))
-
-    // 자동 이월 한 번 돌리면 위 두 개는 rolled_at 마킹됨 → 다시 안 잡힘
-    database.autoRolloverOverdue('2026-05-18')
-    const overdue2 = database.getOverdueTasks('2026-05-18')
-    expect(overdue2.map((t) => t.title)).not.toContain('금요일')
-    expect(overdue2.map((t) => t.title)).not.toContain('토요일')
+    expect(out[0].is_in_progress).toBe(true)
   })
 
   it('setCategories + getCategories round-trip', () => {
@@ -400,6 +379,68 @@ describe('database (SQLite-backed)', () => {
     const list = database.getTasksByDate('2026-05-17')
     expect(list[0].id).toBe(b.id)
     expect(list[1].id).toBe(a.id)
+  })
+
+  // ── 메모 노트 (v1.9.0 신규) ─────────────────────────────────
+  describe('notes', () => {
+    it('createNote → id/title/content + 새 노트가 가장 위 (order_index 최소-1)', () => {
+      const n1 = database.createNote({ title: '첫 노트', content: '본문 1' })
+      expect(n1.id).toBeTruthy()
+      expect(n1.title).toBe('첫 노트')
+      expect(n1.content).toBe('본문 1')
+
+      const n2 = database.createNote({ title: '두번째', content: '본문 2' })
+      // n2가 n1보다 더 위 (order_index 더 작음)
+      expect(n2.order_index).toBeLessThan(n1.order_index)
+    })
+
+    it('listNotes → user_id 필터 + order_index ASC', () => {
+      database.createNote({ title: '오래된', content: '' })
+      database.createNote({ title: '최근', content: '' })
+      const list = database.listNotes()
+      expect(list).toHaveLength(2)
+      expect(list[0].title).toBe('최근') // order_index 더 작음 → 위
+    })
+
+    it('updateNote(title) → title 갱신 + updated_at 변경', () => {
+      const n = database.createNote({ title: '원본', content: '' })
+      const before = n.updated_at
+      const after = database.updateNote(n.id, { title: '수정됨' })
+      expect(after.title).toBe('수정됨')
+      expect(after.content).toBe('')
+      expect(after.updated_at >= before).toBe(true)
+    })
+
+    it('updateNote(content) → content만 갱신', () => {
+      const n = database.createNote({ title: 't', content: 'old' })
+      const after = database.updateNote(n.id, { content: 'new' })
+      expect(after.content).toBe('new')
+      expect(after.title).toBe('t')
+    })
+
+    it('deleteNote → 삭제됨', () => {
+      const n = database.createNote({ title: 't', content: '' })
+      database.deleteNote(n.id)
+      expect(database.getNote(n.id)).toBeUndefined()
+      expect(database.listNotes()).toHaveLength(0)
+    })
+
+    it('user 격리 — 다른 user의 노트는 listNotes에서 안 보임', () => {
+      setCurrentUserId('uid-A')
+      database.createNote({ title: 'A의 노트', content: '' })
+      setCurrentUserId('uid-B')
+      database.createNote({ title: 'B의 노트', content: '' })
+
+      const listB = database.listNotes()
+      expect(listB).toHaveLength(1)
+      expect(listB[0].title).toBe('B의 노트')
+
+      setCurrentUserId('uid-A')
+      const listA = database.listNotes()
+      expect(listA).toHaveLength(1)
+      expect(listA[0].title).toBe('A의 노트')
+    })
+
   })
 
   // ── Plan 3 (sync engine) — user_id + sync_queue ──────────
@@ -489,7 +530,6 @@ describe('database (SQLite-backed)', () => {
       expect(database.getTasksByMonth(2026, 5)).toHaveLength(0)
       expect(database.getTasksByMonth(2026, 6)).toHaveLength(0)
       expect(database.getTasksByRange('2026-05-01', '2026-12-31')).toHaveLength(0)
-      expect(database.getOverdueTasks('2026-12-31')).toHaveLength(0)
       expect(database.getCompletedTasks()).toHaveLength(0)
       expect(database.getSeeMemo('2026-05-21')).toEqual({ good: '', bad: '', next: '' })
       expect(database.getMonthlyGoal('2026-05')).toBe('')
@@ -667,5 +707,134 @@ describe('database (SQLite-backed)', () => {
     // firstInst 참조 사용 — 첫 인스턴스 id가 살아있는지 확인
     const aliveInst = testDb.prepare('SELECT id FROM tasks WHERE id=?').get(firstInst.id)
     expect(aliveInst).toBeTruthy()
+  })
+
+  // ── 습관 트래커 (중지/삭제/skip/주N회/편집/정렬) ──────────────
+  describe('습관 트래커', () => {
+    const today = (() => {
+      const d = new Date()
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    })()
+    const ago = (n) => {
+      const d = new Date()
+      d.setDate(d.getDate() - n)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    it('createHabit → is_template/is_habit 템플릿 1행 + 맨 위 order_index', () => {
+      const h = database.createHabit({ title: '물 마시기', color: 'blue', repeat_type: 'daily' })
+      expect(h.is_template).toBe(true)
+      expect(h.is_habit).toBe(true)
+      expect(h.repeat_type).toBe('daily')
+      // 두 번째 습관은 더 작은 order_index(위로)
+      const h2 = database.createHabit({ title: '운동', color: 'red', repeat_type: 'daily' })
+      expect(h2.order_index).toBeLessThan(h.order_index)
+    })
+
+    it('createHabit(weekly_goal) → 목표형, 매트릭스에 weekProgress 반환 + miss 없음', () => {
+      database.createHabit({ title: '주3회 운동', weekly_goal: 3 })
+      const tmpl = testDb.prepare('SELECT * FROM tasks WHERE is_template=1').get()
+      expect(tmpl.weekly_goal).toBe(3)
+      const matrix = database.getHabitMatrix(ago(20), today)
+      const row = matrix.find((m) => m.template.weekly_goal === 3)
+      expect(row).toBeTruthy()
+      expect(row.weekProgress.target).toBe(3)
+      // 목표형은 자동 인스턴스가 없으므로 과거가 miss가 아니라 off
+      expect(row.days.every((d) => d.status !== 'miss')).toBe(true)
+    })
+
+    it('toggleHabitOnDate(note) → 완료 + completion_note 저장, weekProgress 증가', () => {
+      const h = database.createHabit({ title: '주3회', weekly_goal: 3 })
+      database.toggleHabitOnDate(h.id, today, '오늘 30분 완료')
+      const inst = testDb.prepare('SELECT * FROM tasks WHERE parent_id=? AND date=?').get(h.id, today)
+      expect(inst.is_completed).toBe(1)
+      expect(inst.completion_note).toBe('오늘 30분 완료')
+      const matrix = database.getHabitMatrix(ago(6), today)
+      const row = matrix.find((m) => m.template.id === h.id)
+      expect(row.weekProgress.done).toBeGreaterThanOrEqual(1)
+    })
+
+    it('setHabitSkip → skipped_dates 추가/제거, 매트릭스 status=skip', () => {
+      const h = database.createHabit({ title: '독서', repeat_type: 'daily' })
+      database.setHabitSkip(h.id, ago(2), true)
+      let row = database.getHabitMatrix(ago(5), today).find((m) => m.template.id === h.id)
+      expect(row.days.find((d) => d.date === ago(2)).status).toBe('skip')
+      database.setHabitSkip(h.id, ago(2), false)
+      row = database.getHabitMatrix(ago(5), today).find((m) => m.template.id === h.id)
+      expect(row.days.find((d) => d.date === ago(2)).status).not.toBe('skip')
+    })
+
+    it('setHabitPaused(true)→end_date=오늘·paused, 재개 시 중지구간이 miss 아닌 skip', () => {
+      const h = database.createHabit({ title: '스트레칭', repeat_type: 'daily' })
+      // 3일 전으로 중지일을 만들기 위해 직접 end_date를 과거로 세팅 후 재개 시나리오 검증
+      testDb.prepare('UPDATE tasks SET end_date=? WHERE id=?').run(ago(3), h.id)
+      let row = database.getHabitMatrix(ago(6), today).find((m) => m.template.id === h.id)
+      expect(row.template.paused).toBe(true)
+      // 재개 → 중지구간(ago(2),ago(1))이 skip 처리되어 miss로 소급되지 않아야
+      database.setHabitPaused(h.id, false)
+      row = database.getHabitMatrix(ago(6), today).find((m) => m.template.id === h.id)
+      expect(row.template.paused).toBe(false)
+      expect(row.days.find((d) => d.date === ago(2)).status).toBe('skip')
+      expect(row.days.find((d) => d.date === ago(1)).status).toBe('skip')
+    })
+
+    it('updateHabit → title/color 변경 + 인스턴스 전파', () => {
+      const h = database.createHabit({ title: '구', color: 'green', repeat_type: 'daily' })
+      database.toggleHabitOnDate(h.id, today)
+      database.updateHabit(h.id, { title: '신', color: 'purple', repeat_type: 'daily', repeat_days: null, weekly_goal: null })
+      const tmpl = testDb.prepare('SELECT * FROM tasks WHERE id=?').get(h.id)
+      expect(tmpl.title).toBe('신')
+      expect(tmpl.color).toBe('purple')
+      const inst = testDb.prepare('SELECT * FROM tasks WHERE parent_id=?').get(h.id)
+      expect(inst.title).toBe('신')
+      expect(inst.color).toBe('purple')
+    })
+
+    it('reorderHabits → order_index 배열 순서대로 재부여', () => {
+      const a = database.createHabit({ title: 'A', repeat_type: 'daily' })
+      const b = database.createHabit({ title: 'B', repeat_type: 'daily' })
+      database.reorderHabits([a.id, b.id])
+      const ra = testDb.prepare('SELECT order_index FROM tasks WHERE id=?').get(a.id)
+      const rb = testDb.prepare('SELECT order_index FROM tasks WHERE id=?').get(b.id)
+      expect(ra.order_index).toBe(0)
+      expect(rb.order_index).toBe(1)
+    })
+
+    it('deleteHabit → 템플릿 + 모든 인스턴스 제거', () => {
+      const h = database.createHabit({ title: '삭제대상', repeat_type: 'daily' })
+      database.toggleHabitOnDate(h.id, today)
+      database.toggleHabitOnDate(h.id, ago(1))
+      database.deleteHabit(h.id)
+      expect(testDb.prepare('SELECT count(*) as c FROM tasks WHERE id=? OR parent_id=?').get(h.id, h.id).c).toBe(0)
+    })
+
+    it('getRecurringTemplates → 습관+일반 반복 모두, next_date·is_habit 포함', () => {
+      database.createHabit({ title: '습관A', repeat_type: 'daily' })
+      // 일반 반복(비습관) 템플릿 — createTask로 생성
+      database.createTask({ title: '주간회의', date: ago(7), repeat_type: 'weekly' })
+      const list = database.getRecurringTemplates()
+      expect(list.length).toBe(2)
+      const habit = list.find((r) => r.title === '습관A')
+      const meeting = list.find((r) => r.title === '주간회의')
+      expect(habit.is_habit).toBe(true)
+      expect(meeting.is_habit).toBe(false)
+      // 매일 습관의 다음 발생은 오늘
+      expect(habit.next_date).toBe(today)
+      // 주간 반복은 미래 어떤 날짜를 가리킴(또는 오늘)
+      expect(typeof meeting.next_date === 'string' || meeting.next_date === null).toBe(true)
+    })
+
+    it('setTemplateIsHabit → 일반 반복을 습관으로 전환 (인스턴스 전파)', () => {
+      const t = database.createTask({ title: '운동가자', date: today, repeat_type: 'daily' })
+      const tmplId = testDb.prepare('SELECT id FROM tasks WHERE is_template=1').get().id
+      expect(testDb.prepare('SELECT is_habit FROM tasks WHERE id=?').get(tmplId).is_habit).toBe(0)
+      database.setTemplateIsHabit(tmplId, true)
+      expect(testDb.prepare('SELECT is_habit FROM tasks WHERE id=?').get(tmplId).is_habit).toBe(1)
+      // 인스턴스에도 전파
+      expect(testDb.prepare('SELECT is_habit FROM tasks WHERE id=?').get(t.id).is_habit).toBe(1)
+      // 이제 습관 매트릭스에 노출됨
+      const matrix = database.getHabitMatrix(ago(3), today)
+      expect(matrix.some((m) => m.template.id === tmplId)).toBe(true)
+    })
   })
 })

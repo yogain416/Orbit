@@ -62,7 +62,7 @@ export default function ReviewView() {
 
         {/* Look Back */}
         <section>
-          <h2 className="text-lg font-bold text-slate-800 mb-0.5">📊 Look Back</h2>
+          <h2 className="text-lg font-extrabold text-slate-800 mb-0.5">📊 Look Back</h2>
           <p className="text-xs text-slate-400 mb-5">지난 6개월간 할일 완료율을 돌아보세요</p>
 
           <div className="grid grid-cols-6 gap-4">
@@ -102,7 +102,7 @@ export default function ReviewView() {
 
         {/* Look Forward */}
         <section>
-          <h2 className="text-lg font-bold text-slate-800 mb-0.5">🎯 Look Forward</h2>
+          <h2 className="text-lg font-extrabold text-slate-800 mb-0.5">🎯 Look Forward</h2>
           <p className="text-xs text-slate-400 mb-5">앞으로 3개월의 목표를 미리 세워보세요</p>
 
           <div className="flex flex-col gap-3">

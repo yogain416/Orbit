@@ -1,6 +1,6 @@
 {
   "name": "orbit",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "Orbit — 개인과 팀의 일정·할일·프로젝트를 잇는 운영 OS",
   "main": "out/main/index.js",
   "scripts": {
@@ -20,8 +20,16 @@
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
     "@supabase/supabase-js": "^2.105.4",
+    "@tiptap/extension-link": "^2.27.2",
+    "@tiptap/extension-task-item": "^2.27.2",
+    "@tiptap/extension-task-list": "^2.27.2",
+    "@tiptap/react": "^2.27.2",
+    "@tiptap/starter-kit": "^2.27.2",
     "better-sqlite3": "^11.10.0",
     "dotenv": "^16.6.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tiptap-markdown": "^0.9.0",
     "ws": "^8.20.1"
   },
   "devDependencies": {
