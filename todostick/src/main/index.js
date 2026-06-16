@@ -9,6 +9,16 @@ import { getAuth } from './auth.js'
 import { getSupabaseClient } from './supabase.js'
 import { createSyncEngine } from './sync.js'
 import { initUpdater, checkForUpdates, getUpdaterState, quitAndInstall } from './updater.js'
+import {
+  isLocalUid,
+  getLocalProfiles,
+  createLocalProfile,
+  deleteLocalProfile,
+  getActiveLocalProfile,
+  setActiveLocalProfile,
+  localUidFor,
+  buildLocalSession
+} from './local-profiles.js'
 
 // Supabase 콘솔의 Redirect URLs에 등록된 스킴. spec/auth.js의 REDIRECT_URL과 호스트가 일치해야 한다.
 const AUTH_PROTOCOL_SCHEME = 'app'
@@ -54,6 +64,14 @@ async function startSyncForUser(uid) {
   if (_currentUid === uid && _syncEngine) return // 이미 동일 user로 동작 중
   _currentUid = uid
   setCurrentUserId(uid)
+
+  // 로컬(오프라인) 프로필: NULL user_id 데이터를 가로채지 않도록 claimOwnership을 건너뛰고,
+  // Supabase 동기화도 하지 않는다. 각 로컬 프로필은 빈 워크스페이스로 시작해 이 PC에만 격리.
+  if (isLocalUid(uid)) {
+    console.log('[LOCAL] 오프라인 프로필 — Supabase sync 비활성, 로컬 전용')
+    return
+  }
+
   try {
     claimOwnership(uid)
   } catch (e) {
@@ -209,8 +227,8 @@ function updateTrayMenu() {
         if (stickerWindow) {
           stickerWindow.close()
         } else {
-          // 인증 없으면 스티커는 데이터 노출 위험이라 띄우지 않는다.
-          const session = await getAuth().getSession().catch(() => null)
+          // 인증(또는 로컬 프로필) 없으면 스티커는 데이터 노출 위험이라 띄우지 않는다.
+          const session = await resolveCurrentSession()
           if (!session) {
             mainWindow?.show()
             mainWindow?.focus()
@@ -324,11 +342,20 @@ async function handleDeepLink(url) {
   }
 }
 
+// 현재 세션 결정 — Supabase 로그인 세션이 있으면 그것을, 없으면 활성 로컬 프로필의
+// 합성 세션을 반환. 둘 다 없으면 null. (렌더러 AuthGate는 이 둘을 구분 없이 다룬다.)
+async function resolveCurrentSession() {
+  const supa = await getAuth().getSession().catch(() => null)
+  if (supa) return supa
+  const profile = getActiveLocalProfile(db)
+  return profile ? buildLocalSession(profile) : null
+}
+
 // 인증 상태에 따라 사용자 데이터를 보여주는 창(현재는 스티커)을 토글하고
 // sync 워커도 시작/중단한다.
 async function refreshUserWindows() {
   try {
-    const session = await getAuth().getSession()
+    const session = await resolveCurrentSession()
     const uid = session?.user?.id || null
 
     if (uid) {
@@ -665,17 +692,48 @@ ipcMain.handle('auth:signInWithGoogle', async () => {
   return await getAuth().signInWithGoogle()
 })
 ipcMain.handle('auth:getSession', async () => {
-  return await getAuth().getSession()
+  return await resolveCurrentSession()
 })
 ipcMain.handle('auth:getUser', async () => {
   return await getAuth().getUser()
 })
 ipcMain.handle('auth:signOut', async () => {
-  await getAuth().signOut()
+  // 로컬 프로필 로그아웃이면 Supabase 세션은 없지만 signOut 호출은 무해.
+  await getAuth().signOut().catch(() => {})
+  setActiveLocalProfile(db, null) // 활성 로컬 프로필 해제 → 로그인 화면으로
   stopSync()
   mainWindow?.webContents.send('auth:state-changed', { session: null })
   refreshUserWindows()
   return true
+})
+
+// IPC: 로컬(오프라인) 프로필 — Google 없이 닉네임으로 입장
+ipcMain.handle('local:list', () => getLocalProfiles(db))
+ipcMain.handle('local:create', (_, nickname) => {
+  // throw 시 렌더러의 invoke가 reject되어 에러 메시지를 표시할 수 있다.
+  const profile = createLocalProfile(db, nickname)
+  return { profile, profiles: getLocalProfiles(db) }
+})
+ipcMain.handle('local:delete', (_, id) => {
+  const profiles = deleteLocalProfile(db, id)
+  // 삭제한 프로필이 현재 활성 세션이면 로그아웃 처리
+  if (_currentUid === localUidFor(id)) {
+    stopSync()
+    mainWindow?.webContents.send('auth:state-changed', { session: null })
+    refreshUserWindows()
+  }
+  return profiles
+})
+ipcMain.handle('local:login', async (_, id) => {
+  const profile = getLocalProfiles(db).find((p) => p.id === id)
+  if (!profile) throw new Error('프로필을 찾을 수 없습니다.')
+  setActiveLocalProfile(db, id)
+  const session = buildLocalSession(profile)
+  await startSyncForUser(session.user.id)
+  if (!stickerWindow) createStickerWindow()
+  updateTrayMenu()
+  mainWindow?.webContents.send('auth:state-changed', { session })
+  return session
 })
 
 // IPC: 마크다운 메모 안의 링크 클릭 시 외부 브라우저로 열기 — http/https만 허용.
@@ -689,6 +747,9 @@ ipcMain.handle('shell:openExternal', async (_, url) => {
 
 // IPC: 동기화 상태 + 수동 실행
 ipcMain.handle('sync:status', () => {
+  if (isLocalUid(_currentUid)) {
+    return { localMode: true, queueLength: 0, lastSyncedAt: null, lastError: null, running: false }
+  }
   if (isDev) {
     return { devMode: true, queueLength: 0, lastSyncedAt: null, lastError: null, running: false }
   }

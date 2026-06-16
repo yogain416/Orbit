@@ -88,6 +88,13 @@ contextBridge.exposeInMainWorld('api', {
     onStateChanged: (cb) => ipcRenderer.on('auth:state-changed', cb),
     offStateChanged: (cb) => ipcRenderer.removeListener('auth:state-changed', cb)
   },
+  local: {
+    // 로컬(오프라인) 프로필 — Google 없이 닉네임으로 입장
+    list: () => ipcRenderer.invoke('local:list'),
+    create: (nickname) => ipcRenderer.invoke('local:create', nickname),
+    delete: (id) => ipcRenderer.invoke('local:delete', id),
+    login: (id) => ipcRenderer.invoke('local:login', id)
+  },
   sync: {
     status: () => ipcRenderer.invoke('sync:status'),
     runNow: () => ipcRenderer.invoke('sync:runNow'),

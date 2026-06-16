@@ -118,10 +118,18 @@ TODO/
 └── README.md
 ```
 
-| 브랜치 | 용도 |
-|---|---|
-| `master` | 통합 / 기획 문서 베이스 |
-| `feat/orbit-plan-4-google-sync` | 현재 개발 라인 (Google Calendar/Tasks 양방향 sync, 목표 v2.0.0) |
+### 브랜치 정책 (출시/작업 분리)
+
+| 브랜치 | 역할 | 규칙 |
+|---|---|---|
+| **`master`** | 🚀 **출시(release)** | 항상 배포 가능한 안정 상태. 직접 커밋 금지. `dev`에서만 PR로 병합. 버전 태그(`vX.Y.Z`) + GitHub Release는 여기서 발행 |
+| **`dev`** | 🛠 **작업(development)** | 모든 기능 개발의 통합 브랜치. 평소 작업은 여기 또는 여기서 딴 feature 브랜치에서 |
+| `feat/*` | 기능 단위 | `dev`에서 분기 → 완료 후 `dev`로 PR 병합 |
+
+**흐름:** `feat/x` → (PR) → `dev` → (검증 후 PR) → `master` → 버전 태그 → `npm run release`
+
+- 일상 작업은 **`dev`** 기준. `master`는 출시 시점에만 `dev`를 병합해 올린다.
+- 출시할 때: `dev` → `master` 병합 → `package.json` version ↑ → `npm run release` → GitHub에서 Publish.
 
 ---
 

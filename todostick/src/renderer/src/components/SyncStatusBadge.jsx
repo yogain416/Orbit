@@ -69,8 +69,10 @@ export default function SyncStatusBadge() {
     return () => clearInterval(t)
   }, [])
 
+  const offline = status.devMode || status.localMode
+
   const dotColor = (() => {
-    if (status.devMode) return 'bg-slate-400'
+    if (offline) return 'bg-slate-400'
     if (status.lastError) return 'bg-rose-500'
     if (status.running) return 'bg-blue-500 animate-pulse'
     if (status.queueLength > 0) return 'bg-amber-400'
@@ -78,6 +80,7 @@ export default function SyncStatusBadge() {
   })()
 
   const label = (() => {
+    if (status.localMode) return '로컬 전용'
     if (status.devMode) return '[DEV] 로컬 전용'
     if (status.lastError) return '동기화 오류'
     if (status.running) return '동기화 중'
@@ -114,7 +117,12 @@ export default function SyncStatusBadge() {
               <span className={`block w-2.5 h-2.5 rounded-full ${dotColor}`} />
               <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</span>
             </div>
-            {status.devMode ? (
+            {status.localMode ? (
+              <div className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                로컬 프로필은 이 PC에만 저장되며 클라우드 동기화를 하지 않습니다.
+                <br />여러 기기에서 쓰려면 Google 로그인을 사용하세요.
+              </div>
+            ) : status.devMode ? (
               <div className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                 개발 빌드에서는 Supabase 동기화가 꺼져 있습니다.
                 <br />release 환경과의 데이터 혼선을 막기 위함.
@@ -137,7 +145,7 @@ export default function SyncStatusBadge() {
               </>
             )}
           </div>
-          {!status.devMode && (
+          {!offline && (
             <button
               type="button"
               onClick={handleRunNow}
