@@ -11,6 +11,17 @@
 - 핵심: PC↔Supabase에 더해 폰 Google 캘린더/Tasks와도 sync. **선택적 sync(opt-in)** 도입 — `tasks.sync_to_google` 컬럼으로 레코드별 토글, OFF 전환 시 Google에서 삭제
 - 상세: `docs/superpowers/plans/2026-05-20-orbit-plan-4-google-sync.md`
 
+## [1.10.0] - 2026-06-17 — 로컬(오프라인) 프로필 로그인
+
+### Added — 로컬 프로필 (Google 없이 사용)
+- 👤 **로컬(오프라인) 프로필 로그인** — 로그인 화면 Google 버튼 아래에 로컬 프로필 섹션. 닉네임으로 **최대 3명** 생성, 클릭해 입장, ✕로 삭제. 계정/네트워크 없이 바로 사용.
+- 🔒 **프로필별 데이터 격리** — 각 프로필은 합성 user_id `local:<id>`로 로컬 SQLite에서 격리. 새 프로필은 빈 워크스페이스로 시작(`claimOwnership` skip). **Supabase 동기화 없음**(이 PC 전용).
+- 🔁 **세션 유지/전환** — 활성 로컬 프로필은 `settings`에 보관되어 재시작 시 자동 복원. 로그아웃 시 활성 해제 → 로그인 화면. UserMenu에 `로컬` 배지, 동기화 배지에 "로컬 전용" 표시.
+- 🧱 신규 `local-profiles.js`(순수 로직 + 단위 테스트 9종) · IPC `local:list/create/delete/login` · `window.api.local.*` · main `resolveCurrentSession`(Supabase OR 로컬).
+
+### Docs — 브랜치 정책
+- 📌 **`master`=출시 / `dev`=작업** 정책을 `CLAUDE.md`(신규)와 `README`에 명문화. 흐름: `feat/* → PR → dev → PR → master → 태그 → release`.
+
 ## [1.9.0] - 2026-06-17 — GitHub 첫 공개 릴리스 (다크모드·자동 업데이트)
 
 ### Added — 다크모드 + 자동 업데이트
