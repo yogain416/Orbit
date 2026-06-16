@@ -15,6 +15,11 @@
  */
 export function shouldRepeatOnDate(template, date) {
   if (template.date >= date) return false
+  // 주 N회 목표형 습관은 고정 요일이 없음 → 자동 인스턴스를 만들지 않는다(완료는 수동 토글로만).
+  if (template.weekly_goal) return false
+  // 종료일(end_date) 이후는 반복하지 않음 — 습관 '중지' 시 end_date를 찍어 미래 인스턴스를 끊는다.
+  // (일반 반복 템플릿은 end_date가 항상 null이므로 영향 없음.)
+  if (template.end_date && date > template.end_date) return false
   if (template.skipped_dates && template.skipped_dates.includes(date)) return false
 
   const tDate = new Date(template.date + 'T00:00:00')

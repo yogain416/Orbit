@@ -43,8 +43,8 @@ function AuthGate() {
 
   if (session === 'unknown') {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-50">
-        <span className="text-sm text-slate-400">불러오는 중...</span>
+      <div className="flex items-center justify-center h-screen bg-slate-50 dark:bg-slate-900">
+        <span className="text-sm text-slate-400 dark:text-slate-500">불러오는 중...</span>
       </div>
     )
   }
@@ -122,13 +122,13 @@ function MainApp({ user }) {
   }, [modalOpen, currentDate, openAddModal])
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50">
+    <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900">
       {/* 헤더 — 좁아져도 깨지지 않도록 gap/padding 최소화 + 라벨 반응형 */}
-      <header className="flex items-center gap-2 px-3 py-2 bg-white border-b border-slate-200 shadow-sm">
+      <header className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm">
         {/* 로고 */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className="text-lg text-indigo-500">◎</span>
-          <span className="font-bold text-indigo-600 text-base tracking-tight">Orbit</span>
+          <span className="font-extrabold text-indigo-600 text-base tracking-tight">Orbit</span>
           {envInfo.isDev && (
             <span
               title={`개발 모드 — DB: ${envInfo.dbPath}`}
@@ -141,7 +141,7 @@ function MainApp({ user }) {
 
         {/* 날짜 네비게이션 — flex-1로 가변, 길어지면 truncate */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm font-medium text-slate-600 truncate">{formatDate(currentDate)}</span>
+          <span className="text-sm font-medium text-slate-600 dark:text-slate-300 truncate">{formatDate(currentDate)}</span>
           {!isToday && (
             <button
               onClick={goToToday}
@@ -153,7 +153,7 @@ function MainApp({ user }) {
         </div>
 
         {/* 뷰 전환 — 좁아질수록 px 축소 */}
-        <div className="flex rounded-lg overflow-hidden border border-slate-200 flex-shrink-0">
+        <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 flex-shrink-0">
           {VIEWS.map((v) => (
             <button
               key={v}
@@ -161,7 +161,7 @@ function MainApp({ user }) {
               className={`px-2.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
                 view === v
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-slate-500 hover:bg-slate-50'
+                  : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
               {v}
@@ -180,7 +180,7 @@ function MainApp({ user }) {
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex-shrink-0"
           title="단축키 설정"
         >
           ⚙️
@@ -231,9 +231,9 @@ function MainApp({ user }) {
       </main>
 
       {/* 하단 단축키 힌트 */}
-      <div className="px-5 py-1.5 bg-white border-t border-slate-100 flex gap-4">
-        <span className="text-xs text-slate-400"><kbd className="bg-slate-100 px-1 rounded text-xs">Ctrl+N</kbd> 할일 추가</span>
-        <span className="text-xs text-slate-400"><kbd className="bg-slate-100 px-1 rounded text-xs">T</kbd> 오늘로 이동</span>
+      <div className="px-5 py-1.5 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 flex gap-4">
+        <span className="text-xs text-slate-400 dark:text-slate-500"><kbd className="bg-slate-100 dark:bg-slate-700 dark:text-slate-300 px-1 rounded text-xs">Ctrl+N</kbd> 할일 추가</span>
+        <span className="text-xs text-slate-400 dark:text-slate-500"><kbd className="bg-slate-100 dark:bg-slate-700 dark:text-slate-300 px-1 rounded text-xs">T</kbd> 오늘로 이동</span>
       </div>
 
       {/* 할일 추가/편집 모달 */}

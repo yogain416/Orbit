@@ -30,11 +30,21 @@ loadEnv()
 
 export const config = {
   supabaseUrl: process.env.SUPABASE_URL || '',
-  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ''
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
+  // Plan 4 — Google API direct refresh (오프라인에서 access token 재발급용).
+  // Supabase의 Google provider 설정에 등록한 OAuth client와 동일한 값.
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || ''
 }
 
 export function assertConfigured() {
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
     throw new Error('SUPABASE_URL / SUPABASE_ANON_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.')
+  }
+}
+
+export function assertGoogleConfigured() {
+  if (!config.googleClientId || !config.googleClientSecret) {
+    throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET가 설정되지 않았습니다. .env에 추가하세요. (Plan 4 — Google sync에 필요)')
   }
 }

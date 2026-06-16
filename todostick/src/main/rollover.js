@@ -8,11 +8,11 @@ export function yesterdayOf(toDate) {
   return d.toISOString().slice(0, 10)
 }
 
-export function autoRolloverOverdue(tasks, toDate) {
-  // toDate 이전의 모든 미완료를 대상으로 함 — 주말/휴가로 며칠 비워도 chain 끊기지 않게.
-  // 'rolled_at' 컬럼이 있는 원본은 이미 한 번 이월됐으므로 제외 → 사용자가 카피를 삭제해도
-  // 다시 이월되지 않음 (영구 멱등성).
-  const candidates = tasks.filter((t) =>
+// 이월 후보: toDate 이전 미완료 일반 task 중 아직 한 번도 이월되지 않은 것.
+// 주말/휴가로 며칠 비워도 chain이 끊기지 않게 'date < toDate' 전체를 본다.
+// rolled_at이 set이면 영구 제외 (사용자가 카피를 삭제해도 다시 이월되지 않음).
+export function getRolloverCandidates(tasks, toDate) {
+  return tasks.filter((t) =>
     t.date < toDate &&
     !t.is_completed &&
     !t.is_template &&
@@ -20,20 +20,13 @@ export function autoRolloverOverdue(tasks, toDate) {
     !t.end_date &&
     !t.rolled_at
   )
-  if (candidates.length === 0) return []
+}
 
-  const existingSources = new Set(
-    tasks
-      .filter((t) => t.date === toDate && t.rollover_source_id)
-      .map((t) => t.rollover_source_id)
-  )
-  const toCopy = candidates.filter((t) => !existingSources.has(t.id))
-  if (toCopy.length === 0) return []
-
-  const maxOrder = tasks.filter((t) => t.date === toDate).length
+// 카피 row 빌더. sources는 이월 대상 원본 배열, existingMaxOrder는 toDate에 이미 존재하는 task 개수.
+export function buildRolloverCopies(sources, toDate, existingMaxOrder) {
+  if (sources.length === 0) return []
   const now = new Date().toISOString()
-
-  return toCopy.map((t, i) => ({
+  return sources.map((t, i) => ({
     id: generateId(),
     title: t.title,
     memo: t.memo,
@@ -41,7 +34,7 @@ export function autoRolloverOverdue(tasks, toDate) {
     is_completed: false,
     is_in_progress: !!t.is_in_progress,
     repeat_type: 'none',
-    order_index: maxOrder + i,
+    order_index: existingMaxOrder + i,
     remind_at: null,
     color: t.color || null,
     category: t.category || null,

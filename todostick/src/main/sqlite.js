@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 5
 
 // v3 SCHEMA — 신규 DB는 이걸로 즉시 생성된다.
 // 기존 v1/v2 DB는 CREATE TABLE IF NOT EXISTS가 막아주고, applyMigrations()가 ALTER/재구성을 처리한다.
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   color TEXT,
   category TEXT,
   is_habit INTEGER DEFAULT 0,
+  weekly_goal INTEGER,
   start_time TEXT,
   end_time TEXT,
   is_template INTEGER DEFAULT 0,
@@ -92,6 +93,19 @@ CREATE TABLE IF NOT EXISTS sync_meta (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  title TEXT DEFAULT '',
+  content TEXT DEFAULT '',
+  order_index INTEGER DEFAULT 0,
+  created_at TEXT,
+  updated_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
+CREATE INDEX IF NOT EXISTS idx_notes_order ON notes(order_index);
 `
 
 function hasColumn(db, table, col) {
@@ -143,6 +157,11 @@ function applyMigrations(db) {
       DROP TABLE monthly_goals;
       ALTER TABLE monthly_goals_new RENAME TO monthly_goals;
     `)
+  }
+
+  // v4→v5: 습관 '주 N회 목표형' — tasks.weekly_goal 컬럼 추가 (로컬 전용).
+  if (!hasColumn(db, 'tasks', 'weekly_goal')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN weekly_goal INTEGER')
   }
 
   // see_memos: 기존 PK가 (date)라면 (user_id, date)로 재구성

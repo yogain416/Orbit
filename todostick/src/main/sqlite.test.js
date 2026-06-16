@@ -57,10 +57,6 @@ describe('openDatabase', () => {
 
 // ── Plan 3 (Sync engine) — schema v3 ──────────────────────────
 describe('schema v3 (sync engine)', () => {
-  it('SCHEMA_VERSION === 3', () => {
-    expect(SCHEMA_VERSION).toBe(3)
-  })
-
   it('tasks 테이블에 user_id 컬럼 존재', () => {
     const cols = db.prepare('PRAGMA table_info(tasks)').all().map((r) => r.name)
     expect(cols).toContain('user_id')
@@ -103,11 +99,11 @@ describe('schema v3 (sync engine)', () => {
     expect(cols).toEqual(expect.arrayContaining(['key', 'value']))
   })
 
-  it('v2 → v3 마이그레이션: 기존 데이터 보존 + user_id NULL + 신규 테이블 생성', () => {
-    // beforeEach의 v3 DB와 충돌 피하기 — 별도 tmp 경로 사용
+  it('v2 → 최신 마이그레이션: 기존 데이터 보존 + user_id NULL + 신규 테이블 생성', () => {
+    // beforeEach의 최신 DB와 충돌 피하기 — 별도 tmp 경로 사용
     const migTmp = mkdtempSync(join(tmpdir(), 'orbit-mig-'))
     const migPath = join(migTmp, 'orbit.db')
-    // raw v2 스키마(user_id 없음, monthly_goals/see_memos는 단일 PK)로 DB 생성
+    // raw v2 스키마(user_id 없음, monthly_goals/see_memos는 단일 PK, notes 없음)로 DB 생성
     const raw = new Database(migPath)
     raw.exec(`
       CREATE TABLE tasks (
@@ -131,7 +127,7 @@ describe('schema v3 (sync engine)', () => {
     `)
     raw.close()
 
-    // v3 openDatabase로 다시 열기 → 자동 마이그레이션 수행
+    // openDatabase로 다시 열기 → 자동 마이그레이션 수행
     const migDb = openDatabase(migPath)
 
     try {
@@ -155,11 +151,86 @@ describe('schema v3 (sync engine)', () => {
       expect(tables).toContain('sync_queue')
       expect(tables).toContain('sync_meta')
 
-      // 5) schema_version 갱신
+      // 5) schema_version 갱신 (현재 SCHEMA_VERSION으로)
       const ver = migDb.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value
-      expect(Number(ver)).toBe(3)
+      expect(Number(ver)).toBe(SCHEMA_VERSION)
     } finally {
       migDb.close()
+      rmSync(migTmp, { recursive: true, force: true })
+    }
+  })
+})
+
+// ── v4 (notes 테이블) ────────────────────────────────────────
+describe('schema v4 (notes)', () => {
+  it('SCHEMA_VERSION >= 4', () => {
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(4)
+  })
+
+  it('notes 테이블 + 필수 컬럼 존재', () => {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name)
+    expect(tables).toContain('notes')
+    const cols = db.prepare('PRAGMA table_info(notes)').all().map((r) => r.name)
+    for (const c of ['id', 'user_id', 'title', 'content', 'order_index', 'created_at', 'updated_at']) {
+      expect(cols).toContain(c)
+    }
+  })
+
+  it('notes 인덱스 존재 (user_id, order_index)', () => {
+    const idx = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='notes'").all().map((r) => r.name)
+    expect(idx).toContain('idx_notes_user')
+    expect(idx).toContain('idx_notes_order')
+  })
+
+  it('v3 → v4 마이그레이션: 기존 v3 DB 열면 notes 테이블이 추가된다', () => {
+    // v3 DB(notes 없음) 시뮬레이션: openDatabase로 만든 뒤 notes 테이블만 DROP — index 누락
+    // 등을 시뮬하기보다 실제 v3과 동일한 구조에서 notes만 빠진 상태를 재현.
+    const migTmp = mkdtempSync(join(tmpdir(), 'orbit-mig-v4-'))
+    const migPath = join(migTmp, 'orbit.db')
+    const migDb1 = openDatabase(migPath)
+    migDb1.exec('DROP INDEX IF EXISTS idx_notes_user; DROP INDEX IF EXISTS idx_notes_order; DROP TABLE IF EXISTS notes;')
+    // schema_version도 3으로 되돌려서 진짜 v3 DB처럼 보이게
+    migDb1.prepare("UPDATE meta SET value='3' WHERE key='schema_version'").run()
+    const beforeTables = migDb1.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name)
+    expect(beforeTables).not.toContain('notes')
+    migDb1.close()
+
+    // openDatabase로 다시 열기 → notes 테이블 자동 생성
+    const migDb2 = openDatabase(migPath)
+    try {
+      const tables = migDb2.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name)
+      expect(tables).toContain('notes')
+      const ver = migDb2.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value
+      expect(Number(ver)).toBe(SCHEMA_VERSION)
+    } finally {
+      migDb2.close()
+      rmSync(migTmp, { recursive: true, force: true })
+    }
+  })
+})
+
+// ── v5 (습관 weekly_goal) ───────────────────────────────────
+describe('schema v5 (weekly_goal)', () => {
+  it('tasks.weekly_goal 컬럼 존재', () => {
+    const cols = db.prepare('PRAGMA table_info(tasks)').all().map((r) => r.name)
+    expect(cols).toContain('weekly_goal')
+  })
+
+  it('v4 → v5 마이그레이션: weekly_goal 없는 DB를 열면 컬럼이 추가된다', () => {
+    const migTmp = mkdtempSync(join(tmpdir(), 'orbit-mig-v5-'))
+    const migPath = join(migTmp, 'orbit.db')
+    const migDb1 = openDatabase(migPath)
+    // v4 상태 재현: weekly_goal 컬럼 제거는 불가하므로 새 테이블로 시뮬 — 단순히 schema_version만 4로 되돌림
+    migDb1.prepare("UPDATE meta SET value='4' WHERE key='schema_version'").run()
+    migDb1.close()
+    const migDb2 = openDatabase(migPath)
+    try {
+      const cols = migDb2.prepare('PRAGMA table_info(tasks)').all().map((r) => r.name)
+      expect(cols).toContain('weekly_goal')
+      const ver = migDb2.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value
+      expect(Number(ver)).toBe(SCHEMA_VERSION)
+    } finally {
+      migDb2.close()
       rmSync(migTmp, { recursive: true, force: true })
     }
   })

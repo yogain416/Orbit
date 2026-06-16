@@ -9,7 +9,7 @@ function makeFakeClient(overrides = {}) {
         error: null
       }),
       exchangeCodeForSession: vi.fn().mockResolvedValue({
-        data: { session: { access_token: 'at', user: { id: 'u1', email: 'a@b.com' } } },
+        data: { session: { access_token: 'at', provider_token: 'gpt', provider_refresh_token: 'grt', user: { id: 'u1', email: 'a@b.com' } } },
         error: null
       }),
       getSession: vi.fn().mockResolvedValue({
@@ -22,10 +22,18 @@ function makeFakeClient(overrides = {}) {
   }
 }
 
-function makeAuth({ client, openExternal = vi.fn().mockResolvedValue(undefined) } = {}) {
+function makeAuth({ client, openExternal = vi.fn().mockResolvedValue(undefined), tokenStore } = {}) {
   const c = client || makeFakeClient()
-  const auth = createAuth({ getClient: () => c, openExternal })
-  return { auth, client: c, openExternal }
+  const auth = createAuth({ getClient: () => c, openExternal, tokenStore })
+  return { auth, client: c, openExternal, tokenStore }
+}
+
+function makeFakeTokenStore() {
+  return {
+    saveFromSession: vi.fn(),
+    clear: vi.fn(),
+    getAccessToken: vi.fn().mockResolvedValue(null)
+  }
 }
 
 describe('signInWithGoogle', () => {
@@ -117,6 +125,31 @@ describe('handleAuthCallback', () => {
     const { auth } = makeAuth({ client })
     await expect(auth.handleAuthCallback('app://x?code=c')).rejects.toThrow('exchange failed')
   })
+
+  it('tokenStore가 주입되어 있으면 session을 tokenStore.saveFromSession에 넘김 (Plan 4)', async () => {
+    const tokenStore = makeFakeTokenStore()
+    const { auth } = makeAuth({ tokenStore })
+    await auth.handleAuthCallback('app://orbit/auth/callback?code=c')
+    expect(tokenStore.saveFromSession).toHaveBeenCalledTimes(1)
+    const session = tokenStore.saveFromSession.mock.calls[0][0]
+    expect(session.provider_token).toBe('gpt')
+    expect(session.provider_refresh_token).toBe('grt')
+  })
+
+  it('tokenStore.saveFromSession이 throw해도 로그인 결과 자체는 정상 반환', async () => {
+    const tokenStore = {
+      saveFromSession: vi.fn(() => { throw new Error('storage write failed') })
+    }
+    const { auth } = makeAuth({ tokenStore })
+    const result = await auth.handleAuthCallback('app://orbit/auth/callback?code=c')
+    expect(result.session.user.id).toBe('u1')
+  })
+
+  it('tokenStore 미주입 시 정상 동작 (이전 동작 유지)', async () => {
+    const { auth } = makeAuth() // tokenStore 없음
+    const result = await auth.handleAuthCallback('app://orbit/auth/callback?code=c')
+    expect(result.session.user.id).toBe('u1')
+  })
 })
 
 describe('getSession / getUser', () => {
@@ -168,5 +201,22 @@ describe('signOut', () => {
     })
     const { auth } = makeAuth({ client })
     await expect(auth.signOut()).rejects.toThrow('signout fail')
+  })
+
+  it('tokenStore가 있으면 signOut 후 tokenStore.clear 호출 (Plan 4)', async () => {
+    const tokenStore = makeFakeTokenStore()
+    const { auth } = makeAuth({ tokenStore })
+    await auth.signOut()
+    expect(tokenStore.clear).toHaveBeenCalledTimes(1)
+  })
+
+  it('signOut이 실패하면 tokenStore.clear는 호출되지 않음 (세션 유지)', async () => {
+    const tokenStore = makeFakeTokenStore()
+    const client = makeFakeClient({
+      auth: { signOut: vi.fn().mockResolvedValue({ error: new Error('signout fail') }) }
+    })
+    const { auth } = makeAuth({ client, tokenStore })
+    await expect(auth.signOut()).rejects.toThrow('signout fail')
+    expect(tokenStore.clear).not.toHaveBeenCalled()
   })
 })

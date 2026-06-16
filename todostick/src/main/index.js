@@ -1,6 +1,6 @@
 // ⚠️ setup-paths가 가장 먼저 평가되어야 함 (database.js 평가 전에 setPath 호출 필요)
 import { isDev } from './setup-paths.js'
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, shell } from 'electron'
 import { migrateUserData } from './userdata-migration.js'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -8,6 +8,7 @@ import db, { setCurrentUserId, claimOwnership, performInitialSync, getRawDb } fr
 import { getAuth } from './auth.js'
 import { getSupabaseClient } from './supabase.js'
 import { createSyncEngine } from './sync.js'
+import { initUpdater, checkForUpdates, getUpdaterState, quitAndInstall } from './updater.js'
 
 // Supabase 콘솔의 Redirect URLs에 등록된 스킴. spec/auth.js의 REDIRECT_URL과 호스트가 일치해야 한다.
 const AUTH_PROTOCOL_SCHEME = 'app'
@@ -16,6 +17,12 @@ let mainWindow = null
 let stickerWindow = null
 let tray = null
 let reminderTimers = []
+
+// 메인/스티커 두 창 모두에 채널 메시지 전송 (업데이트 상태 등 브로드캐스트용).
+function broadcastToWindows(channel, payload) {
+  mainWindow?.webContents.send(channel, payload)
+  stickerWindow?.webContents.send(channel, payload)
+}
 
 // ── Plan 3 (sync engine): 워커 + 현재 user id 추적 ────────────
 // engine은 lazy-init — auth 세션이 처음 잡힐 때 만들어진다.
@@ -39,6 +46,9 @@ function getOrCreateSyncEngine() {
 
 // 인증된 user에 sync 시작 — claim + initial sync + start 워커.
 // 멱등 — 여러 번 호출되어도 안전.
+// dev 빌드에서는 Supabase sync 자체를 끈다 — release 환경과 동일 Google 계정으로
+// 로그인했을 때 dev에서 만든 테스트 task가 클라우드를 통해 prod로 새는 사고 방지.
+// 로컬 SQLite 격리는 setCurrentUserId만으로 충분히 동작.
 async function startSyncForUser(uid) {
   if (!uid) return
   if (_currentUid === uid && _syncEngine) return // 이미 동일 user로 동작 중
@@ -46,6 +56,14 @@ async function startSyncForUser(uid) {
   setCurrentUserId(uid)
   try {
     claimOwnership(uid)
+  } catch (e) {
+    console.error('[sync] claimOwnership failed:', e)
+  }
+  if (isDev) {
+    console.log('[DEV] Supabase sync disabled — local-only mode')
+    return
+  }
+  try {
     performInitialSync(uid)
   } catch (e) {
     console.error('[sync] initial sync prep failed:', e)
@@ -72,6 +90,26 @@ function triggerSyncFlush() {
   }, 300)
 }
 
+// ── 컴퓨터 부팅 시 자동 실행 (로그인 항목) ────────────────────
+// 기본값 ON — 사용자가 "켜면 무조건 뜨게" 요청. 설정에서 끌 수 있다.
+// dev 빌드는 electron 개발 바이너리를 등록하면 곤란하므로 건너뛴다.
+function getAutoLaunchEnabled() {
+  // setSetting은 boolean을 문자열("true"/"false")로 보관하므로 문자열까지 함께 해석한다.
+  const saved = db.getSetting('autoLaunch')
+  if (saved === undefined || saved === null) return true // 미설정 = 기본 ON
+  return saved === true || saved === 'true' || saved === 1 || saved === '1'
+}
+
+function applyAutoLaunch() {
+  if (isDev) return
+  try {
+    const enabled = getAutoLaunchEnabled()
+    app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: false })
+  } catch (e) {
+    console.error('[autolaunch] apply failed:', e)
+  }
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 980,
@@ -91,6 +129,17 @@ function createMainWindow() {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
     if (is.dev) mainWindow.webContents.openDevTools({ mode: 'detach' })
+  })
+
+  // production에서도 F12 / Ctrl+Shift+I로 DevTools 토글 — 사용자가 빌드된 앱에서
+  // 폰트/스타일 깨짐 같은 렌더러 이슈를 직접 진단할 수 있게 한다.
+  mainWindow.webContents.on('before-input-event', (_, input) => {
+    if (input.type !== 'keyDown') return
+    const isF12 = input.key === 'F12'
+    const isCtrlShiftI = input.control && input.shift && (input.key === 'I' || input.key === 'i')
+    if (isF12 || isCtrlShiftI) {
+      mainWindow.webContents.toggleDevTools()
+    }
   })
 
   mainWindow.on('close', (e) => {
@@ -354,6 +403,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  applyAutoLaunch()
   createMainWindow()
   createTray()
   // 스티커는 인증된 세션이 있을 때만 띄운다. 처음 실행 시 secure-storage에
@@ -362,6 +412,9 @@ app.whenReady().then(() => {
   registerShortcuts()
   scheduleReminders()
   scheduleMidnightRefresh()
+
+  // 자동 업데이트 — 상태를 두 창에 브로드캐스트, 시작 직후 백그라운드 확인.
+  initUpdater({ isDev, send: broadcastToWindows })
 
   // 처음 실행 시 argv에 callback URL이 들어있으면 처리 (예: 로그아웃 상태에서 외부 링크 클릭)
   const initialUrl = extractAuthCallbackUrl(process.argv)
@@ -418,30 +471,16 @@ ipcMain.handle('tasks:setStarred', (_, id, value) => {
   triggerSyncFlush()
   return result
 })
-ipcMain.handle('tasks:autoRolloverOverdue', (_, toDate) => {
-  const result = db.autoRolloverOverdue(toDate)
+ipcMain.handle('tasks:getRolloverCandidates', (_, toDate) => {
+  return db.getRolloverCandidates(toDate)
+})
+ipcMain.handle('tasks:rolloverSelected', (_, sourceIds, toDate) => {
+  const result = db.rolloverSelectedTasks(sourceIds, toDate)
   if (result.length > 0) {
     mainWindow?.webContents.send('tasks:refresh')
     stickerWindow?.webContents.send('tasks:refresh')
     triggerSyncFlush()
   }
-  return result
-})
-
-// IPC: 미완료 이월
-ipcMain.handle('tasks:getOverdue', (_, date) => db.getOverdueTasks(date))
-ipcMain.handle('tasks:rollover', (_, toDate) => {
-  const result = db.rolloverTasks(toDate)
-  mainWindow?.webContents.send('tasks:refresh')
-  stickerWindow?.webContents.send('tasks:refresh')
-  triggerSyncFlush()
-  return result
-})
-ipcMain.handle('tasks:rolloverSelected', (_, taskIds, toDate) => {
-  const result = db.rolloverSelectedTasks(taskIds, toDate)
-  mainWindow?.webContents.send('tasks:refresh')
-  stickerWindow?.webContents.send('tasks:refresh')
-  triggerSyncFlush()
   return result
 })
 
@@ -473,9 +512,16 @@ ipcMain.handle('categories:set', (_, categories) => {
 // IPC: 플래너 풀
 ipcMain.handle('tasks:getPool', (_, poolKey) => db.getPoolTasks(poolKey))
 
-// IPC: 메모장
+// IPC: 메모장 (레거시 단일 메모 — 호환성 유지. 신규 UI는 notes:* 사용)
 ipcMain.handle('memo:get', () => db.getSetting('memo') || '')
 ipcMain.handle('memo:set', (_, text) => { db.setSetting('memo', text); return true })
+
+// IPC: 메모 노트 (N개 관리)
+ipcMain.handle('notes:list', () => db.listNotes())
+ipcMain.handle('notes:get', (_, id) => db.getNote(id))
+ipcMain.handle('notes:create', (_, input) => db.createNote(input || {}))
+ipcMain.handle('notes:update', (_, id, patch) => db.updateNote(id, patch || {}))
+ipcMain.handle('notes:delete', (_, id) => db.deleteNote(id))
 
 // IPC: 알림 테스트 (개발용)
 ipcMain.handle('reminder:test', () => {
@@ -536,10 +582,66 @@ ipcMain.handle('review:setGoal', (_, ym, text) => {
 // IPC: 환경 정보 (dev/prod 구분)
 ipcMain.handle('env:info', () => ({ isDev, dbPath: db.getDbPath() }))
 
+// IPC: 부팅 시 자동 실행 설정
+ipcMain.handle('app:getAutoLaunch', () => getAutoLaunchEnabled())
+ipcMain.handle('app:setAutoLaunch', (_, enabled) => {
+  db.setSetting('autoLaunch', !!enabled)
+  applyAutoLaunch()
+  return getAutoLaunchEnabled()
+})
+
 // IPC: 습관 트래커
 ipcMain.handle('habits:getMatrix', (_, fromDate, toDate) => db.getHabitMatrix(fromDate, toDate))
-ipcMain.handle('habits:toggle', (_, templateId, date) => {
-  const result = db.toggleHabitOnDate(templateId, date)
+ipcMain.handle('habits:toggle', (_, templateId, date, note) => {
+  const result = db.toggleHabitOnDate(templateId, date, note)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('habits:setPaused', (_, templateId, paused) => {
+  const result = db.setHabitPaused(templateId, paused)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('habits:setSkip', (_, templateId, date, skip) => {
+  const result = db.setHabitSkip(templateId, date, skip)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('habits:create', (_, input) => {
+  const result = db.createHabit(input || {})
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('habits:update', (_, templateId, fields) => {
+  const result = db.updateHabit(templateId, fields || {})
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('habits:reorder', (_, orderedIds) => {
+  const result = db.reorderHabits(orderedIds)
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('habits:getRecurring', () => db.getRecurringTemplates())
+ipcMain.handle('habits:setIsHabit', (_, templateId, isHabit) => {
+  const result = db.setTemplateIsHabit(templateId, isHabit)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('habits:delete', (_, templateId) => {
+  const result = db.deleteHabit(templateId)
   mainWindow?.webContents.send('tasks:refresh')
   stickerWindow?.webContents.send('tasks:refresh')
   triggerSyncFlush()
@@ -576,12 +678,41 @@ ipcMain.handle('auth:signOut', async () => {
   return true
 })
 
+// IPC: 마크다운 메모 안의 링크 클릭 시 외부 브라우저로 열기 — http/https만 허용.
+// 임의 URL(file://, app://, javascript: 등)이 들어오면 무시 → 클릭재킹/프로토콜 abuse 방어.
+ipcMain.handle('shell:openExternal', async (_, url) => {
+  if (typeof url !== 'string') return false
+  if (!/^https?:\/\//i.test(url)) return false
+  await shell.openExternal(url)
+  return true
+})
+
 // IPC: 동기화 상태 + 수동 실행
 ipcMain.handle('sync:status', () => {
+  if (isDev) {
+    return { devMode: true, queueLength: 0, lastSyncedAt: null, lastError: null, running: false }
+  }
   if (!_syncEngine) return { queueLength: 0, lastSyncedAt: null, lastError: null, running: false }
   return _syncEngine.getStatus()
 })
 ipcMain.handle('sync:runNow', async () => {
+  if (isDev) return { skipped: true, reason: 'dev_mode' }
   if (!_syncEngine) return { skipped: true, reason: 'no_engine' }
   return await _syncEngine.runOnce()
+})
+
+// IPC: 자동 업데이트 — 현재 버전/상태 조회, 수동 확인, 재시작 설치
+ipcMain.handle('updater:getState', () => ({ version: app.getVersion(), ...getUpdaterState() }))
+ipcMain.handle('updater:check', async () => {
+  const state = await checkForUpdates()
+  return { version: app.getVersion(), ...state }
+})
+ipcMain.handle('updater:quitAndInstall', () => {
+  // 다운로드가 끝난 상태가 아니면 quitAndInstall은 no-op이므로 종료 플래그도 건드리지 않는다.
+  // (먼저 isQuitting을 켜두면 설치가 일어나지 않은 채 플래그만 남아, 이후 X 버튼이
+  //  트레이로 숨지 않고 앱을 종료시키는 잠복 버그가 생긴다.)
+  if (getUpdaterState().status !== 'downloaded') return false
+  // 메인 창 close 핸들러가 트레이로 숨기는 것을 막기 위해 종료 플래그를 세운다.
+  app.isQuitting = true
+  return quitAndInstall()
 })

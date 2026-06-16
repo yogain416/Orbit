@@ -199,12 +199,12 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
   return (
     <div className="flex flex-col h-full">
       {/* 헤더 */}
-      <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0">
-        <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">‹</button>
+      <div className="flex items-center justify-between px-6 py-3 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 flex-shrink-0">
+        <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400">‹</button>
         <div className="text-center">
-          <span className="text-base font-bold text-slate-800">{year}년 {month + 1}월</span>
+          <span className="text-base font-extrabold tracking-tight text-slate-800 dark:text-slate-100">{year}년 {month + 1}월</span>
         </div>
-        <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">›</button>
+        <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400">›</button>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -213,7 +213,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
           <button
             onClick={() => setSidebarOpen(true)}
             title="목록 열기"
-            className="w-6 flex-shrink-0 bg-violet-50 border-r border-violet-100 hover:bg-violet-100 flex items-center justify-center text-violet-400 hover:text-violet-700 transition-colors"
+            className="w-6 flex-shrink-0 bg-violet-50 dark:bg-violet-500/15 border-r border-violet-100 dark:border-slate-700 hover:bg-violet-100 dark:hover:bg-violet-500/20 flex items-center justify-center text-violet-400 dark:text-violet-300 hover:text-violet-700 dark:hover:text-violet-200 transition-colors"
           >
             ▸
           </button>
@@ -221,13 +221,13 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
 
         {/* ===== 왼쪽: 이번 달 할일 풀 (주차별) ===== */}
         {sidebarOpen && (
-          <div className="w-52 border-r border-slate-200 bg-violet-50 flex flex-col flex-shrink-0">
+          <div className="w-52 border-r border-slate-200 dark:border-slate-700 bg-violet-50 dark:bg-violet-500/15 flex flex-col flex-shrink-0">
             {/* 사이드바 헤더 */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-violet-100 flex-shrink-0">
-              <span className="text-xs font-bold text-violet-700">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-violet-100 dark:border-slate-700 flex-shrink-0">
+              <span className="text-xs font-bold text-violet-700 dark:text-violet-300">
                 📋 이번 달 할일
                 {sidebarTotalCount > 0 && (
-                  <span className="ml-1.5 bg-violet-200 text-violet-700 rounded-full px-1.5 py-0.5 font-medium">
+                  <span className="ml-1.5 bg-violet-200 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 rounded-full px-1.5 py-0.5 font-medium">
                     {sidebarDoneCount}/{sidebarTotalCount}
                   </span>
                 )}
@@ -235,7 +235,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
               <button
                 onClick={() => setSidebarOpen(false)}
                 title="목록 닫기"
-                className="text-violet-300 hover:text-violet-600 text-sm leading-none px-1"
+                className="text-violet-300 dark:text-violet-400 hover:text-violet-600 dark:hover:text-violet-200 text-sm leading-none px-1"
               >
                 ◂
               </button>
@@ -244,13 +244,13 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
             {/* 할일 목록 (주차별 그룹: 풀 + 일정) */}
             <div className="flex-1 overflow-y-auto py-1">
               {sidebarTotalCount === 0 ? (
-                <p className="text-xs text-violet-400 text-center py-6">아래에서 할일을 추가하고<br />주차별로 배정해보세요</p>
+                <p className="text-xs text-violet-400 dark:text-violet-300 text-center py-6">아래에서 할일을 추가하고<br />주차별로 배정해보세요</p>
               ) : (
                 <>
                   {/* 미배정 풀 */}
                   {poolTasks.filter((t) => t._weekIdx === null).length > 0 && (
                     <div className="px-2 mb-2">
-                      <p className="text-[10px] text-violet-400 font-semibold mb-1 px-1">미배정 (풀)</p>
+                      <p className="text-[10px] text-violet-400 dark:text-violet-300 font-semibold mb-1 px-1">미배정 (풀)</p>
                       {poolTasks.filter((t) => t._weekIdx === null).map((task) => (
                         <MonthPoolTask
                           key={task.id}
@@ -294,14 +294,14 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                         <button
                           type="button"
                           onClick={toggleSidebarWeek}
-                          className="w-full text-[10px] text-violet-500 font-semibold mb-1 px-1 flex items-center justify-between hover:text-violet-700 transition-colors"
+                          className="w-full text-[10px] text-violet-500 dark:text-violet-300 font-semibold mb-1 px-1 flex items-center justify-between hover:text-violet-700 dark:hover:text-violet-200 transition-colors"
                         >
                           <span>
-                            {i + 1}주차 <span className="font-normal text-violet-300">({weekRange})</span>
+                            {i + 1}주차 <span className="font-normal text-violet-300 dark:text-violet-400">({weekRange})</span>
                           </span>
                           <span className="flex items-center gap-1.5">
                             <span>{wkDone}/{wkAll.length}</span>
-                            <span className="text-violet-300">{isSidebarCollapsed ? '▸' : '▾'}</span>
+                            <span className="text-violet-300 dark:text-violet-400">{isSidebarCollapsed ? '▸' : '▾'}</span>
                           </span>
                         </button>
 
@@ -327,7 +327,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                                 <div key={dateStr} className="mt-1">
                                   <p
                                     onClick={() => onDateClick(dateStr)}
-                                    className="text-[9px] text-slate-400 ml-1 mb-0.5 cursor-pointer hover:text-violet-600"
+                                    className="text-[9px] text-slate-400 dark:text-slate-500 ml-1 mb-0.5 cursor-pointer hover:text-violet-600 dark:hover:text-violet-300"
                                   >
                                     📅 {dayLabel}
                                   </p>
@@ -352,14 +352,14 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
             </div>
 
             {/* 하단 항상 보이는 추가 입력 */}
-            <div className="px-3 py-2.5 border-t border-violet-100 flex-shrink-0">
+            <div className="px-3 py-2.5 border-t border-violet-100 dark:border-slate-700 flex-shrink-0">
               <input
                 type="text"
                 value={poolAddTitle}
                 onChange={(e) => setPoolAddTitle(e.target.value)}
                 onKeyDown={handlePoolAddKeyDown}
                 placeholder="+ 할일 추가 (Enter)"
-                className="w-full text-xs bg-transparent outline-none text-slate-600 placeholder-violet-300 border-b border-transparent focus:border-violet-400 pb-0.5 transition-colors"
+                className="w-full text-xs bg-transparent outline-none text-slate-600 dark:text-slate-200 placeholder-violet-300 dark:placeholder-slate-500 border-b border-transparent focus:border-violet-400 pb-0.5 transition-colors"
               />
             </div>
           </div>
@@ -373,7 +373,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
               <div
                 key={d}
                 className={`text-xs text-center font-semibold py-1 ${
-                  i === 6 ? 'text-red-400' : i === 5 ? 'text-blue-400' : 'text-slate-400'
+                  i === 6 ? 'text-red-400' : i === 5 ? 'text-blue-400' : 'text-slate-400 dark:text-slate-500'
                 }`}
               >
                 {d}
@@ -387,7 +387,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
               const weekRows = []
               for (let i = 0; i < days.length; i += 7) weekRows.push(days.slice(i, i + 7))
               return weekRows.map((week, wIdx) => (
-                <div key={wIdx} className={`border border-slate-100 rounded-xl overflow-hidden bg-white ${gcalMode ? 'flex-shrink-0' : ''}`}>
+                <div key={wIdx} className={`border border-slate-100 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-800 ${gcalMode ? 'flex-shrink-0' : ''}`}>
                   <div className="grid grid-cols-7 gap-1 p-1">
                     {week.map((day, di) => {
                       if (!day) return <div key={`e-${wIdx}-${di}`} />
@@ -410,8 +410,8 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                           key={dateStr}
                           onClick={() => onDateClick(dateStr)}
                           title={cellTitle}
-                          className={`group relative flex flex-col ${gcalMode ? 'items-stretch px-1 pt-1.5 pb-1' : 'items-center justify-start py-2 px-0.5'} rounded-lg cursor-pointer transition-all hover:bg-slate-100 ${gcalMode ? 'min-h-[140px]' : 'min-h-[60px]'} ${
-                            isToday ? 'ring-2 ring-indigo-400 bg-indigo-50' : hasStarred ? 'bg-yellow-50/60' : ''
+                          className={`group relative flex flex-col ${gcalMode ? 'items-stretch px-1 pt-1.5 pb-1' : 'items-center justify-start py-2 px-0.5'} rounded-lg cursor-pointer transition-all hover:bg-slate-100 dark:hover:bg-slate-700 ${gcalMode ? 'min-h-[140px]' : 'min-h-[60px]'} ${
+                            isToday ? 'ring-2 ring-indigo-400 bg-indigo-50 dark:bg-indigo-500/15' : hasStarred ? 'bg-yellow-50/60 dark:bg-yellow-500/15' : ''
                           }`}
                         >
                           {/* 날짜 헤더 */}
@@ -423,7 +423,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                                 ? 'text-red-500'
                                 : dayColor === 'blue'
                                 ? 'text-blue-500'
-                                : 'text-slate-700'
+                                : 'text-slate-700 dark:text-slate-200'
                             }`}>
                               {day.getDate()}
                             </span>
@@ -463,7 +463,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                                   <button
                                     onClick={(e) => { e.stopPropagation(); setPopoverDate(dateStr) }}
                                     title={`이 날의 일정 ${sortedTasks.length}개 모두 보기`}
-                                    className="text-[10px] text-indigo-600 hover:text-white hover:bg-indigo-500 bg-indigo-50 border border-indigo-200 rounded text-left px-1.5 py-0.5 mt-0.5 font-semibold transition-colors flex items-center gap-0.5"
+                                    className="text-[10px] text-indigo-600 dark:text-indigo-300 hover:text-white hover:bg-indigo-500 bg-indigo-50 dark:bg-indigo-500/15 border border-indigo-200 dark:border-indigo-500/30 rounded text-left px-1.5 py-0.5 mt-0.5 font-semibold transition-colors flex items-center gap-0.5"
                                   >
                                     <span>▸</span>
                                     <span>+{sortedTasks.length - GCAL_MAX_CHIPS}개 더</span>
@@ -475,7 +475,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
                             tasks.length > 0 && (
                               <div className="flex flex-col items-center gap-0.5 mt-0.5">
                                 <span className={`w-1.5 h-1.5 rounded-full ${allDone ? 'bg-green-400' : 'bg-amber-400'}`} />
-                                <span className="text-xs text-slate-400 leading-none">{tasks.length}</span>
+                                <span className="text-xs text-slate-400 dark:text-slate-500 leading-none">{tasks.length}</span>
                               </div>
                             )
                           )}
@@ -519,25 +519,25 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
           )}
 
           {/* 월간 통계 */}
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-6">
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-center gap-6">
             {totalTasks > 0 ? (
               <>
-                <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                  완료 <span className="font-semibold text-green-600">{totalDone}</span>개
+                <span className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  완료 <span className="font-semibold text-green-600 dark:text-green-300">{totalDone}</span>개
                 </span>
-                <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                  미완료 <span className="font-semibold text-amber-500">{totalRemaining}</span>개
+                <span className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  미완료 <span className="font-semibold text-amber-500 dark:text-amber-300">{totalRemaining}</span>개
                 </span>
-                <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                  완료율 <span className="font-semibold text-indigo-600">{completionRate}%</span>
+                <span className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  완료율 <span className="font-semibold text-indigo-600 dark:text-indigo-300">{completionRate}%</span>
                 </span>
               </>
             ) : (
               <>
-                <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                <span className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
                   <span className="w-2 h-2 rounded-full bg-green-400" /> 전체 완료
                 </span>
-                <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                <span className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
                   <span className="w-2 h-2 rounded-full bg-amber-400" /> 미완료 있음
                 </span>
               </>
@@ -551,7 +551,7 @@ export default function MonthView({ currentDate, onDateChange, onDateClick, onAd
 
 function MonthPoolTask({ task, weeks, onAssign, onToggle, onDelete }) {
   return (
-    <div className={`flex flex-col rounded-lg px-2 py-1.5 mb-0.5 group ${task.is_completed ? 'bg-slate-50' : 'bg-white'}`}>
+    <div className={`flex flex-col rounded-lg px-2 py-1.5 mb-0.5 group ${task.is_completed ? 'bg-slate-50 dark:bg-slate-700/40' : 'bg-white dark:bg-slate-800'}`}>
       {/* 첫째 줄: 체크 + 제목 + 삭제 */}
       <div className="flex items-center gap-1.5">
         <button
@@ -559,17 +559,17 @@ function MonthPoolTask({ task, weeks, onAssign, onToggle, onDelete }) {
           className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
             task.is_completed
               ? 'bg-green-500 border-green-500 text-white'
-              : 'border-slate-300 hover:border-violet-500'
+              : 'border-slate-300 dark:border-slate-600 hover:border-violet-500'
           }`}
         >
           {task.is_completed && <span className="text-[8px]">✓</span>}
         </button>
-        <span className={`flex-1 text-xs truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+        <span className={`flex-1 text-xs font-medium truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>
           {task.title}
         </span>
         <button
           onClick={() => onDelete(task.id)}
-          className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity"
+          className="opacity-0 group-hover:opacity-100 text-slate-300 dark:text-slate-500 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity"
         >
           ✕
         </button>
@@ -587,7 +587,7 @@ function MonthPoolTask({ task, weeks, onAssign, onToggle, onDelete }) {
               className={`text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap transition-colors ${
                 isActive
                   ? 'bg-violet-500 text-white'
-                  : 'text-slate-300 hover:bg-violet-100 hover:text-violet-700'
+                  : 'text-slate-300 dark:text-slate-500 hover:bg-violet-100 dark:hover:bg-violet-500/20 hover:text-violet-700 dark:hover:text-violet-300'
               }`}
             >
               {i + 1}주
@@ -607,26 +607,26 @@ function getDayIndex(date) {
 function MonthScheduledTask({ task, onToggle, onDelete }) {
   const isRepeat = task.parent_id || task.is_template
   return (
-    <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 group ${task.is_completed ? 'bg-slate-50' : 'bg-white'}`}>
+    <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 mb-0.5 group ${task.is_completed ? 'bg-slate-50 dark:bg-slate-700/40' : 'bg-white dark:bg-slate-800'}`}>
       <button
         onClick={() => onToggle(task.id)}
         className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
           task.is_completed
             ? 'bg-green-500 border-green-500 text-white'
-            : 'border-slate-300 hover:border-violet-500'
+            : 'border-slate-300 dark:border-slate-600 hover:border-violet-500'
         }`}
       >
         {task.is_completed && <span className="text-[8px]">✓</span>}
       </button>
-      <span className={`flex-1 text-xs truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+      <span className={`flex-1 text-xs font-medium truncate min-w-0 ${task.is_completed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>
         {task.title}
-        {isRepeat && <span className="ml-1 text-violet-400 text-[10px]">🔁</span>}
+        {isRepeat && <span className="ml-1 text-violet-400 dark:text-violet-300 text-[10px]">🔁</span>}
       </span>
       {onDelete && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(task) }}
           title="삭제"
-          className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity"
+          className="opacity-0 group-hover:opacity-100 text-slate-300 dark:text-slate-500 hover:text-red-400 text-[10px] flex-shrink-0 transition-opacity"
         >
           ✕
         </button>

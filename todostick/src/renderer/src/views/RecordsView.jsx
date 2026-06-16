@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { DEFAULT_CATEGORIES, getCategoryById, categoryStyle } from '../utils/categories'
+import MarkdownView from '../components/MarkdownView'
 
 export default function RecordsView() {
   const [tasks, setTasks] = useState([])
@@ -43,19 +44,19 @@ export default function RecordsView() {
   return (
     <div className="flex flex-col h-full">
       {/* 헤더 / 필터 */}
-      <div className="px-6 py-3 bg-white border-b border-slate-100 flex flex-col gap-2">
+      <div className="px-6 py-3 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <div className="flex-1 relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">🔍</span>
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="제목 또는 메모로 검색"
-              className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-400"
+              className="w-full pl-9 pr-3 py-1.5 border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder-slate-500 rounded-lg text-sm outline-none focus:border-indigo-400"
             />
           </div>
-          <span className="text-xs text-slate-400 flex-shrink-0">{tasks.length}개</span>
+          <span className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">{tasks.length}개</span>
         </div>
 
         {/* 카테고리 필터 */}
@@ -65,7 +66,7 @@ export default function RecordsView() {
             className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${
               categoryFilter === null
                 ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-slate-100 text-slate-600 border-transparent hover:bg-slate-200'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'
             }`}
           >
             전체
@@ -88,7 +89,7 @@ export default function RecordsView() {
       {/* 기록 목록 */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {loading ? (
-          <div className="flex items-center justify-center h-32 text-slate-400 text-sm">불러오는 중...</div>
+          <div className="flex items-center justify-center h-32 text-slate-400 dark:text-slate-500 text-sm">불러오는 중...</div>
         ) : sortedDates.length === 0 ? (
           <EmptyRecords search={search} />
         ) : (
@@ -111,9 +112,9 @@ function DateGroup({ date, tasks, onUpdated, categories }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-semibold text-slate-500">{label}</span>
-        <span className="text-xs text-slate-400">{tasks.length}개 완료</span>
-        <div className="flex-1 h-px bg-slate-100" />
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</span>
+        <span className="text-xs text-slate-400 dark:text-slate-500">{tasks.length}개 완료</span>
+        <div className="flex-1 h-px bg-slate-100 dark:bg-slate-700" />
       </div>
       <div className="flex flex-col gap-2">
         {tasks.map((task) => (
@@ -149,19 +150,19 @@ function RecordCard({ task, onUpdated, categories }) {
   const hasDetail = currentNote || task.memo
 
   return (
-    <div className="rounded-xl border bg-white p-3.5 transition-all hover:border-indigo-200 hover:shadow-sm border-slate-100">
+    <div className="rounded-xl border bg-white dark:bg-slate-800 p-3.5 transition-all hover:border-indigo-200 dark:hover:border-indigo-500/40 hover:shadow-sm border-slate-100 dark:border-slate-700">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 text-green-500 text-base flex-shrink-0">✓</span>
         <div
           className="flex-1 min-w-0 cursor-pointer"
           onClick={() => !editing && setExpanded((v) => !v)}
         >
-          <p className="text-sm font-medium text-slate-600 line-through">{task.title}</p>
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-300 line-through">{task.title}</p>
           {currentNote && !expanded && (
-            <p className="text-xs text-green-600 mt-0.5 truncate">{currentNote}</p>
+            <p className="text-xs text-green-600 dark:text-green-400 mt-0.5 truncate">{currentNote}</p>
           )}
           {!currentNote && task.memo && !expanded && (
-            <p className="text-xs text-slate-400 mt-0.5 truncate">{task.memo}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{task.memo}</p>
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -175,14 +176,14 @@ function RecordCard({ task, onUpdated, categories }) {
           )}
           <button
             onClick={(e) => { e.stopPropagation(); setExpanded(true); setEditing(true) }}
-            className="text-xs text-slate-300 hover:text-indigo-400 px-1.5 py-0.5 rounded transition-colors"
+            className="text-xs text-slate-300 dark:text-slate-500 hover:text-indigo-400 dark:hover:text-indigo-400 px-1.5 py-0.5 rounded transition-colors"
             title="완료 메모 편집"
           >
             ✎
           </button>
           {hasDetail && (
             <span
-              className="text-xs text-slate-300 cursor-pointer"
+              className="text-xs text-slate-300 dark:text-slate-500 cursor-pointer"
               onClick={() => setExpanded((v) => !v)}
             >
               {expanded ? '▲' : '▼'}
@@ -202,12 +203,12 @@ function RecordCard({ task, onUpdated, categories }) {
                 onKeyDown={handleKeyDown}
                 placeholder="완료 메모를 입력하세요"
                 rows={3}
-                className="w-full border border-indigo-300 rounded-lg px-3 py-2 text-xs outline-none resize-none focus:border-indigo-400 bg-green-50"
+                className="w-full border border-indigo-300 dark:border-slate-600 rounded-lg px-3 py-2 text-xs outline-none resize-none focus:border-indigo-400 bg-green-50 dark:bg-green-500/15 dark:text-slate-100 dark:placeholder-slate-500"
               />
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => { setEditing(false); setNoteValue(task.completion_note || '') }}
-                  className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded"
+                  className="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 px-2 py-1 rounded"
                 >
                   취소
                 </button>
@@ -223,25 +224,26 @@ function RecordCard({ task, onUpdated, categories }) {
           ) : (
             <>
               {currentNote && (
-                <p
-                  className="text-xs text-green-700 leading-relaxed whitespace-pre-wrap bg-green-50 rounded-lg px-3 py-2.5 border border-green-100 cursor-pointer hover:border-green-300"
+                <div
+                  className="text-xs text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-500/15 rounded-lg px-3 py-2.5 border border-green-100 dark:border-green-500/30 cursor-pointer hover:border-green-300 dark:hover:border-green-500/50"
                   onClick={() => setEditing(true)}
                 >
-                  ✅ {currentNote}
-                </p>
+                  <div className="mb-0.5">✅</div>
+                  <MarkdownView text={currentNote} />
+                </div>
               )}
               {!currentNote && (
                 <button
                   onClick={() => setEditing(true)}
-                  className="text-xs text-slate-400 hover:text-indigo-500 text-left px-3 py-2 border border-dashed border-slate-200 rounded-lg hover:border-indigo-300 transition-colors"
+                  className="text-xs text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 text-left px-3 py-2 border border-dashed border-slate-200 dark:border-slate-600 rounded-lg hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors"
                 >
                   + 완료 메모 추가
                 </button>
               )}
               {task.memo && (
-                <p className="text-xs text-slate-500 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
-                  {task.memo}
-                </p>
+                <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700/40 rounded-lg px-3 py-2.5 border border-slate-100 dark:border-slate-700">
+                  <MarkdownView text={task.memo} />
+                </div>
               )}
             </>
           )}
@@ -254,14 +256,14 @@ function RecordCard({ task, onUpdated, categories }) {
 function EmptyRecords({ search }) {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 py-16">
-      <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center text-3xl">
+      <div className="w-16 h-16 rounded-2xl bg-slate-50 dark:bg-slate-700/40 flex items-center justify-center text-3xl">
         {search ? '🔍' : '📖'}
       </div>
       <div className="text-center">
-        <p className="text-slate-600 font-medium">
+        <p className="text-slate-600 dark:text-slate-300 font-medium">
           {search ? '검색 결과가 없어요' : '완료된 할 일이 없어요'}
         </p>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">
           {search ? '다른 검색어를 입력해보세요' : '할 일을 완료하면 여기에 기록돼요'}
         </p>
       </div>

@@ -70,6 +70,7 @@ export default function SyncStatusBadge() {
   }, [])
 
   const dotColor = (() => {
+    if (status.devMode) return 'bg-slate-400'
     if (status.lastError) return 'bg-rose-500'
     if (status.running) return 'bg-blue-500 animate-pulse'
     if (status.queueLength > 0) return 'bg-amber-400'
@@ -77,6 +78,7 @@ export default function SyncStatusBadge() {
   })()
 
   const label = (() => {
+    if (status.devMode) return '[DEV] 로컬 전용'
     if (status.lastError) return '동기화 오류'
     if (status.running) return '동기화 중'
     if (status.queueLength > 0) return `대기 중 ${status.queueLength}건`
@@ -98,7 +100,7 @@ export default function SyncStatusBadge() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors"
+        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
         title={label}
         aria-label="동기화 상태"
       >
@@ -106,34 +108,45 @@ export default function SyncStatusBadge() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-72 bg-white border border-slate-200 rounded-lg shadow-lg z-50 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100">
+        <div className="absolute right-0 top-full mt-1 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700">
             <div className="flex items-center gap-2">
               <span className={`block w-2.5 h-2.5 rounded-full ${dotColor}`} />
-              <span className="text-sm font-semibold text-slate-800">{label}</span>
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</span>
             </div>
-            <div className="mt-1.5 text-xs text-slate-500">
-              마지막 동기화: {formatRelativeTime(status.lastSyncedAt)}
-            </div>
-            {status.queueLength > 0 && (
-              <div className="text-xs text-slate-500">
-                보낼 변경: {status.queueLength}건
+            {status.devMode ? (
+              <div className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                개발 빌드에서는 Supabase 동기화가 꺼져 있습니다.
+                <br />release 환경과의 데이터 혼선을 막기 위함.
               </div>
-            )}
-            {status.lastError && (
-              <div className="mt-1.5 text-xs text-rose-600 break-words">
-                {status.lastError}
-              </div>
+            ) : (
+              <>
+                <div className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  마지막 동기화: {formatRelativeTime(status.lastSyncedAt)}
+                </div>
+                {status.queueLength > 0 && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    보낼 변경: {status.queueLength}건
+                  </div>
+                )}
+                {status.lastError && (
+                  <div className="mt-1.5 text-xs text-rose-600 dark:text-rose-300 break-words">
+                    {status.lastError}
+                  </div>
+                )}
+              </>
             )}
           </div>
-          <button
-            type="button"
-            onClick={handleRunNow}
-            disabled={busy || status.running}
-            className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {busy || status.running ? '동기화 중…' : '지금 동기화'}
-          </button>
+          {!status.devMode && (
+            <button
+              type="button"
+              onClick={handleRunNow}
+              disabled={busy || status.running}
+              className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {busy || status.running ? '동기화 중…' : '지금 동기화'}
+            </button>
+          )}
         </div>
       )}
     </div>
