@@ -74,11 +74,11 @@ export function TaskChip({ task, categories, onClick, onContextMenu, cellDate, w
           onClick={onClick}
           onContextMenu={onContextMenu}
           title={fullTitle}
-          className="flex items-center gap-1 rounded px-1 py-0.5 text-left bg-yellow-100 hover:bg-yellow-200 transition-colors min-w-0 w-full"
+          className="flex items-center gap-1 rounded px-1 py-0.5 text-left bg-yellow-100 dark:bg-yellow-500/15 hover:bg-yellow-200 dark:hover:bg-yellow-500/25 transition-colors min-w-0 w-full"
         >
-          <span className="text-yellow-600 text-[10px] flex-shrink-0">★</span>
-          {hasTime && <span className="text-[10px] text-yellow-700 font-medium flex-shrink-0">{task.start_time}</span>}
-          <span className="text-[11px] font-medium text-yellow-900 truncate">{task.title}</span>
+          <span className="text-yellow-600 dark:text-yellow-300 text-[10px] flex-shrink-0">★</span>
+          {hasTime && <span className="text-[10px] text-yellow-700 dark:text-yellow-300 font-medium flex-shrink-0">{task.start_time}</span>}
+          <span className="text-[11px] font-medium text-yellow-900 dark:text-yellow-200 truncate">{task.title}</span>
         </button>
         <HoverTip>{fullTitle}</HoverTip>
       </div>
@@ -92,13 +92,13 @@ export function TaskChip({ task, categories, onClick, onContextMenu, cellDate, w
           onClick={onClick}
           onContextMenu={onContextMenu}
           title={fullTitle}
-          className={`flex items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-100 transition-colors min-w-0 w-full ${isCompleted ? 'opacity-50' : ''}`}
+          className={`flex items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors min-w-0 w-full ${isCompleted ? 'opacity-50' : ''}`}
         >
           <span className="w-0.5 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
-          <span className={`text-[10px] font-medium flex-shrink-0 ${isCompleted ? 'line-through text-slate-400' : 'text-slate-600'}`}>
+          <span className={`text-[10px] font-medium flex-shrink-0 ${isCompleted ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-600 dark:text-slate-300'}`}>
             {task.start_time}
           </span>
-          <span className={`text-[11px] font-medium truncate ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+          <span className={`text-[11px] font-medium truncate ${isCompleted ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>
             {task.title}
           </span>
         </button>
@@ -112,10 +112,10 @@ export function TaskChip({ task, categories, onClick, onContextMenu, cellDate, w
       <button
         onClick={onClick}
         title={fullTitle}
-        className={`flex items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-100 transition-colors min-w-0 w-full ${isCompleted ? 'opacity-50' : ''}`}
+        className={`flex items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors min-w-0 w-full ${isCompleted ? 'opacity-50' : ''}`}
       >
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-        <span className={`text-[11px] font-medium truncate ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+        <span className={`text-[11px] font-medium truncate ${isCompleted ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>
           {task.title}
         </span>
       </button>
@@ -131,12 +131,12 @@ export default function MorePopover({ date, tasks, categories, onClose, onEditTa
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-2xl w-80 max-h-[70vh] flex flex-col"
+        className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-80 max-h-[70vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-          <span className="text-sm font-bold text-slate-800">{label}</span>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-base leading-none">✕</button>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
+          <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{label}</span>
+          <button onClick={onClose} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-200 text-base leading-none">✕</button>
         </div>
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {sorted.map((task) => (
@@ -152,7 +152,7 @@ export default function MorePopover({ date, tasks, categories, onClose, onEditTa
                 <button
                   onClick={() => onDeleteTask(task)}
                   title="삭제"
-                  className="opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-red-400 text-xs flex-shrink-0 transition-opacity px-1"
+                  className="opacity-0 group-hover/row:opacity-100 text-slate-300 dark:text-slate-500 hover:text-red-400 dark:hover:text-red-400 text-xs flex-shrink-0 transition-opacity px-1"
                 >
                   ✕
                 </button>
@@ -163,7 +163,7 @@ export default function MorePopover({ date, tasks, categories, onClose, onEditTa
         {onAddTask && (
           <button
             onClick={() => { onAddTask(date); onClose() }}
-            className="px-4 py-2 border-t border-slate-100 text-xs text-indigo-600 hover:bg-indigo-50 transition-colors text-center"
+            className="px-4 py-2 border-t border-slate-100 dark:border-slate-700 text-xs text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 transition-colors text-center"
           >
             + 할일 추가
           </button>

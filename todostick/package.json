@@ -13,6 +13,8 @@
     "test:watch": "vitest",
     "gen-icon": "node scripts/generate-icon.mjs",
     "package": "npm run build && electron-builder",
+    "release": "npm run build && electron-builder --publish always",
+    "prerelease": "electron-builder install-app-deps",
     "prepackage": "electron-builder install-app-deps",
     "rebuild:node": "npm rebuild better-sqlite3",
     "rebuild:electron": "electron-builder install-app-deps"
@@ -27,6 +29,7 @@
     "@tiptap/starter-kit": "^2.27.2",
     "better-sqlite3": "^11.10.0",
     "dotenv": "^16.6.1",
+    "electron-updater": "^6.8.9",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tiptap-markdown": "^0.9.0",
@@ -53,6 +56,13 @@
       "output": "release",
       "buildResources": "resources"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "yogain416",
+        "repo": "Orbit"
+      }
+    ],
     "files": [
       "out/**/*",
       "resources/**/*"

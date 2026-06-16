@@ -97,5 +97,12 @@ contextBridge.exposeInMainWorld('api', {
   shell: {
     // 마크다운 메모 안의 링크 클릭 시 외부 브라우저로 열기 — http(s)만 허용 (main에서 한 번 더 가드)
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
+  },
+  updater: {
+    getState: () => ipcRenderer.invoke('updater:getState'),
+    check: () => ipcRenderer.invoke('updater:check'),
+    quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),
+    onStatus: (cb) => ipcRenderer.on('updater:status', cb),
+    offStatus: (cb) => ipcRenderer.removeListener('updater:status', cb)
   }
 })

@@ -1,6 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./src/renderer/**/*.{js,jsx,html}'],
+  // 'class' 전략 — <html>에 .dark 토글로 다크모드 on/off (utils/theme.js가 제어).
+  darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {

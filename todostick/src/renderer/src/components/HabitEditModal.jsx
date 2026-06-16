@@ -55,18 +55,18 @@ export default function HabitEditModal({ habit, onClose, onSaved, allowGoal = tr
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col"
+        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h3 className="font-bold text-gray-800">{isEdit ? '🌱 습관 편집' : '🌱 새 습관'}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-700">
+          <h3 className="font-bold text-gray-800 dark:text-slate-100">{isEdit ? '🌱 습관 편집' : '🌱 새 습관'}</h3>
+          <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-200 text-lg">✕</button>
         </div>
 
         <div className="px-6 py-4 flex flex-col gap-4 overflow-y-auto flex-1">
           {/* 이름 */}
           <div>
-            <label className="text-xs font-medium text-gray-500">이름</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">이름</label>
             <input
               autoFocus
               value={title}
@@ -74,13 +74,13 @@ export default function HabitEditModal({ habit, onClose, onSaved, allowGoal = tr
               onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
               placeholder="예: 물 8잔, 스트레칭, 독서 30분"
               maxLength={40}
-              className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+              className="mt-1 w-full border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder-slate-500 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
             />
           </div>
 
           {/* 색상 */}
           <div>
-            <label className="text-xs font-medium text-gray-500">색상</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">색상</label>
             <div className="mt-2 flex gap-2">
               {COLORS.map((c) => (
                 <button
@@ -95,7 +95,7 @@ export default function HabitEditModal({ habit, onClose, onSaved, allowGoal = tr
 
           {/* 반복 방식 */}
           <div>
-            <label className="text-xs font-medium text-gray-500">반복 방식</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">반복 방식</label>
             <div className={`mt-2 grid gap-1.5 ${allowGoal ? 'grid-cols-4' : 'grid-cols-3'}`}>
               {[['daily', '매일/요일'], ['weekly', '매주'], ['monthly', '매월'], ...(allowGoal ? [['goal', '주 N회']] : [])].map(([key, label]) => (
                 <button
@@ -103,7 +103,7 @@ export default function HabitEditModal({ habit, onClose, onSaved, allowGoal = tr
                   type="button"
                   onClick={() => setMode(key)}
                   className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    mode === key ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                    mode === key ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300' : 'border-gray-200 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'
                   }`}
                 >
                   {label}
@@ -115,7 +115,7 @@ export default function HabitEditModal({ habit, onClose, onSaved, allowGoal = tr
           {/* 요일 선택 (매일/요일 모드) */}
           {mode === 'daily' && (
             <div>
-              <label className="text-xs font-medium text-gray-500">요일 (선택 안 하면 매일)</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400">요일 (선택 안 하면 매일)</label>
               <div className="mt-2 flex gap-1.5">
                 {WEEKDAYS.map((d) => (
                   <button
@@ -123,7 +123,7 @@ export default function HabitEditModal({ habit, onClose, onSaved, allowGoal = tr
                     type="button"
                     onClick={() => toggleDay(d.v)}
                     className={`w-9 h-9 rounded-full text-xs font-medium transition-colors ${
-                      days.includes(d.v) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      days.includes(d.v) ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-600'
                     }`}
                   >
                     {d.label}
@@ -136,7 +136,7 @@ export default function HabitEditModal({ habit, onClose, onSaved, allowGoal = tr
           {/* 주 N회 목표 */}
           {mode === 'goal' && (
             <div>
-              <label className="text-xs font-medium text-gray-500">주간 목표 횟수</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400">주간 목표 횟수</label>
               <div className="mt-2 flex items-center gap-3">
                 <input
                   type="number"
@@ -144,17 +144,17 @@ export default function HabitEditModal({ habit, onClose, onSaved, allowGoal = tr
                   max={7}
                   value={goal}
                   onChange={(e) => setGoal(e.target.value)}
-                  className="w-20 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                  className="w-20 border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
                 />
-                <span className="text-sm text-gray-500">회 / 주</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">회 / 주</span>
               </div>
-              <p className="text-xs text-gray-400 mt-2">고정 요일 없이 일주일에 정한 횟수만 채우면 되는 습관(예: 주 3회 운동).</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-2">고정 요일 없이 일주일에 정한 횟수만 채우면 되는 습관(예: 주 3회 운동).</p>
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-slate-700">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
             취소
           </button>
           <button

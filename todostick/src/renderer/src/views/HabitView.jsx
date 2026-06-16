@@ -7,11 +7,11 @@ const DAYS_IN_WEEK = 7
 const TOTAL_DAYS = WEEKS * DAYS_IN_WEEK
 
 const STATUS_STYLE = {
-  off:    'bg-slate-100',
-  skip:   'bg-slate-200',
-  miss:   'bg-rose-100',
+  off:    'bg-slate-100 dark:bg-slate-700',
+  skip:   'bg-slate-200 dark:bg-slate-600',
+  miss:   'bg-rose-100 dark:bg-rose-500/20',
   today:  'bg-yellow-200 ring-1 ring-yellow-400',
-  future: 'bg-slate-50',
+  future: 'bg-slate-50 dark:bg-slate-700/40',
   done:   'bg-emerald-400',
 }
 
@@ -164,43 +164,43 @@ function HabitCard({ h, todayStr, onToggle, onSkip, onSetPaused, onDelete, onEdi
   return (
     <div
       {...dragHandlers}
-      className={`bg-white rounded-xl border shadow-sm p-4 transition-colors ${paused ? 'border-slate-200 opacity-70' : 'border-slate-100'} ${dragging ? 'ring-2 ring-indigo-300' : ''}`}
+      className={`bg-white dark:bg-slate-800 rounded-xl border shadow-sm p-4 transition-colors ${paused ? 'border-slate-200 dark:border-slate-600 opacity-70' : 'border-slate-100 dark:border-slate-700'} ${dragging ? 'ring-2 ring-indigo-300' : ''}`}
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="cursor-grab text-slate-300 hover:text-slate-400 select-none flex-shrink-0" title="드래그로 순서 변경">⋮⋮</span>
+          <span className="cursor-grab text-slate-300 dark:text-slate-500 hover:text-slate-400 dark:hover:text-slate-200 select-none flex-shrink-0" title="드래그로 순서 변경">⋮⋮</span>
           {accent && <span className={`w-2 h-2 rounded-full flex-shrink-0 ${accent.dot}`} />}
-          <h3 className={`font-bold truncate ${paused ? 'text-slate-400' : 'text-slate-800'}`}>{h.template.title}</h3>
+          <h3 className={`font-bold truncate ${paused ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>{h.template.title}</h3>
           {isGoal && (
-            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-50 text-indigo-500 rounded border border-indigo-100">
+            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-50 dark:bg-indigo-500/15 text-indigo-500 dark:text-indigo-300 rounded border border-indigo-100 dark:border-slate-700">
               주 {h.template.weekly_goal}회
             </span>
           )}
           {paused && (
-            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-500 rounded border border-slate-200">
+            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded border border-slate-200 dark:border-slate-600">
               ⏸ 중지됨
             </span>
           )}
         </div>
         <div className="flex items-center gap-3 text-xs flex-shrink-0">
           {isGoal ? (
-            <span className="text-slate-500">
-              🎯 <span className="font-bold text-indigo-600">{h.weekProgress?.done || 0}/{h.weekProgress?.target}</span>
-              <span className="text-slate-400 ml-1">이번주</span>
+            <span className="text-slate-500 dark:text-slate-400">
+              🎯 <span className="font-bold text-indigo-600 dark:text-indigo-300">{h.weekProgress?.done || 0}/{h.weekProgress?.target}</span>
+              <span className="text-slate-400 dark:text-slate-500 ml-1">이번주</span>
             </span>
           ) : (
             <>
-              <span className="text-slate-500">
-                🔥 <span className="font-bold text-orange-600">{stats.current}</span>
-                <span className="text-slate-400 ml-1">현재</span>
+              <span className="text-slate-500 dark:text-slate-400">
+                🔥 <span className="font-bold text-orange-600 dark:text-orange-300">{stats.current}</span>
+                <span className="text-slate-400 dark:text-slate-500 ml-1">현재</span>
               </span>
-              <span className="text-slate-500">
-                🏆 <span className="font-bold text-indigo-600">{stats.longest}</span>
-                <span className="text-slate-400 ml-1">최장</span>
+              <span className="text-slate-500 dark:text-slate-400">
+                🏆 <span className="font-bold text-indigo-600 dark:text-indigo-300">{stats.longest}</span>
+                <span className="text-slate-400 dark:text-slate-500 ml-1">최장</span>
               </span>
-              <span className="text-slate-500">
-                📅 <span className="font-bold text-emerald-600">{stats.monthRate}%</span>
-                <span className="text-slate-400 ml-1">({stats.monthDone}/{stats.monthExpected})</span>
+              <span className="text-slate-500 dark:text-slate-400">
+                📅 <span className="font-bold text-emerald-600 dark:text-emerald-300">{stats.monthRate}%</span>
+                <span className="text-slate-400 dark:text-slate-500 ml-1">({stats.monthDone}/{stats.monthExpected})</span>
               </span>
             </>
           )}
@@ -208,7 +208,7 @@ function HabitCard({ h, todayStr, onToggle, onSkip, onSetPaused, onDelete, onEdi
           {/* 오늘 한 줄 회고 */}
           <button
             onClick={() => onNote(h)}
-            className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${todayDone ? 'text-indigo-400 hover:bg-indigo-50' : 'text-slate-300 hover:bg-slate-100'}`}
+            className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${todayDone ? 'text-indigo-400 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/15' : 'text-slate-300 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
             title="오늘 한 줄 회고"
           >
             📝
@@ -218,17 +218,17 @@ function HabitCard({ h, todayStr, onToggle, onSkip, onSetPaused, onDelete, onEdi
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
               title="습관 관리"
             >
               ⋯
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-7 z-10 w-36 bg-white rounded-lg border border-slate-200 shadow-lg py-1 text-left">
-                <button onClick={() => { setMenuOpen(false); onEdit(h.template) }} className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">✏️ 편집</button>
-                <button onClick={() => { setMenuOpen(false); setShowStats((v) => !v) }} className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">📊 요일별 통계</button>
-                <button onClick={() => { setMenuOpen(false); onSetPaused(h.template.id, !paused) }} className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">{paused ? '▶ 재개' : '⏸ 중지'}</button>
-                <button onClick={() => { setMenuOpen(false); onDelete(h.template.id, h.template.title) }} className="w-full px-3 py-2 text-xs text-rose-600 hover:bg-rose-50">🗑 삭제</button>
+              <div className="absolute right-0 top-7 z-10 w-36 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-lg py-1 text-left">
+                <button onClick={() => { setMenuOpen(false); onEdit(h.template) }} className="w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">✏️ 편집</button>
+                <button onClick={() => { setMenuOpen(false); setShowStats((v) => !v) }} className="w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">📊 요일별 통계</button>
+                <button onClick={() => { setMenuOpen(false); onSetPaused(h.template.id, !paused) }} className="w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">{paused ? '▶ 재개' : '⏸ 중지'}</button>
+                <button onClick={() => { setMenuOpen(false); onDelete(h.template.id, h.template.title) }} className="w-full px-3 py-2 text-xs text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/15">🗑 삭제</button>
               </div>
             )}
           </div>
@@ -252,20 +252,20 @@ function HabitCard({ h, todayStr, onToggle, onSkip, onSetPaused, onDelete, onEdi
 function WeekdayStats({ days }) {
   const rates = useMemo(() => weekdayRates(days), [days])
   return (
-    <div className="mt-3 pt-3 border-t border-slate-100">
-      <p className="text-[11px] font-semibold text-slate-400 mb-2">요일별 성공률 (최근 12주)</p>
+    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+      <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 mb-2">요일별 성공률 (최근 12주)</p>
       <div className="flex items-end gap-2">
         {rates.map((r) => (
           <div key={r.label} className="flex flex-col items-center gap-1 flex-1">
-            <div className="w-full h-16 bg-slate-50 rounded relative flex items-end overflow-hidden">
+            <div className="w-full h-16 bg-slate-50 dark:bg-slate-700/40 rounded relative flex items-end overflow-hidden">
               <div
                 className="w-full bg-emerald-300 rounded-t transition-all"
                 style={{ height: `${r.rate ?? 0}%` }}
                 title={r.expected ? `${r.done}/${r.expected}` : '데이터 없음'}
               />
             </div>
-            <span className="text-[10px] text-slate-500">{r.label}</span>
-            <span className="text-[10px] font-bold text-slate-600">{r.rate == null ? '-' : `${r.rate}%`}</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">{r.label}</span>
+            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">{r.rate == null ? '-' : `${r.rate}%`}</span>
           </div>
         ))}
       </div>
@@ -321,16 +321,16 @@ function RecurringRow({ t, todayStr, onEdit, onSetPaused, onDelete, onConvert })
   }, [menuOpen])
 
   return (
-    <div className={`bg-white rounded-xl border shadow-sm px-4 py-3 flex items-center gap-3 ${t.paused ? 'border-slate-200 opacity-70' : 'border-slate-100'}`}>
-      {accent ? <span className={`w-2 h-2 rounded-full flex-shrink-0 ${accent.dot}`} /> : <span className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-300" />}
+    <div className={`bg-white dark:bg-slate-800 rounded-xl border shadow-sm px-4 py-3 flex items-center gap-3 ${t.paused ? 'border-slate-200 dark:border-slate-600 opacity-70' : 'border-slate-100 dark:border-slate-700'}`}>
+      {accent ? <span className={`w-2 h-2 rounded-full flex-shrink-0 ${accent.dot}`} /> : <span className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-300 dark:bg-slate-600" />}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <h3 className={`font-semibold truncate ${t.paused ? 'text-slate-400' : 'text-slate-800'}`}>{t.title}</h3>
+          <h3 className={`font-semibold truncate ${t.paused ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>{t.title}</h3>
           {t.paused && (
-            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-500 rounded border border-slate-200">⏸ 중지됨</span>
+            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded border border-slate-200 dark:border-slate-600">⏸ 중지됨</span>
           )}
         </div>
-        <p className="text-xs text-slate-400 mt-0.5">
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
           {formatRepeat(t)} · 다음 {formatNextDate(t.next_date, todayStr)}
           {t.remind_at && ` · ⏰ ${t.remind_at}`}
           {t.done_count > 0 && ` · ✓ ${t.done_count}회`}
@@ -339,17 +339,17 @@ function RecurringRow({ t, todayStr, onEdit, onSetPaused, onDelete, onConvert })
       <div className="relative flex-shrink-0" ref={menuRef}>
         <button
           onClick={() => setMenuOpen((v) => !v)}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
           title="반복 일정 관리"
         >
           ⋯
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-8 z-10 w-40 bg-white rounded-lg border border-slate-200 shadow-lg py-1 text-left">
-            <button onClick={() => { setMenuOpen(false); onEdit(t) }} className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">✏️ 편집</button>
-            <button onClick={() => { setMenuOpen(false); onConvert(t) }} className="w-full px-3 py-2 text-xs text-emerald-600 hover:bg-emerald-50">🌱 습관으로 전환</button>
-            <button onClick={() => { setMenuOpen(false); onSetPaused(t.id, !t.paused) }} className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">{t.paused ? '▶ 재개' : '⏸ 중지'}</button>
-            <button onClick={() => { setMenuOpen(false); onDelete(t.id, t.title) }} className="w-full px-3 py-2 text-xs text-rose-600 hover:bg-rose-50">🗑 시리즈 삭제</button>
+          <div className="absolute right-0 top-8 z-10 w-40 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-lg py-1 text-left">
+            <button onClick={() => { setMenuOpen(false); onEdit(t) }} className="w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">✏️ 편집</button>
+            <button onClick={() => { setMenuOpen(false); onConvert(t) }} className="w-full px-3 py-2 text-xs text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15">🌱 습관으로 전환</button>
+            <button onClick={() => { setMenuOpen(false); onSetPaused(t.id, !t.paused) }} className="w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">{t.paused ? '▶ 재개' : '⏸ 중지'}</button>
+            <button onClick={() => { setMenuOpen(false); onDelete(t.id, t.title) }} className="w-full px-3 py-2 text-xs text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/15">🗑 시리즈 삭제</button>
           </div>
         )}
       </div>
@@ -469,9 +469,9 @@ export default function HabitView() {
       <div className="h-full overflow-y-auto">
         <div className="max-w-3xl mx-auto px-6 py-12 flex flex-col items-center gap-3 text-center">
           <span className="text-5xl">🌱</span>
-          <h2 className="text-lg font-extrabold text-slate-700">아직 추적 중인 습관이 없어요</h2>
-          <p className="text-sm text-slate-500 max-w-md leading-relaxed">
-            아래 버튼으로 습관을 추가하거나, 반복 일정을 추가할 때 <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">🌱 습관으로 추적</span> 옵션을 켜보세요.
+          <h2 className="text-lg font-extrabold text-slate-700 dark:text-slate-200">아직 추적 중인 습관이 없어요</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md leading-relaxed">
+            아래 버튼으로 습관을 추가하거나, 반복 일정을 추가할 때 <span className="bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-medium">🌱 습관으로 추적</span> 옵션을 켜보세요.
           </p>
           <button
             onClick={openCreate}
@@ -498,8 +498,8 @@ export default function HabitView() {
         {/* 헤더 */}
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-extrabold text-slate-800 mb-0.5">🌱 습관 트래커</h2>
-            <p className="text-xs text-slate-400">최근 12주 · 습관 {active.length}개{paused.length > 0 && ` · 중지 ${paused.length}`} · 반복 일정 {nonHabitRecurring.length}개</p>
+            <h2 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 mb-0.5">🌱 습관 트래커</h2>
+            <p className="text-xs text-slate-400 dark:text-slate-500">최근 12주 · 습관 {active.length}개{paused.length > 0 && ` · 중지 ${paused.length}`} · 반복 일정 {nonHabitRecurring.length}개</p>
           </div>
           {seg !== 'recurring' && (
             <button
@@ -512,13 +512,13 @@ export default function HabitView() {
         </div>
 
         {/* 세그먼트 — 습관 / 반복 일정 / 전체 */}
-        <div className="flex rounded-lg overflow-hidden border border-slate-200 self-start">
+        <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 self-start">
           {[['habit', '습관'], ['recurring', '반복 일정'], ['all', '전체']].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setSeg(key)}
               className={`px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                seg === key ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                seg === key ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
               {label}
@@ -528,14 +528,14 @@ export default function HabitView() {
 
         {/* 오늘 미완 빠른 체크 */}
         {showHabits && todayMissing.length > 0 && (
-          <section className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-            <p className="text-xs font-semibold text-yellow-800 mb-2">⚡ 오늘 아직 안 한 습관 ({todayMissing.length})</p>
+          <section className="bg-yellow-50 dark:bg-yellow-500/15 border border-yellow-200 dark:border-yellow-500/30 rounded-xl p-4">
+            <p className="text-xs font-semibold text-yellow-800 dark:text-yellow-300 mb-2">⚡ 오늘 아직 안 한 습관 ({todayMissing.length})</p>
             <div className="flex flex-wrap gap-2">
               {todayMissing.map((h) => (
                 <button
                   key={h.template.id}
                   onClick={() => handleToggle(h.template.id, todayStr)}
-                  className="px-3 py-1.5 bg-white border border-yellow-300 rounded-full text-xs font-medium text-slate-700 hover:bg-yellow-100 hover:border-yellow-400 transition-colors"
+                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-yellow-300 dark:border-yellow-500/30 rounded-full text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-yellow-100 dark:hover:bg-yellow-500/20 hover:border-yellow-400 transition-colors"
                 >
                   ✓ {h.template.title}
                 </button>
@@ -548,7 +548,7 @@ export default function HabitView() {
         {showHabits && (
           <>
             {active.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-6">추적 중인 습관이 없어요. <button onClick={openCreate} className="text-emerald-600 font-medium hover:underline">습관 추가</button></p>
+              <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-6">추적 중인 습관이 없어요. <button onClick={openCreate} className="text-emerald-600 dark:text-emerald-300 font-medium hover:underline">습관 추가</button></p>
             )}
             <div className="flex flex-col gap-3">
               {active.map((h, idx) => (
@@ -573,7 +573,7 @@ export default function HabitView() {
               <div className="flex flex-col gap-3">
                 <button
                   onClick={() => setShowPaused((v) => !v)}
-                  className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1 self-start"
+                  className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex items-center gap-1 self-start"
                 >
                   {showPaused ? '▾' : '▸'} 중지된 습관 {paused.length}개
                 </button>
@@ -596,17 +596,17 @@ export default function HabitView() {
             )}
 
             {/* 범례 */}
-            <div className="flex items-center gap-3 text-xs text-slate-400 px-1 flex-wrap">
+            <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500 px-1 flex-wrap">
               <span>적게</span>
-              <div className="w-3 h-3 rounded-[3px] bg-slate-100" />
-              <div className="w-3 h-3 rounded-[3px] bg-rose-100" />
+              <div className="w-3 h-3 rounded-[3px] bg-slate-100 dark:bg-slate-700" />
+              <div className="w-3 h-3 rounded-[3px] bg-rose-100 dark:bg-rose-500/20" />
               <div className="w-3 h-3 rounded-[3px] bg-emerald-400" />
               <span>많이</span>
               <span className="ml-2">·</span>
               <div className="w-3 h-3 rounded-[3px] bg-yellow-200 ring-1 ring-yellow-400" />
               <span>오늘</span>
               <span className="ml-2">·</span>
-              <div className="w-3 h-3 rounded-[3px] bg-slate-200" />
+              <div className="w-3 h-3 rounded-[3px] bg-slate-200 dark:bg-slate-600" />
               <span>휴식(우클릭)</span>
             </div>
           </>
@@ -616,12 +616,12 @@ export default function HabitView() {
         {showRecurring && (
           <div className="flex flex-col gap-3">
             {seg === 'all' && nonHabitRecurring.length > 0 && (
-              <h3 className="text-sm font-bold text-slate-600 mt-2">🔁 일반 반복 일정</h3>
+              <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300 mt-2">🔁 일반 반복 일정</h3>
             )}
             {nonHabitRecurring.length === 0 ? (
               <div className="text-center py-8 px-4">
-                <p className="text-sm text-slate-400">습관이 아닌 반복 일정이 없어요.</p>
-                <p className="text-xs text-slate-400 mt-1">할일 추가 시 <span className="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">반복</span> 옵션을 켜면 여기서 한눈에 관리할 수 있어요.</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500">습관이 아닌 반복 일정이 없어요.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">할일 추가 시 <span className="bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded font-medium">반복</span> 옵션을 켜면 여기서 한눈에 관리할 수 있어요.</p>
               </div>
             ) : (
               nonHabitRecurring.map((t) => (

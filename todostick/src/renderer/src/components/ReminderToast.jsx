@@ -38,7 +38,7 @@ function Toast({ id, title, remind_at, onDismiss }) {
 
   return (
     <div
-      className="flex items-start gap-3 bg-white rounded-2xl shadow-2xl border border-indigo-100 px-4 py-3.5 w-80 cursor-pointer"
+      className="flex items-start gap-3 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-indigo-100 dark:border-slate-700 px-4 py-3.5 w-80 cursor-pointer"
       style={{
         transform: visible ? 'translateY(0)' : 'translateY(120%)',
         opacity: visible ? 1 : 0,
@@ -48,9 +48,9 @@ function Toast({ id, title, remind_at, onDismiss }) {
     >
       <span className="text-2xl flex-shrink-0 mt-0.5">🔔</span>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-indigo-500 mb-0.5">알림 · {remind_at}</p>
-        <p className="text-sm font-medium text-slate-800 truncate">{title}</p>
-        <p className="text-xs text-slate-400 mt-1">클릭하여 닫기</p>
+        <p className="text-xs font-semibold text-indigo-500 dark:text-indigo-300 mb-0.5">알림 · {remind_at}</p>
+        <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{title}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">클릭하여 닫기</p>
       </div>
     </div>
   )

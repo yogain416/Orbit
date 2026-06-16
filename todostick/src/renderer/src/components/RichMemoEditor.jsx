@@ -18,7 +18,7 @@ function ToolbarButton({ active, onClick, title, children }) {
       onClick={onClick}
       title={title}
       className={`min-w-[20px] h-5 px-1 rounded text-[11px] font-semibold flex items-center justify-center transition-colors ${
-        active ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-100'
+        active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700'
       }`}
     >
       {children}
@@ -28,7 +28,7 @@ function ToolbarButton({ active, onClick, title, children }) {
 
 function Toolbar({ editor }) {
   if (!editor) return null
-  const sep = <span className="w-px h-3 bg-gray-200 mx-0.5" />
+  const sep = <span className="w-px h-3 bg-gray-200 dark:bg-slate-600 mx-0.5" />
   const promptLink = () => {
     const prev = editor.getAttributes('link').href
     const url = window.prompt('링크 URL', prev || 'https://')
@@ -40,7 +40,7 @@ function Toolbar({ editor }) {
     }
   }
   return (
-    <div className="flex items-center gap-0.5 flex-wrap border-b border-gray-200 pb-1 mb-1.5 sticky top-0 bg-inherit z-10">
+    <div className="flex items-center gap-0.5 flex-wrap border-b border-gray-200 dark:border-slate-700 pb-1 mb-1.5 sticky top-0 bg-inherit z-10">
       <ToolbarButton active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="굵게 (Ctrl+B)"><strong>B</strong></ToolbarButton>
       <ToolbarButton active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="기울임 (Ctrl+I)"><em>I</em></ToolbarButton>
       <ToolbarButton active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="취소선"><s>S</s></ToolbarButton>
@@ -127,10 +127,10 @@ export default function RichMemoEditor({ value, onChange, onBlur, tone = 'indigo
   if (!editor) return null
 
   const borderClass = tone === 'green'
-    ? 'border-green-200 focus-within:border-green-400 bg-green-50'
+    ? 'border-green-200 focus-within:border-green-400 bg-green-50 dark:bg-emerald-500/10'
     : tone === 'yellow'
-      ? 'border-yellow-200 focus-within:border-yellow-400 bg-yellow-50'
-      : 'border-gray-200 focus-within:border-indigo-400 bg-white'
+      ? 'border-yellow-200 focus-within:border-yellow-400 bg-yellow-50 dark:bg-slate-800'
+      : 'border-gray-200 dark:border-slate-600 focus-within:border-indigo-400 bg-white dark:bg-slate-800'
 
   // containerClassName이 주어지면 wrapper 스타일을 완전히 override — 호출자가 flex-1 등 레이아웃 결정
   const wrapperClass = containerClassName

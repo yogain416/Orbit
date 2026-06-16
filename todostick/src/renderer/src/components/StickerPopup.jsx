@@ -263,24 +263,24 @@ export default function StickerPopup() {
   const displayTasks = showCompleted ? tasks : tasks.filter((t) => !t.is_completed)
 
   return (
-    <div className={`flex flex-col h-screen select-none overflow-hidden rounded-xl ${collapsed ? 'bg-transparent' : 'bg-yellow-50'}`}>
+    <div className={`flex flex-col h-screen select-none overflow-hidden rounded-xl ${collapsed ? 'bg-transparent' : 'bg-yellow-50 dark:bg-slate-800'}`}>
       {/* 헤더 (드래그 영역) */}
       <div
         data-drag
         style={{ WebkitAppRegion: 'drag' }}
-        className={`flex items-center justify-between px-3 py-2 bg-yellow-400 cursor-grab flex-shrink-0 ${collapsed ? 'rounded-xl' : 'rounded-t-xl'}`}
+        className={`flex items-center justify-between px-3 py-2 bg-yellow-400 dark:bg-amber-700 cursor-grab flex-shrink-0 ${collapsed ? 'rounded-xl' : 'rounded-t-xl'}`}
       >
         <div className="flex items-center gap-1.5">
           <span className="text-sm">📌</span>
-          <span className="text-xs font-bold text-yellow-900">{TAB_TITLES[activeTab]}</span>
+          <span className="text-xs font-bold text-yellow-900 dark:text-amber-50">{TAB_TITLES[activeTab]}</span>
           {activeTab === 'today' && total > 0 && (
-            <span className="text-xs text-yellow-800 font-medium">{completed}/{total}</span>
+            <span className="text-xs text-yellow-800 dark:text-amber-100 font-medium">{completed}/{total}</span>
           )}
         </div>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
           <button
             onClick={handlePlusClick}
-            className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 font-bold"
+            className="text-yellow-800 dark:text-amber-100 hover:text-yellow-900 dark:hover:text-amber-50 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 dark:hover:bg-amber-600 font-bold"
             title="할일 추가"
           >
             +
@@ -288,7 +288,7 @@ export default function StickerPopup() {
           {!collapsed && activeTab === 'today' && total > 0 && (
             <button
               onClick={() => setShowCompleted((v) => !v)}
-              className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
+              className="text-yellow-800 dark:text-amber-100 hover:text-yellow-900 dark:hover:text-amber-50 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 dark:hover:bg-amber-600"
               title={showCompleted ? '완료 숨기기' : '완료 보이기'}
             >
               {showCompleted ? '👁' : '🙈'}
@@ -296,21 +296,21 @@ export default function StickerPopup() {
           )}
           <button
             onClick={toggleCollapse}
-            className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
+            className="text-yellow-800 dark:text-amber-100 hover:text-yellow-900 dark:hover:text-amber-50 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 dark:hover:bg-amber-600"
             title={collapsed ? '펼치기' : '접기'}
           >
             {collapsed ? '▼' : '▲'}
           </button>
           <button
             onClick={() => window.api.window.openMain()}
-            className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
+            className="text-yellow-800 dark:text-amber-100 hover:text-yellow-900 dark:hover:text-amber-50 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 dark:hover:bg-amber-600"
             title="메인 창 열기"
           >
             ↗
           </button>
           <button
             onClick={() => window.api.window.close()}
-            className="text-yellow-800 hover:text-yellow-900 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300"
+            className="text-yellow-800 dark:text-amber-100 hover:text-yellow-900 dark:hover:text-amber-50 text-xs px-1.5 py-0.5 rounded hover:bg-yellow-300 dark:hover:bg-amber-600"
             title="닫기 (트레이 우클릭으로 다시 열기)"
           >
             ✕
@@ -320,15 +320,15 @@ export default function StickerPopup() {
 
       {/* 탭 바 */}
       {!collapsed && (
-        <div className="flex bg-yellow-300 flex-shrink-0">
+        <div className="flex bg-yellow-300 dark:bg-slate-700 flex-shrink-0">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
               className={`flex-1 text-xs py-1 font-medium transition-colors ${
                 activeTab === tab.id
-                  ? 'bg-yellow-50 text-yellow-900'
-                  : 'text-yellow-800 hover:bg-yellow-200'
+                  ? 'bg-yellow-50 text-yellow-900 dark:bg-slate-800 dark:text-amber-200'
+                  : 'text-yellow-800 hover:bg-yellow-200 dark:text-slate-400 dark:hover:bg-slate-600'
               }`}
             >
               {tab.label}
@@ -339,7 +339,7 @@ export default function StickerPopup() {
 
       {/* 빠른 추가 입력 */}
       {!collapsed && showQuickAdd && (
-        <div className="bg-yellow-100 px-2 py-1.5 flex gap-1.5 flex-shrink-0">
+        <div className="bg-yellow-100 dark:bg-slate-700 px-2 py-1.5 flex gap-1.5 flex-shrink-0">
           <input
             autoFocus
             type="text"
@@ -347,7 +347,7 @@ export default function StickerPopup() {
             onChange={(e) => setQuickTitle(e.target.value)}
             onKeyDown={handleQuickKeyDown}
             placeholder="할 일 입력 후 Enter"
-            className="flex-1 text-xs border border-yellow-300 rounded px-2 py-1 bg-white outline-none focus:border-yellow-500"
+            className="flex-1 text-xs border border-yellow-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-yellow-500"
           />
           <button
             onClick={handleQuickAdd}
@@ -364,14 +364,14 @@ export default function StickerPopup() {
           {/* 오늘 탭 */}
           {activeTab === 'today' && (
             <>
-              <div data-scroll className="flex-1 overflow-y-auto bg-yellow-50 px-2 py-2 flex flex-col gap-1.5">
+              <div data-scroll className="flex-1 overflow-y-auto bg-yellow-50 dark:bg-slate-800 px-2 py-2 flex flex-col gap-1.5">
                 {total === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-slate-500 gap-2">
                     <span className="text-2xl">🎉</span>
                     <p className="text-xs">오늘은 할 일이 없어요!</p>
                     <button
                       onClick={() => setShowQuickAdd(true)}
-                      className="text-xs text-yellow-700 bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded-full"
+                      className="text-xs text-yellow-700 bg-yellow-200 hover:bg-yellow-300 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-amber-200 px-3 py-1 rounded-full"
                     >
                       + 할일 추가
                     </button>
@@ -395,8 +395,8 @@ export default function StickerPopup() {
                 )}
               </div>
               {total > 0 && !allDone && (
-                <div className="bg-yellow-50 px-2 pb-2 flex-shrink-0">
-                  <div className="h-1.5 bg-yellow-200 rounded-full overflow-hidden">
+                <div className="bg-yellow-50 dark:bg-slate-800 px-2 pb-2 flex-shrink-0">
+                  <div className="h-1.5 bg-yellow-200 dark:bg-slate-700 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-yellow-500 transition-all duration-300"
                       style={{ width: `${(completed / total) * 100}%` }}
@@ -409,33 +409,36 @@ export default function StickerPopup() {
 
           {/* 회고 탭 (See) */}
           {activeTab === 'see' && (
-            <div data-scroll className="flex-1 bg-yellow-50 px-2 pt-2 pb-1 flex flex-col gap-1.5 overflow-y-auto">
-              <p className="text-xs text-yellow-700 font-semibold flex-shrink-0">📝 Plan → Do → See</p>
+            <div data-scroll className="flex-1 bg-yellow-50 dark:bg-slate-800 px-2 pt-2 pb-1 flex flex-col gap-1.5 overflow-y-auto">
+              <p className="text-xs text-yellow-700 dark:text-amber-300 font-semibold flex-shrink-0">📝 Plan → Do → See</p>
               <div className="flex flex-col gap-0.5">
-                <label className="text-xs text-yellow-800 font-medium">✅ 잘된 점</label>
+                <label className="text-xs text-yellow-800 dark:text-amber-200 font-medium">✅ 잘된 점</label>
                 <RichMemoEditor
                   value={seeGood}
                   onChange={(v) => { setSeeGood(v); seeRef.current.good = v }}
                   onBlur={handleSeeSave}
-                  containerClassName="bg-white border border-yellow-200 rounded px-2 py-1 text-xs text-gray-700 leading-relaxed min-h-[3rem]"
+                  showToolbar={false}
+                  containerClassName="bg-white dark:bg-slate-800 border border-yellow-200 dark:border-slate-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-slate-300 leading-relaxed min-h-[3rem]"
                 />
               </div>
               <div className="flex flex-col gap-0.5">
-                <label className="text-xs text-amber-700 font-medium">😅 아쉬운 점</label>
+                <label className="text-xs text-amber-700 dark:text-amber-300 font-medium">😅 아쉬운 점</label>
                 <RichMemoEditor
                   value={seeBad}
                   onChange={(v) => { setSeeBad(v); seeRef.current.bad = v }}
                   onBlur={handleSeeSave}
-                  containerClassName="bg-white border border-yellow-200 rounded px-2 py-1 text-xs text-gray-700 leading-relaxed min-h-[3rem]"
+                  showToolbar={false}
+                  containerClassName="bg-white dark:bg-slate-800 border border-yellow-200 dark:border-slate-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-slate-300 leading-relaxed min-h-[3rem]"
                 />
               </div>
               <div className="flex flex-col gap-0.5">
-                <label className="text-xs text-indigo-700 font-medium">🔜 내일 개선할 것</label>
+                <label className="text-xs text-indigo-700 dark:text-indigo-300 font-medium">🔜 내일 개선할 것</label>
                 <RichMemoEditor
                   value={seeNext}
                   onChange={(v) => { setSeeNext(v); seeRef.current.next = v }}
                   onBlur={handleSeeSave}
-                  containerClassName="bg-white border border-yellow-200 rounded px-2 py-1 text-xs text-gray-700 leading-relaxed min-h-[3rem]"
+                  showToolbar={false}
+                  containerClassName="bg-white dark:bg-slate-800 border border-yellow-200 dark:border-slate-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-slate-300 leading-relaxed min-h-[3rem]"
                 />
               </div>
             </div>
@@ -443,13 +446,13 @@ export default function StickerPopup() {
 
           {/* 메모 탭 — 노션 스타일 라이브 마크다운 + 노트 N개 관리 */}
           {activeTab === 'memo' && (
-            <div className="flex-1 bg-yellow-50 px-2 pt-1.5 pb-1 flex flex-col overflow-hidden">
+            <div className="flex-1 bg-yellow-50 dark:bg-slate-800 px-2 pt-1.5 pb-1 flex flex-col overflow-hidden">
               {/* 노트 선택 헤더 — 드롭다운 + 새로/삭제 */}
               <div className="flex items-center gap-1 mb-1 flex-shrink-0">
                 <button
                   onClick={() => setShowNotesList((v) => !v)}
                   title="다른 메모로 전환"
-                  className="flex-1 flex items-center gap-1 text-xs text-gray-700 hover:bg-yellow-100 px-1.5 py-0.5 rounded truncate"
+                  className="flex-1 flex items-center gap-1 text-xs text-gray-700 dark:text-slate-300 hover:bg-yellow-100 dark:hover:bg-slate-700 px-1.5 py-0.5 rounded truncate"
                 >
                   <span className="opacity-60 flex-shrink-0">📒</span>
                   <span className="truncate font-medium">
@@ -461,21 +464,21 @@ export default function StickerPopup() {
                 <button
                   onClick={renameCurrentNote}
                   title="제목 바꾸기"
-                  className="text-xs text-gray-500 hover:bg-yellow-100 px-1.5 py-0.5 rounded"
+                  className="text-xs text-gray-500 dark:text-slate-400 hover:bg-yellow-100 dark:hover:bg-slate-700 px-1.5 py-0.5 rounded"
                 >
                   ✎
                 </button>
                 <button
                   onClick={createNewNote}
                   title="새 메모"
-                  className="text-xs text-indigo-600 hover:bg-indigo-100 px-1.5 py-0.5 rounded font-bold"
+                  className="text-xs text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 px-1.5 py-0.5 rounded font-bold"
                 >
                   +
                 </button>
                 <button
                   onClick={deleteCurrentNote}
                   title="이 메모 삭제"
-                  className="text-xs text-red-500 hover:bg-red-50 px-1.5 py-0.5 rounded"
+                  className="text-xs text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/15 px-1.5 py-0.5 rounded"
                 >
                   🗑
                 </button>
@@ -483,13 +486,13 @@ export default function StickerPopup() {
 
               {/* 노트 목록 드롭다운 */}
               {showNotesList && (
-                <div data-scroll className="flex-shrink-0 mb-1 max-h-32 overflow-y-auto bg-white border border-yellow-200 rounded text-xs">
+                <div data-scroll className="flex-shrink-0 mb-1 max-h-32 overflow-y-auto bg-white dark:bg-slate-800 border border-yellow-200 dark:border-slate-600 rounded text-xs">
                   {notes.map((n) => (
                     <button
                       key={n.id}
                       onClick={() => switchNote(n.id)}
-                      className={`w-full text-left px-2 py-1 truncate hover:bg-yellow-50 ${
-                        n.id === currentNoteId ? 'bg-yellow-100 font-medium' : ''
+                      className={`w-full text-left px-2 py-1 truncate hover:bg-yellow-50 dark:hover:bg-slate-700 ${
+                        n.id === currentNoteId ? 'bg-yellow-100 dark:bg-slate-700 font-medium' : ''
                       }`}
                     >
                       {n.title || '제목 없음'}
@@ -501,14 +504,14 @@ export default function StickerPopup() {
                 </div>
               )}
 
-              {/* 본문 — RichMemoEditor (툴바 포함) */}
+              {/* 본문 — RichMemoEditor (메모 탭: 툴바 포함) */}
               <div data-scroll className="flex-1 overflow-y-auto">
                 <RichMemoEditor
                   key={currentNoteId /* 노트 전환 시 에디터 재초기화 */}
                   value={memoText}
                   onChange={setMemoText}
                   onBlur={handleMemoBlur}
-                  containerClassName="bg-yellow-50 text-xs text-gray-700 leading-relaxed"
+                  containerClassName="bg-yellow-50 dark:bg-slate-800 text-xs text-gray-700 dark:text-slate-300 leading-relaxed"
                 />
               </div>
             </div>
@@ -541,10 +544,10 @@ function StickerCompletionNote({ task, onConfirm, onClose }) {
 
   return (
     <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50 rounded-xl">
-      <div className="bg-white rounded-xl shadow-xl mx-2 w-full" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl mx-2 w-full" onClick={(e) => e.stopPropagation()}>
         <div className="px-3 pt-3 pb-2">
-          <p className="text-xs font-bold text-slate-700 mb-0.5">🎉 완료!</p>
-          <p className="text-xs text-slate-500 truncate mb-2">"{task.title}"</p>
+          <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mb-0.5">🎉 완료!</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 truncate mb-2">"{task.title}"</p>
           <textarea
             autoFocus
             value={note}
@@ -555,11 +558,11 @@ function StickerCompletionNote({ task, onConfirm, onClose }) {
             }}
             placeholder="완료 메모 (선택, Enter로 저장)"
             rows={2}
-            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 resize-none"
+            className="w-full border border-gray-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-400 resize-none"
           />
         </div>
         <div className="flex gap-1.5 px-3 pb-3">
-          <button onClick={() => onConfirm(null)} className="flex-1 text-xs text-slate-500 hover:bg-slate-100 py-1.5 rounded-lg">
+          <button onClick={() => onConfirm(null)} className="flex-1 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 py-1.5 rounded-lg">
             메모 없이
           </button>
           <button onClick={() => onConfirm(note.trim() || null)} className="flex-1 text-xs bg-indigo-600 text-white py-1.5 rounded-lg hover:bg-indigo-700">
@@ -582,12 +585,12 @@ function StickerTask({ task, onToggle, onToggleInProgress, onToggleStarred, onDe
       task.is_completed
         ? 'opacity-60'
         : isInProgress
-        ? 'bg-blue-50 ring-1 ring-blue-200'
+        ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-500/15 dark:ring-blue-500/40'
         : isStarred
-        ? 'bg-yellow-100 ring-1 ring-yellow-400'
+        ? 'bg-yellow-100 ring-1 ring-yellow-400 dark:bg-amber-500/15 dark:ring-amber-500/50'
         : isOverdue
-        ? 'bg-red-100'
-        : 'bg-white shadow-sm'
+        ? 'bg-red-100 dark:bg-red-500/20'
+        : 'bg-white shadow-sm dark:bg-slate-700'
     }`}>
       {colorDot && (
         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${colorDot}`} />
@@ -632,7 +635,7 @@ function StickerTask({ task, onToggle, onToggleInProgress, onToggleStarred, onDe
       )}
 
       <span className={`flex-1 text-xs font-semibold leading-tight line-clamp-2 min-w-0 ${
-        task.is_completed ? 'line-through text-gray-400' : 'text-gray-800'
+        task.is_completed ? 'line-through text-gray-400 dark:text-slate-500' : 'text-gray-800 dark:text-slate-100'
       }`}>
         {task.title}
       </span>

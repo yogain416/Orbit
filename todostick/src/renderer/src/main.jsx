@@ -2,6 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
+import { initTheme } from './utils/theme'
+
+// 렌더 전에 다크모드 적용 → FOUC(라이트 화면 깜빡임) 방지. 메인·스티커 두 창 모두에서 실행됨.
+initTheme()
 
 let attempts = 0
 

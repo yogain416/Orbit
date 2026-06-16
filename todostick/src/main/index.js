@@ -8,6 +8,7 @@ import db, { setCurrentUserId, claimOwnership, performInitialSync, getRawDb } fr
 import { getAuth } from './auth.js'
 import { getSupabaseClient } from './supabase.js'
 import { createSyncEngine } from './sync.js'
+import { initUpdater, checkForUpdates, getUpdaterState, quitAndInstall } from './updater.js'
 
 // Supabase 콘솔의 Redirect URLs에 등록된 스킴. spec/auth.js의 REDIRECT_URL과 호스트가 일치해야 한다.
 const AUTH_PROTOCOL_SCHEME = 'app'
@@ -16,6 +17,12 @@ let mainWindow = null
 let stickerWindow = null
 let tray = null
 let reminderTimers = []
+
+// 메인/스티커 두 창 모두에 채널 메시지 전송 (업데이트 상태 등 브로드캐스트용).
+function broadcastToWindows(channel, payload) {
+  mainWindow?.webContents.send(channel, payload)
+  stickerWindow?.webContents.send(channel, payload)
+}
 
 // ── Plan 3 (sync engine): 워커 + 현재 user id 추적 ────────────
 // engine은 lazy-init — auth 세션이 처음 잡힐 때 만들어진다.
@@ -406,6 +413,9 @@ app.whenReady().then(() => {
   scheduleReminders()
   scheduleMidnightRefresh()
 
+  // 자동 업데이트 — 상태를 두 창에 브로드캐스트, 시작 직후 백그라운드 확인.
+  initUpdater({ isDev, send: broadcastToWindows })
+
   // 처음 실행 시 argv에 callback URL이 들어있으면 처리 (예: 로그아웃 상태에서 외부 링크 클릭)
   const initialUrl = extractAuthCallbackUrl(process.argv)
   if (initialUrl) {
@@ -689,4 +699,16 @@ ipcMain.handle('sync:runNow', async () => {
   if (isDev) return { skipped: true, reason: 'dev_mode' }
   if (!_syncEngine) return { skipped: true, reason: 'no_engine' }
   return await _syncEngine.runOnce()
+})
+
+// IPC: 자동 업데이트 — 현재 버전/상태 조회, 수동 확인, 재시작 설치
+ipcMain.handle('updater:getState', () => ({ version: app.getVersion(), ...getUpdaterState() }))
+ipcMain.handle('updater:check', async () => {
+  const state = await checkForUpdates()
+  return { version: app.getVersion(), ...state }
+})
+ipcMain.handle('updater:quitAndInstall', () => {
+  // 메인 창 close 핸들러가 트레이로 숨기는 것을 막기 위해 종료 플래그를 먼저 세운다.
+  app.isQuitting = true
+  return quitAndInstall()
 })

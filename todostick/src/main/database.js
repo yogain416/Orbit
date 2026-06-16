@@ -1154,6 +1154,16 @@ export default {
     db.transaction(() => {
       db.prepare(`UPDATE tasks SET end_date = ?, skipped_dates = ?, updated_at = ? WHERE id = ?`)
         .run(endDate, JSON.stringify(skipped), now, templateId)
+      // 중지 시: 이미 만들어진 미래(오늘 이후) 인스턴스를 정리한다.
+      // end_date만 찍으면 '새' 인스턴스 생성만 멈출 뿐, 캘린더 뷰가 미리 만들어 둔
+      // 미래 인스턴스는 남아 일정에 계속 표시되기 때문. (반복 제거/이후 삭제와 동일 패턴)
+      if (paused) {
+        const futureRows = db
+          .prepare('SELECT id FROM tasks WHERE parent_id = ? AND date > ?')
+          .all(templateId, today)
+        db.prepare(`DELETE FROM tasks WHERE parent_id = ? AND date > ?`).run(templateId, today)
+        for (const r of futureRows) enqueueSync(db, 'tasks', 'delete', r.id, null)
+      }
       const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(templateId)
       enqueueSync(db, 'tasks', 'upsert', templateId, taskRowToPayload(after))
     })()

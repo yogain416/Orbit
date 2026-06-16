@@ -41,19 +41,19 @@ export default function RolloverPickerModal({ candidates, todayStr, onClose, onC
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col"
+        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h3 className="font-bold text-gray-800">📥 어제에서 이월할 항목 선택</h3>
-          <p className="text-xs text-gray-500 mt-1">
+        <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700">
+          <h3 className="font-bold text-gray-800 dark:text-slate-100">📥 어제에서 이월할 항목 선택</h3>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
             완료하지 못한 {candidates.length}개의 항목이 있습니다.
             체크한 항목만 오늘로 옮겨집니다.
           </p>
         </div>
 
-        <div className="px-6 py-2 border-b border-gray-100 flex items-center justify-between">
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+        <div className="px-6 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={allChecked}
@@ -62,7 +62,7 @@ export default function RolloverPickerModal({ candidates, todayStr, onClose, onC
             />
             전체 선택
           </label>
-          <span className="text-xs text-gray-400">{checked.size} / {candidates.length}</span>
+          <span className="text-xs text-gray-400 dark:text-slate-500">{checked.size} / {candidates.length}</span>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-2">
@@ -72,7 +72,7 @@ export default function RolloverPickerModal({ candidates, todayStr, onClose, onC
               <label
                 key={task.id}
                 className={`flex items-start gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
-                  isChecked ? 'bg-indigo-50/60' : 'hover:bg-gray-50'
+                  isChecked ? 'bg-indigo-50/60 dark:bg-indigo-500/15' : 'hover:bg-gray-50 dark:hover:bg-slate-700'
                 }`}
               >
                 <input
@@ -82,11 +82,11 @@ export default function RolloverPickerModal({ candidates, todayStr, onClose, onC
                   className="mt-0.5 w-4 h-4 accent-indigo-500 shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-800 break-words">{task.title || '(제목 없음)'}</div>
-                  <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1.5">
+                  <div className="text-sm text-gray-800 dark:text-slate-100 break-words">{task.title || '(제목 없음)'}</div>
+                  <div className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5 flex items-center gap-1.5">
                     <span>📅 {daysAgoLabel(task.date, todayStr)} · {task.date}</span>
                     {task.is_in_progress && (
-                      <span className="text-amber-600">· 진행중</span>
+                      <span className="text-amber-600 dark:text-amber-300">· 진행중</span>
                     )}
                   </div>
                 </div>
@@ -95,17 +95,17 @@ export default function RolloverPickerModal({ candidates, todayStr, onClose, onC
           })}
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
+        <div className="px-6 py-4 border-t border-gray-100 dark:border-slate-700 flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+            className="px-4 py-2 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
           >
             건너뛰기
           </button>
           <button
             onClick={handleConfirm}
             disabled={noneChecked}
-            className="px-4 py-2 text-sm font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 text-sm font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg disabled:bg-gray-200 dark:disabled:bg-slate-600 disabled:text-gray-400 dark:disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
           >
             {noneChecked ? '이월하기' : `${checked.size}개 이월하기`}
           </button>

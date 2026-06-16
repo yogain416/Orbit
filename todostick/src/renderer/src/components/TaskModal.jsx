@@ -20,12 +20,19 @@ const REPEAT_OPTIONS = [
   { value: 'monthly', label: '매월' }
 ]
 
-// 'HH:MM' + 60분 (자정 넘으면 23:59로 클램프 — 일정이 다음날로 넘어가는 건 사용자가 수동 조정)
+// 'HH:MM' → 'HH:00' — 일정 시간은 항상 정시(00분) 기준으로 스냅한다.
+function snapToHour(timeStr) {
+  if (!timeStr) return ''
+  const [h] = timeStr.split(':')
+  return `${String(Number(h)).padStart(2, '0')}:00`
+}
+
+// 'HH:MM' + 60분 (자정 넘으면 23:00로 클램프 — 일정이 다음날로 넘어가는 건 사용자가 수동 조정)
 function addOneHour(timeStr) {
   if (!timeStr) return ''
   const [h, m] = timeStr.split(':').map(Number)
   const total = h * 60 + m + 60
-  const cap = Math.min(total, 23 * 60 + 59)
+  const cap = Math.min(total, 23 * 60)
   const nh = Math.floor(cap / 60)
   const nm = cap % 60
   return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`
@@ -94,21 +101,21 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col"
+        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* 헤더 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h3 className="font-bold text-gray-800">{isEdit ? '할 일 편집' : '할 일 추가'}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-700">
+          <h3 className="font-bold text-gray-800 dark:text-slate-100">{isEdit ? '할 일 편집' : '할 일 추가'}</h3>
+          <button onClick={onClose} className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-200 text-lg">✕</button>
         </div>
 
         {/* 폼 */}
         <div className="px-6 py-4 flex flex-col gap-4 overflow-y-auto">
           {/* 제목 */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">제목 *</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 block">제목 *</label>
             <input
               autoFocus
               type="text"
@@ -116,43 +123,43 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
               onChange={(e) => setTitle(e.target.value)}
               placeholder="할 일을 입력하세요"
               maxLength={110}
-              className={`w-full border rounded-lg px-3 py-2 text-sm outline-none transition-colors ${
+              className={`w-full border rounded-lg px-3 py-2 text-sm outline-none transition-colors dark:bg-slate-700 dark:text-slate-100 dark:placeholder-slate-500 ${
                 overLimit
                   ? 'border-red-300 focus:border-red-400'
-                  : 'border-gray-200 focus:border-indigo-400'
+                  : 'border-gray-200 dark:border-slate-600 focus:border-indigo-400'
               }`}
             />
-            <div className={`text-xs text-right mt-1 ${overLimit ? 'text-red-500' : 'text-gray-400'}`}>
+            <div className={`text-xs text-right mt-1 ${overLimit ? 'text-red-500' : 'text-gray-400 dark:text-slate-500'}`}>
               {titleLen}/100
             </div>
           </div>
 
           {/* 날짜 */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">날짜</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 block">날짜</label>
             <div className="flex items-center gap-2">
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                className="flex-1 border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
               />
               {repeatType === 'none' && (
                 <>
-                  <span className="text-xs text-gray-400 flex-shrink-0">~</span>
+                  <span className="text-xs text-gray-400 dark:text-slate-500 flex-shrink-0">~</span>
                   <input
                     type="date"
                     value={endDate}
                     min={date}
                     placeholder="종료일"
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                    className="flex-1 border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder-slate-500 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
                   />
                   {endDate && (
                     <button
                       type="button"
                       onClick={() => setEndDate('')}
-                      className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 flex-shrink-0"
+                      className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-200 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 flex-shrink-0"
                     >
                       지우기
                     </button>
@@ -161,42 +168,45 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
               )}
             </div>
             {repeatType === 'none' && endDate && endDate > date && (
-              <p className="text-xs text-indigo-500 mt-1">📅 다일 이벤트 ({date} ~ {endDate})</p>
+              <p className="text-xs text-indigo-500 dark:text-indigo-300 mt-1">📅 다일 이벤트 ({date} ~ {endDate})</p>
             )}
             {repeatType === 'none' && endDate && endDate <= date && (
-              <p className="text-xs text-red-400 mt-1">종료일은 시작일 이후여야 합니다</p>
+              <p className="text-xs text-red-400 dark:text-red-300 mt-1">종료일은 시작일 이후여야 합니다</p>
             )}
           </div>
 
           {/* 시간 (타임블록용) */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">시간 (선택 — 타임블록 뷰용)</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 block">시간 (선택 — 타임블록 뷰용)</label>
             <div className="flex items-center gap-2">
               <input
                 type="time"
                 value={startTime}
+                step={3600}
                 onChange={(e) => {
-                  const next = e.target.value
+                  // 분은 항상 00으로 스냅 (정시 기준).
+                  const next = snapToHour(e.target.value)
                   setStartTime(next)
-                  // v1.8.1: 종료 시간이 비어 있을 때만 자동 +1시간 — 사용자가 직접 정한 endTime은 보존.
+                  // 처음 시작시간을 정하면(종료 시간이 비어 있을 때만) 자동으로 +1시간 — 사용자가 직접 정한 endTime은 보존.
                   if (next && !endTime) {
                     setEndTime(addOneHour(next))
                   }
                 }}
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                className="flex-1 border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
               />
-              <span className="text-gray-400 text-xs flex-shrink-0">~</span>
+              <span className="text-gray-400 dark:text-slate-500 text-xs flex-shrink-0">~</span>
               <input
                 type="time"
                 value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                step={3600}
+                onChange={(e) => setEndTime(snapToHour(e.target.value))}
+                className="flex-1 border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
               />
               {(startTime || endTime) && (
                 <button
                   type="button"
                   onClick={() => { setStartTime(''); setEndTime('') }}
-                  className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 flex-shrink-0"
+                  className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-200 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 flex-shrink-0"
                 >
                   지우기
                 </button>
@@ -206,21 +216,21 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
               const [sh, sm] = startTime.split(':').map(Number)
               const [eh, em] = endTime.split(':').map(Number)
               const dur = (eh * 60 + em) - (sh * 60 + sm)
-              return dur > 0 ? <p className="text-xs text-indigo-500 mt-1">⏱ {startTime} ~ {endTime} ({dur}분)</p> : null
+              return dur > 0 ? <p className="text-xs text-indigo-500 dark:text-indigo-300 mt-1">⏱ {startTime} ~ {endTime} ({dur}분)</p> : null
             })()}
           </div>
 
           {/* 카테고리 */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-2 block">카테고리</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-2 block">카테고리</label>
             <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
               <button
                 type="button"
                 onClick={() => setCategory(null)}
                 className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${
                   category === null
-                    ? 'bg-slate-200 text-slate-700 border-slate-400 ring-2 ring-offset-1 ring-indigo-400'
-                    : 'bg-slate-100 text-slate-500 border-transparent opacity-60 hover:opacity-100'
+                    ? 'bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 border-slate-400 dark:border-slate-500 ring-2 ring-offset-1 ring-indigo-400'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-transparent opacity-60 hover:opacity-100'
                 }`}
               >
                 없음
@@ -243,7 +253,7 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
 
           {/* 색상 태그 */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-2 block">색상 태그</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-2 block">색상 태그</label>
             <div className="flex gap-2">
               {COLORS.map((c) => (
                 <button
@@ -263,11 +273,11 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
 
           {/* 반복 */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">반복</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 block">반복</label>
             <select
               value={repeatType}
               onChange={(e) => setRepeatType(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 bg-white"
+              className="w-full border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400 bg-white dark:bg-slate-700 dark:text-slate-100"
             >
               {REPEAT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -289,9 +299,9 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
                         className={`flex-1 py-1 text-xs rounded-md font-medium transition-all border ${
                           active
                             ? isWeekend
-                              ? 'bg-rose-100 border-rose-300 text-rose-700'
-                              : 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                            : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-gray-300'
+                              ? 'bg-rose-100 dark:bg-rose-500/15 border-rose-300 dark:border-rose-500/30 text-rose-700 dark:text-rose-300'
+                              : 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300'
+                            : 'bg-gray-50 dark:bg-slate-700/40 border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500 hover:border-gray-300 dark:hover:border-slate-500'
                         }`}
                       >
                         {label}
@@ -303,14 +313,14 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
                   <button
                     type="button"
                     onClick={() => setRepeatDays([1, 2, 3, 4, 5])}
-                    className="text-xs text-indigo-500 hover:text-indigo-700"
+                    className="text-xs text-indigo-500 dark:text-indigo-300 hover:text-indigo-700 dark:hover:text-indigo-200"
                   >
                     평일만
                   </button>
                   <button
                     type="button"
                     onClick={() => setRepeatDays([0, 1, 2, 3, 4, 5, 6])}
-                    className="text-xs text-gray-400 hover:text-gray-600"
+                    className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-200"
                   >
                     매일
                   </button>
@@ -318,21 +328,21 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
               </div>
             )}
             {repeatType !== 'none' && (
-              <p className="text-xs text-indigo-500 mt-1">🔁 선택한 날짜부터 자동으로 반복 생성됩니다</p>
+              <p className="text-xs text-indigo-500 dark:text-indigo-300 mt-1">🔁 선택한 날짜부터 자동으로 반복 생성됩니다</p>
             )}
 
             {/* 습관 트래커 — 반복일 때만 노출 */}
             {repeatType !== 'none' && (
-              <label className="flex items-center gap-2 mt-2 px-2 py-2 bg-emerald-50 rounded-lg border border-emerald-100 cursor-pointer hover:bg-emerald-100/50 transition-colors">
+              <label className="flex items-center gap-2 mt-2 px-2 py-2 bg-emerald-50 dark:bg-emerald-500/15 rounded-lg border border-emerald-100 dark:border-emerald-500/30 cursor-pointer hover:bg-emerald-100/50 dark:hover:bg-emerald-500/20 transition-colors">
                 <input
                   type="checkbox"
                   checked={isHabit}
                   onChange={(e) => setIsHabit(e.target.checked)}
                   className="accent-emerald-500"
                 />
-                <span className="text-xs text-emerald-800">
+                <span className="text-xs text-emerald-800 dark:text-emerald-300">
                   🌱 <span className="font-semibold">습관으로 추적</span>
-                  <span className="text-emerald-600 ml-1">— 잔디/스트릭 표시</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 ml-1">— 잔디/스트릭 표시</span>
                 </span>
               </label>
             )}
@@ -340,33 +350,33 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
 
           {/* 알림 시간 */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">알림 시간 (선택)</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 block">알림 시간 (선택)</label>
             <div className="flex items-center gap-2">
               <input
                 type="time"
                 value={remindAt}
                 onChange={(e) => setRemindAt(e.target.value)}
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                className="flex-1 border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400"
               />
               {remindAt && (
                 <button
                   onClick={() => setRemindAt('')}
-                  className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100"
+                  className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-200 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700"
                 >
                   지우기
                 </button>
               )}
             </div>
             {remindAt && (
-              <p className="text-xs text-indigo-500 mt-1">🔔 {remindAt}에 시스템 알림이 울립니다</p>
+              <p className="text-xs text-indigo-500 dark:text-indigo-300 mt-1">🔔 {remindAt}에 시스템 알림이 울립니다</p>
             )}
           </div>
 
           {/* 메모 — 노션 스타일 라이브 마크다운 (# + space → H1, **굵게**, - [ ] 체크박스 …) */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-medium text-gray-500">메모</label>
-              <span className="text-[11px] text-gray-400">노션 스타일 — # 제목, **굵게**, - 리스트, - [ ] 체크박스</span>
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400">메모</label>
+              <span className="text-[11px] text-gray-400 dark:text-slate-500">노션 스타일 — # 제목, **굵게**, - 리스트, - [ ] 체크박스</span>
             </div>
             <RichMemoEditor value={memo} onChange={setMemo} tone="indigo" />
           </div>
@@ -374,17 +384,17 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
           {/* 완료 메모 (완료된 할일 편집 시만 표시) */}
           {isEdit && task.is_completed && (
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">완료 메모</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 block">완료 메모</label>
               <RichMemoEditor value={completionNote} onChange={setCompletionNote} tone="green" />
             </div>
           )}
         </div>
 
         {/* 버튼 */}
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100">
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-slate-700">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
           >
             취소
           </button>

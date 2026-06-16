@@ -331,21 +331,21 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
   return (
     <div className="flex flex-col h-full">
       {/* 헤더 */}
-      <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 flex-shrink-0">
-        <button onClick={prevDay} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">‹</button>
+      <div className="flex items-center justify-between px-6 py-3 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 flex-shrink-0">
+        <button onClick={prevDay} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400">‹</button>
         <div className="text-center flex items-center gap-2">
-          <span className="text-base font-extrabold tracking-tight text-slate-800">{dateStr}</span>
+          <span className="text-base font-extrabold tracking-tight text-slate-800 dark:text-slate-100">{dateStr}</span>
           {dateStr === today && (
-            <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">오늘</span>
+            <span className="text-xs bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full">오늘</span>
           )}
         </div>
-        <button onClick={nextDay} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500">›</button>
+        <button onClick={nextDay} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400">›</button>
       </div>
 
       {/* 미배정 할일 — 드래그로 타임라인에 배치 */}
       {untimedTasks.length > 0 && (
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex-shrink-0">
-          <p className="text-xs font-semibold text-slate-400 mb-1.5">⏳ 시간 미배정 ({untimedTasks.length}) · 아래로 드래그해서 시간 배정</p>
+        <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-700 flex-shrink-0">
+          <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 mb-1.5">⏳ 시간 미배정 ({untimedTasks.length}) · 아래로 드래그해서 시간 배정</p>
           <div className="flex flex-wrap gap-1">
             {untimedTasks.map(t => (
               <div
@@ -359,8 +359,8 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
                 title="드래그: 시간 배정 · 클릭: 편집"
                 className={`text-xs px-2 py-0.5 rounded-full border cursor-grab active:cursor-grabbing select-none transition-colors ${
                   t.is_completed
-                    ? 'bg-slate-100 text-slate-400 line-through border-slate-200'
-                    : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-700'
+                    ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 line-through border-slate-200 dark:border-slate-600'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 hover:text-indigo-700 dark:hover:text-indigo-300'
                 }`}
               >
                 {t.title.length > 14 ? t.title.slice(0, 14) + '…' : t.title}
@@ -378,7 +378,7 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
             {HOURS.map(h => (
               <div
                 key={h}
-                className="absolute w-full text-right pr-2 text-xs text-slate-400"
+                className="absolute w-full text-right pr-2 text-xs text-slate-400 dark:text-slate-500"
                 style={{ top: (h - 6) * PX_PER_HOUR - 8 }}
               >
                 {h}:00
@@ -389,7 +389,7 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
           {/* 그리드 + 블록 */}
           <div
             ref={gridRef}
-            className={`flex-1 relative border-l border-slate-200 ${isAnyDragging ? 'cursor-grabbing' : 'cursor-crosshair'}`}
+            className={`flex-1 relative border-l border-slate-200 dark:border-slate-700 ${isAnyDragging ? 'cursor-grabbing' : 'cursor-crosshair'}`}
             onMouseDown={handleGridMouseDown}
             onMouseMove={handleGridMouseMove}
             onMouseUp={handleGridMouseUp}
@@ -401,7 +401,7 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
             {HOURS.map(h => (
               <div
                 key={h}
-                className="absolute w-full border-t border-slate-100 pointer-events-none"
+                className="absolute w-full border-t border-slate-100 dark:border-slate-700 pointer-events-none"
                 style={{ top: (h - 6) * PX_PER_HOUR }}
               />
             ))}
@@ -410,7 +410,7 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
             {HOURS.map(h => (
               <div
                 key={`${h}-half`}
-                className="absolute w-full border-t border-dashed border-slate-50 pointer-events-none"
+                className="absolute w-full border-t border-dashed border-slate-50 dark:border-slate-700/40 pointer-events-none"
                 style={{ top: (h - 6) * PX_PER_HOUR + PX_PER_HOUR / 2 }}
               />
             ))}
@@ -430,10 +430,10 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
             {/* 미배정 칩 드롭 미리보기 (1시간 블록) */}
             {chipDropMin !== null && (
               <div
-                className="absolute left-1 right-3 bg-emerald-200 border-2 border-dashed border-emerald-500 rounded-md px-2 py-1 z-30 pointer-events-none"
+                className="absolute left-1 right-3 bg-emerald-200 dark:bg-emerald-500/15 border-2 border-dashed border-emerald-500 rounded-md px-2 py-1 z-30 pointer-events-none"
                 style={{ top: minutesToPx(chipDropMin), height: 60 * PX_PER_MIN }}
               >
-                <p className="text-xs font-bold text-emerald-800 leading-tight">
+                <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 leading-tight">
                   📌 여기에 배치 → {minutesToStr(chipDropMin)} ~ {minutesToStr(chipDropMin + 60)}
                 </p>
               </div>
@@ -442,10 +442,10 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
             {/* 새 블록 생성 프리뷰 */}
             {preview && (
               <div
-                className="absolute left-1 right-3 bg-indigo-200 border-l-4 border-indigo-400 rounded-md px-2 py-0.5 opacity-75 z-30 pointer-events-none"
+                className="absolute left-1 right-3 bg-indigo-200 dark:bg-indigo-500/20 border-l-4 border-indigo-400 rounded-md px-2 py-0.5 opacity-75 z-30 pointer-events-none"
                 style={{ top: preview.top, height: preview.height }}
               >
-                <p className="text-xs text-indigo-800 font-semibold leading-tight truncate">
+                <p className="text-xs text-indigo-800 dark:text-indigo-300 font-semibold leading-tight truncate">
                   {preview.startStr} ~ {preview.endStr}
                 </p>
               </div>
@@ -454,13 +454,13 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
             {/* 이동 프리뷰 */}
             {moveTask && moveTask.moved && (
               <div
-                className="absolute left-1 right-3 bg-indigo-300 border-l-4 border-indigo-500 rounded-md px-2 py-0.5 opacity-80 z-30 pointer-events-none"
+                className="absolute left-1 right-3 bg-indigo-300 dark:bg-indigo-500/20 border-l-4 border-indigo-500 rounded-md px-2 py-0.5 opacity-80 z-30 pointer-events-none"
                 style={{
                   top: minutesToPx(moveTask.previewStart),
                   height: Math.max(moveTask.duration * PX_PER_MIN, 22)
                 }}
               >
-                <p className="text-xs text-indigo-900 font-semibold leading-tight">
+                <p className="text-xs text-indigo-900 dark:text-indigo-300 font-semibold leading-tight">
                   {minutesToStr(moveTask.previewStart)} ~ {minutesToStr(moveTask.previewEnd)}
                 </p>
               </div>
@@ -535,11 +535,11 @@ export default function TimeBlockView({ currentDate, onDateChange, onAddTask, on
       </div>
 
       {/* 하단 요약 */}
-      <div className="px-4 py-2 bg-white border-t border-slate-100 flex items-center gap-3 flex-shrink-0">
-        <span className="text-xs text-slate-400">
+      <div className="px-4 py-2 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 flex items-center gap-3 flex-shrink-0">
+        <span className="text-xs text-slate-400 dark:text-slate-500">
           총 {tasks.length}개 · 완료 {tasks.filter(t => t.is_completed).length}개 · 시간블록 {timedTasks.length}개
         </span>
-        <span className="text-xs text-slate-300">· 드래그로 생성 · 블록 이동/크기조절</span>
+        <span className="text-xs text-slate-300 dark:text-slate-500">· 드래그로 생성 · 블록 이동/크기조절</span>
       </div>
     </div>
   )

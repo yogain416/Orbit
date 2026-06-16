@@ -5,6 +5,20 @@
 
 ## [Unreleased]
 
+### 진행 중 — Plan 4: Google Calendar/Tasks 양방향 sync
+- 브랜치: `feat/orbit-plan-4-google-sync` (Task 1 완료, Task 2~ 진행 예정)
+- 목표 버전: v2.0.0 (Phase 1 비전 완성)
+- 핵심: PC↔Supabase에 더해 폰 Google 캘린더/Tasks와도 sync. **선택적 sync(opt-in)** 도입 — `tasks.sync_to_google` 컬럼으로 레코드별 토글, OFF 전환 시 Google에서 삭제
+- 상세: `docs/superpowers/plans/2026-05-20-orbit-plan-4-google-sync.md`
+
+## [1.9.0] - 2026-06-17 — GitHub 첫 공개 릴리스 (다크모드·자동 업데이트)
+
+### Added — 다크모드 + 자동 업데이트
+- 🌙 **다크모드** — 설정 ▸ 일반 탭에서 **라이트 / 다크 / 시스템** 선택. '시스템'은 Windows 다크모드 설정을 따라가고, 메인·스티커 창과 재시작 후에도 유지(localStorage 공유, `storage` 이벤트로 창 간 동기화). 전 화면·컴포넌트에 slate 다크 팔레트 적용 + 네이티브 위젯(`color-scheme`) 다크 처리.
+- 🔄 **자동 업데이트** (electron-updater + GitHub Releases) — 앱 시작 직후 새 버전을 백그라운드로 확인·자동 다운로드. 설정 ▸ 일반 ▸ **업데이트** 에 현재 버전·진행률 표시 + **지금 재시작**으로 즉시 설치, 또는 다음 종료 시 자동 설치. dev 빌드 제외. 메인에 `updater.js`(상태 브로드캐스트) + IPC `updater:getState/check/quitAndInstall`, `package.json`에 `publish`(github) + `npm run release` 스크립트.
+- ⏰ **일정 시간 정시 스냅** — 시작/종료 시간 입력을 항상 `:00분`으로 맞추고(`step=3600`), 시작 시간을 처음 정하면 종료를 **+1시간**으로 자동 설정.
+- 📌 **스티커 회고 탭 툴바 제거** — 스티커의 See(회고) 탭 마크다운은 툴바 없이 작성(메모 탭은 툴바 유지).
+
 ### Added — 반복 일정 관리 (습관 탭 세그먼트)
 - 🔁 **습관 탭에 `[습관 | 반복 일정 | 전체]` 세그먼트** 추가. 습관이 아닌 **일반 반복 일정**도 시리즈 단위로 한곳에서 관리.
 - 각 반복 일정 행: 제목 · 반복 규칙(매일/매주 요일/매월 N일/주 N회) · **다음 발생일** · 완료 횟수 표시.
@@ -34,14 +48,6 @@
   - API: `window.api.habits.{setPaused,delete}`, DB `setHabitPaused`/`deleteHabit`. sync_queue 적재로 다기기 반영.
   - `repeat.js#shouldRepeatOnDate`가 `end_date` 이후를 false로 처리(일반 반복 템플릿은 `end_date`가 항상 null이라 영향 없음).
 - 🚀 **컴퓨터 부팅 시 자동 실행** — `app.setLoginItemSettings({ openAtLogin })`. 기본 ON, 설정 ▸ **일반** 탭 토글로 끄기 가능(dev 빌드 제외). 설정값은 `settings.autoLaunch`에 보관.
-
-### 진행 중 — Plan 4: Google Calendar/Tasks 양방향 sync
-- 브랜치: `feat/orbit-plan-4-google-sync` (Task 1 완료, Task 2~ 진행 예정)
-- 목표 버전: v2.0.0 (Phase 1 비전 완성)
-- 핵심: PC↔Supabase에 더해 폰 Google 캘린더/Tasks와도 sync. **선택적 sync(opt-in)** 도입 — `tasks.sync_to_google` 컬럼으로 레코드별 토글, OFF 전환 시 Google에서 삭제
-- 상세: `docs/superpowers/plans/2026-05-20-orbit-plan-4-google-sync.md`
-
-## [1.9.0] — 2026-05-27
 
 ### Added — 메모 노트 N개 관리
 - 📒 **단일 메모 → 노트 N개**로 확장. 스티커 메모 탭에 노트 선택 드롭다운 + 새로/이름변경/삭제 버튼.

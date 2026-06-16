@@ -37,6 +37,11 @@ h1, h2, h3, h4, h5, h6 {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* 다크모드 — 폼 컨트롤(date/time picker 등) 네이티브 위젯도 어둡게 */
+.dark { color-scheme: dark; }
 
 /* 텍스트 2줄 이상 숨김 */
 .line-clamp-2 {
@@ -178,3 +183,17 @@ html, body { height: 100%; }
 /* Tiptap editor 자체 (ProseMirror) 영역 — 기본 outline 제거, 최소 높이는 컨테이너에서 부여 */
 .rich-memo-prose { font-size: 0.875rem; line-height: 1.5; color: #334155; min-height: 5rem; }
 .rich-memo-prose:focus { outline: none; }
+
+/* ──────────────────────────────────────────────────────────────────
+   다크모드 — markdown-view / 에디터 색상 보정
+   ────────────────────────────────────────────────────────────────── */
+.dark .rich-memo-prose { color: #cbd5e1; }
+.dark .markdown-view blockquote { border-left-color: #475569; color: #94a3b8; }
+.dark .markdown-view code { background: #334155; color: #e2e8f0; }
+.dark .markdown-view pre { background: #1e293b; border-color: #334155; }
+.dark .markdown-view th,
+.dark .markdown-view td { border-color: #334155; }
+.dark .markdown-view th { background: #1e293b; }
+.dark .markdown-view hr { border-top-color: #334155; }
+.dark .markdown-view del { color: #64748b; }
+.dark .markdown-view ul[data-type="taskList"] li[data-checked="true"] > div { color: #64748b; }
