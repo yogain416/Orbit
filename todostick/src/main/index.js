@@ -708,7 +708,11 @@ ipcMain.handle('updater:check', async () => {
   return { version: app.getVersion(), ...state }
 })
 ipcMain.handle('updater:quitAndInstall', () => {
-  // 메인 창 close 핸들러가 트레이로 숨기는 것을 막기 위해 종료 플래그를 먼저 세운다.
+  // 다운로드가 끝난 상태가 아니면 quitAndInstall은 no-op이므로 종료 플래그도 건드리지 않는다.
+  // (먼저 isQuitting을 켜두면 설치가 일어나지 않은 채 플래그만 남아, 이후 X 버튼이
+  //  트레이로 숨지 않고 앱을 종료시키는 잠복 버그가 생긴다.)
+  if (getUpdaterState().status !== 'downloaded') return false
+  // 메인 창 close 핸들러가 트레이로 숨기는 것을 막기 위해 종료 플래그를 세운다.
   app.isQuitting = true
   return quitAndInstall()
 })
