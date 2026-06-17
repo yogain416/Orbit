@@ -94,7 +94,7 @@ export default function TaskModal({ task, defaultDate, timeDefaults, onClose }) 
   }
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSave() }
+    // 저장은 '저장' 버튼으로만 — Enter는 메모(에디터) 줄바꿈 등 입력에 그대로 쓰이도록 가로채지 않는다.
     if (e.key === 'Escape') onClose()
   }
 
