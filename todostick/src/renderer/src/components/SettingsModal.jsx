@@ -120,7 +120,7 @@ function ShortcutsTab({ onClose }) {
         <div className="mt-1">
           <p className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-2">앱 내 단축키 (변경 불가)</p>
           <div className="bg-gray-50 dark:bg-slate-700/40 rounded-xl px-4 py-3 flex flex-col gap-1.5">
-            {[['Ctrl+N', '할일 추가'], ['T', '오늘로 이동'], ['Enter', '모달에서 저장'], ['Esc', '모달 닫기']].map(([key, desc]) => (
+            {[['Ctrl+N', '할일 추가'], ['T', '오늘로 이동'], ['Esc', '모달 닫기']].map(([key, desc]) => (
               <div key={key} className="flex items-center justify-between">
                 <span className="text-xs text-gray-500 dark:text-slate-400">{desc}</span>
                 <kbd className="text-xs bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded px-2 py-0.5 font-mono text-gray-600 dark:text-slate-300">{key}</kbd>

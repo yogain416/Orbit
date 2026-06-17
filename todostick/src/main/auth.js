@@ -28,7 +28,9 @@ export function createAuth({
           scopes: GOOGLE_SCOPES,
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent'
+            // select_account: 매번 계정 선택창을 띄워 다른 Google 계정으로 전환 가능.
+            // consent: refresh_token을 확실히 재발급(Plan 4 Google sync에 필요).
+            prompt: 'select_account consent'
           },
           // Electron main에선 SDK가 직접 redirect할 화면이 없다. URL만 받아서 외부 브라우저로 연다.
           skipBrowserRedirect: true
