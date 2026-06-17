@@ -55,12 +55,12 @@ describe('signInWithGoogle', () => {
     expect(opts.scopes).toContain('tasks')
   })
 
-  it('refresh token을 받기 위해 access_type=offline + prompt=consent', async () => {
+  it('access_type=offline(refresh token) + prompt=select_account consent(계정 선택)', async () => {
     const { auth, client } = makeAuth()
     await auth.signInWithGoogle()
     const qp = client.auth.signInWithOAuth.mock.calls[0][0].options.queryParams
     expect(qp.access_type).toBe('offline')
-    expect(qp.prompt).toBe('consent')
+    expect(qp.prompt).toBe('select_account consent')
   })
 
   it('skipBrowserRedirect=true로 SDK가 main process에서 redirect를 시도하지 않게 함', async () => {
