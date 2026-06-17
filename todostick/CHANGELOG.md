@@ -11,6 +11,12 @@
 - 핵심: PC↔Supabase에 더해 폰 Google 캘린더/Tasks와도 sync. **선택적 sync(opt-in)** 도입 — `tasks.sync_to_google` 컬럼으로 레코드별 토글, OFF 전환 시 Google에서 삭제
 - 상세: `docs/superpowers/plans/2026-05-20-orbit-plan-4-google-sync.md`
 
+## [1.10.1] - 2026-06-17 — 버그 수정
+
+### Fixed
+- ✏️ **할일 모달 Enter 즉시저장 제거** — 모달 컨테이너 `onKeyDown`이 Enter를 가로채 메모(Tiptap) 줄바꿈까지 저장으로 처리하던 문제. 이제 **'저장' 버튼으로만 저장**(Esc 닫기는 유지). 설정의 단축키 안내에서도 'Enter 저장' 제거.
+- 🔑 **구글 로그인 재시도/계정 전환 불가 수정** — ① 콜백 대기 중 로그인 버튼이 영구 비활성화되어 브라우저를 닫고 다시 눌러도 안 뜨던 문제 → 재클릭으로 재시도 가능('다시 시도' 라벨). ② OAuth `prompt`를 `consent` → `select_account consent`로 바꿔 매번 계정 선택창 표시(다른 Google 계정으로 전환 가능).
+
 ## [1.10.0] - 2026-06-17 — 로컬(오프라인) 프로필 로그인
 
 ### Added — 로컬 프로필 (Google 없이 사용)
