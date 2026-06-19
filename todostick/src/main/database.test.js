@@ -321,12 +321,62 @@ describe('database (SQLite-backed)', () => {
   })
 
   it('rolloverSelectedTasks → 며칠 이전 미완료도 선택 시 이월된다', () => {
-    const friTask = database.createTask({ title: '금요일진행중', date: '2026-05-15' })
-    database.setInProgress(friTask.id, true)
+    const friTask = database.createTask({ title: '금요일할일', date: '2026-05-15' })
     const out = database.rolloverSelectedTasks([friTask.id], '2026-05-18')
     expect(out).toHaveLength(1)
-    expect(out[0].title).toBe('금요일진행중')
+    expect(out[0].title).toBe('금요일할일')
+  })
+
+  it('getRolloverCandidates → 진행중 항목은 후보에서 제외 (자동 이월 대상)', () => {
+    const t1 = database.createTask({ title: '일반', date: '2026-05-16' })
+    const t2 = database.createTask({ title: '진행중', date: '2026-05-16' })
+    database.setInProgress(t2.id, true)
+    const out = database.getRolloverCandidates('2026-05-17')
+    expect(out.map((t) => t.id)).toEqual([t1.id])
+  })
+
+  it('autoRolloverInProgress → 진행중 항목만 자동 복사 + 원본 rolled_at 마킹, is_in_progress 유지', () => {
+    const t1 = database.createTask({ title: '일반', date: '2026-05-16' })
+    const t2 = database.createTask({ title: '진행중', date: '2026-05-16' })
+    database.setInProgress(t2.id, true)
+
+    const out = database.autoRolloverInProgress('2026-05-17')
+    expect(out).toHaveLength(1)
+    expect(out[0].title).toBe('진행중')
     expect(out[0].is_in_progress).toBe(true)
+    expect(out[0].date).toBe('2026-05-17')
+    expect(out[0].rollover_source_id).toBe(t2.id)
+
+    // 원본 진행중은 rolled_at 마킹, 일반 항목은 손대지 않음
+    expect(testDb.prepare('SELECT rolled_at FROM tasks WHERE id=?').get(t2.id).rolled_at).toBeTruthy()
+    expect(testDb.prepare('SELECT rolled_at FROM tasks WHERE id=?').get(t1.id).rolled_at).toBeNull()
+
+    // 재실행해도 멱등 (이미 rolled_at) — 중복 복사 없음
+    expect(database.autoRolloverInProgress('2026-05-17')).toHaveLength(0)
+  })
+
+  it('setOnHold → held_at 마킹 시 일별 목록에서 빠지고 보류 목록에 등장', () => {
+    const t = database.createTask({ title: '보류대상', date: '2026-05-17' })
+    database.setOnHold(t.id, true)
+    expect(database.getTasksByDate('2026-05-17').map((x) => x.id)).not.toContain(t.id)
+    expect(database.getHeldTasks().map((x) => x.id)).toContain(t.id)
+  })
+
+  it('setOnHold → 진행중 항목 보류 시 자동 이월 후보에서도 제외', () => {
+    const t = database.createTask({ title: '진행중보류', date: '2026-05-16' })
+    database.setInProgress(t.id, true)
+    database.setOnHold(t.id, true)
+    expect(database.autoRolloverInProgress('2026-05-17')).toHaveLength(0)
+  })
+
+  it('returnFromHold → held_at 해제 + date를 오늘로 이동', () => {
+    const t = database.createTask({ title: '복귀할일', date: '2026-05-10' })
+    database.setOnHold(t.id, true)
+    const out = database.returnFromHold(t.id, '2026-05-20')
+    expect(out.held_at).toBeNull()
+    expect(out.date).toBe('2026-05-20')
+    expect(database.getHeldTasks()).toHaveLength(0)
+    expect(database.getTasksByDate('2026-05-20').map((x) => x.id)).toContain(t.id)
   })
 
   it('setCategories + getCategories round-trip', () => {

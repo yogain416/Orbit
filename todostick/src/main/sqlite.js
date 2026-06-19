@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
 
 // v3 SCHEMA — 신규 DB는 이걸로 즉시 생성된다.
 // 기존 v1/v2 DB는 CREATE TABLE IF NOT EXISTS가 막아주고, applyMigrations()가 ALTER/재구성을 처리한다.
@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   skipped_dates TEXT,
   rollover_source_id TEXT,
   rolled_at TEXT,
+  held_at TEXT,
   completion_note TEXT,
   completed_at TEXT,
   created_at TEXT,
@@ -162,6 +163,11 @@ function applyMigrations(db) {
   // v4→v5: 습관 '주 N회 목표형' — tasks.weekly_goal 컬럼 추가 (로컬 전용).
   if (!hasColumn(db, 'tasks', 'weekly_goal')) {
     db.exec('ALTER TABLE tasks ADD COLUMN weekly_goal INTEGER')
+  }
+
+  // v5→v6: 할일 보류 — tasks.held_at 컬럼 추가 (로컬 전용, sync 제외).
+  if (!hasColumn(db, 'tasks', 'held_at')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN held_at TEXT')
   }
 
   // see_memos: 기존 PK가 (date)라면 (user_id, date)로 재구성

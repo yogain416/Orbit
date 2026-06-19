@@ -6,6 +6,7 @@ import RecordsView from './views/RecordsView'
 import TimeBlockView from './views/TimeBlockView'
 import ReviewView from './views/ReviewView'
 import HabitView from './views/HabitView'
+import HoldView from './views/HoldView'
 import LoginView from './views/LoginView'
 import TaskModal from './components/TaskModal'
 import StickerPopup from './components/StickerPopup'
@@ -15,7 +16,7 @@ import SyncStatusBadge from './components/SyncStatusBadge'
 import ReminderToastContainer, { playFunSound } from './components/ReminderToast'
 import { formatDate, getTodayStr } from './utils/date'
 
-const VIEWS = ['일별', '주별', '월별', '타임블록', '습관', '리뷰', '기록']
+const VIEWS = ['일별', '주별', '월별', '타임블록', '습관', '보류', '리뷰', '기록']
 
 export default function App() {
   const isSticker = window.location.hash === '#sticker'
@@ -226,6 +227,7 @@ function MainApp({ user }) {
           />
         )}
         {view === '습관' && <HabitView />}
+        {view === '보류' && <HoldView />}
         {view === '리뷰' && <ReviewView />}
         {view === '기록' && <RecordsView />}
       </main>

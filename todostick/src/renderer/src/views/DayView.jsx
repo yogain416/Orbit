@@ -35,7 +35,10 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     let cancelled = false
     const run = async () => {
       if (isToday) {
-        // 사용자가 오늘 이미 모달을 닫았으면 다시 띄우지 않는다.
+        // 진행중 항목은 모달 없이 오늘로 자동 이월 (완료/진행중 해제 전까지 매일 따라옴).
+        await window.api.tasks.autoRolloverInProgress(dateStr)
+        if (cancelled) return
+        // 그 외 미완료 항목은 사용자가 오늘 이미 모달을 닫지 않았다면 선택형 모달로 띄운다.
         const dismissedOn = localStorage.getItem(ROLLOVER_PROMPT_KEY)
         if (dismissedOn !== dateStr) {
           const candidates = await window.api.tasks.getRolloverCandidates(dateStr)
@@ -103,6 +106,22 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     await window.api.tasks.setStarred(task.id, !task.is_starred)
     window.api.tasks.notifyChanged()
     load()
+  }, [load])
+
+  const handleHold = useCallback(async (task) => {
+    await window.api.tasks.setOnHold(task.id, true)
+    window.api.tasks.notifyChanged()
+    load()
+    setToast({
+      msg: `"${task.title.length > 16 ? task.title.slice(0, 16) + '…' : task.title}" 보류함`,
+      undo: async () => {
+        await window.api.tasks.setOnHold(task.id, false)
+        window.api.tasks.notifyChanged()
+        setToast(null)
+        load()
+      }
+    })
+    setTimeout(() => setToast((t) => (t && t.undo ? null : t)), 5000)
   }, [load])
 
   const performDelete = useCallback(async (task) => {
@@ -273,6 +292,7 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
                 onToggle={handleToggle}
                 onToggleInProgress={handleToggleInProgress}
                 onToggleStarred={handleToggleStarred}
+                onHold={handleHold}
                 onEdit={onEditTask}
                 onDelete={handleDelete}
                 isExpanded={expandedId === task.id}
@@ -417,7 +437,7 @@ const COLOR_BORDER = {
 
 const REPEAT_KO = { daily: '매일', weekly: '매주', monthly: '매월', yearly: '매년' }
 
-const TaskCard = memo(function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+const TaskCard = memo(function TaskCard({ task, categories, onToggle, onToggleInProgress, onToggleStarred, onHold, onEdit, onDelete, isExpanded, onExpand, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const today = getTodayStr()
   // 다일 이벤트는 종료일이 지나야 기한 초과
   const isOverdue = !task.is_completed && ((task.end_date || task.date) < today)
@@ -533,6 +553,15 @@ const TaskCard = memo(function TaskCard({ task, categories, onToggle, onToggleIn
 
         {/* 액션 버튼 */}
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+          {!task.is_completed && (
+            <button
+              onClick={() => onHold(task)}
+              title="보류 — 보류 목록으로 옮김 (나중에 오늘로 복귀)"
+              className="text-xs text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-300 px-2 py-1 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-500/15 transition-colors"
+            >
+              보류
+            </button>
+          )}
           <button
             onClick={() => onEdit(task)}
             className="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-200 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"

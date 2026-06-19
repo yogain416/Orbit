@@ -2,7 +2,7 @@ import { join } from 'path'
 import { app } from 'electron'
 import { openDatabase } from './sqlite.js'
 import { migrateJsonToSqlite } from './migrate.js'
-import { getRolloverCandidates as computeRolloverCandidates, buildRolloverCopies, yesterdayOf } from './rollover.js'
+import { getRolloverCandidates as computeRolloverCandidates, getInProgressRolloverCandidates as computeInProgressRolloverCandidates, buildRolloverCopies, yesterdayOf } from './rollover.js'
 import { buildRepeatInstancesForDate, shouldRepeatOnDate } from './repeat.js'
 
 // ── 모듈 전역 상태 ──────────────────────────────────────────
@@ -217,7 +217,7 @@ const TASK_COLS = [
   'repeat_type', 'repeat_days', 'order_index', 'remind_at', 'color', 'category', 'is_habit',
   'weekly_goal',
   'start_time', 'end_time', 'is_template', 'parent_id', 'skipped_dates', 'rollover_source_id',
-  'rolled_at',
+  'rolled_at', 'held_at',
   'completion_note', 'completed_at', 'created_at', 'updated_at'
 ]
 const BOOL_COLS = new Set(['is_completed', 'is_in_progress', 'is_starred', 'is_habit', 'is_template'])
@@ -523,6 +523,7 @@ export default {
         `SELECT * FROM tasks
          WHERE user_id IS ?
            AND is_template = 0
+           AND held_at IS NULL
            AND (date = ?
                 OR (end_date IS NOT NULL AND date <= ? AND ? <= end_date))`
       )
@@ -542,6 +543,7 @@ export default {
         `SELECT * FROM tasks
          WHERE user_id IS ?
            AND is_template = 0
+           AND held_at IS NULL
            AND (date LIKE ?
                 OR (end_date IS NOT NULL AND date <= ? AND end_date >= ?))`
       )
@@ -557,6 +559,7 @@ export default {
         `SELECT * FROM tasks
          WHERE user_id IS ?
            AND is_template = 0
+           AND held_at IS NULL
            AND ((date >= ? AND date <= ?)
                 OR (end_date IS NOT NULL AND date <= ? AND end_date >= ?))`
       )
@@ -826,6 +829,61 @@ export default {
     return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(id))
   },
 
+  // ── 보류(hold) ──────────────────────────────────────────────
+  // 할일을 보류 처리. held_at 마킹 → 일별/주별/월별 목록·진행률·이월 후보에서 빠지고
+  // 보류 목록(getHeldTasks)에서만 보인다. 진행중/별표 상태는 그대로 둔다.
+  setOnHold(id, value) {
+    const db = getDb()
+    const row = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+    if (!row) return null
+    const now = nowIso()
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE tasks SET held_at = ?, updated_at = ? WHERE id = ?`
+      ).run(value ? now : null, now, id)
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+      enqueueSync(db, 'tasks', 'upsert', id, taskRowToPayload(after))
+    })()
+    return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(id))
+  },
+
+  // 보류 목록 조회 — held_at이 있는 미완료 일반 task. 최근 보류한 것이 위로.
+  getHeldTasks() {
+    const uid = getCurrentUserId()
+    const rows = getDb()
+      .prepare(
+        `SELECT * FROM tasks
+         WHERE user_id IS ?
+           AND held_at IS NOT NULL
+           AND is_completed = 0
+           AND is_template = 0
+         ORDER BY held_at DESC`
+      )
+      .all(uid)
+    return rows.map(rowToTask)
+  },
+
+  // 보류 해제 후 복귀 — held_at 제거 + date를 toDate(오늘)로 이동해 오늘 목록에 다시 등장.
+  // order_index는 toDate의 기존 개수 뒤로 붙인다. 이미 한 번 이월된 항목이어도 복귀는 허용.
+  returnFromHold(id, toDate) {
+    const db = getDb()
+    const row = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+    if (!row) return null
+    const now = nowIso()
+    const uid = getCurrentUserId()
+    const existingOnTo = db
+      .prepare('SELECT COUNT(*) AS c FROM tasks WHERE user_id IS ? AND date = ? AND is_template = 0')
+      .get(uid, toDate).c
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE tasks SET held_at = NULL, date = ?, order_index = ?, updated_at = ? WHERE id = ?`
+      ).run(toDate, existingOnTo, now, id)
+      const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
+      enqueueSync(db, 'tasks', 'upsert', id, taskRowToPayload(after))
+    })()
+    return rowToTask(db.prepare('SELECT * FROM tasks WHERE id=?').get(id))
+  },
+
   deleteTask(id) {
     const db = getDb()
     const row = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
@@ -891,11 +949,37 @@ export default {
     return true
   },
 
-  // ── 이월 (v1.9.0: 사용자 선택형 — 자동 이월 제거) ──
-  // 후보 조회 (UI 모달이 사용자에게 보여줄 목록). 변경 없음, read-only.
+  // ── 이월 ─────────────────────────────────────────────────────
+  // 사용자 선택형 이월 후보 (UI 모달용). 진행중 항목은 제외 — 자동 이월로 처리됨.
   getRolloverCandidates(toDate) {
     const tasks = getAllTasks()
     return computeRolloverCandidates(tasks, toDate)
+  },
+
+  // 진행중 항목 자동 이월 — 오늘 진입 시 모달 없이 조용히 toDate로 복사 + 원본 rolled_at 마킹.
+  // 복사본도 is_in_progress가 유지되므로 완료(또는 진행중 해제)할 때까지 매일 따라온다.
+  autoRolloverInProgress(toDate) {
+    const db = getDb()
+    const tasks = getAllTasks()
+    const sources = computeInProgressRolloverCandidates(tasks, toDate)
+    if (sources.length === 0) return []
+    const existingOnTo = tasks.filter((t) => t.date === toDate).length
+    const newTasksRaw = buildRolloverCopies(sources, toDate, existingOnTo)
+    const newTasks = newTasksRaw.map((nt) => withUserId(nt))
+    const now = nowIso()
+    db.transaction(() => {
+      for (const nt of newTasks) {
+        insertTaskRow(db, nt)
+        enqueueSync(db, 'tasks', 'upsert', nt.id, taskRowToPayload(nt))
+      }
+      const sids = newTasks.map((nt) => nt.rollover_source_id)
+      markRolledAt(db, sids, now)
+      for (const sid of sids) {
+        const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(sid)
+        if (after) enqueueSync(db, 'tasks', 'upsert', sid, taskRowToPayload(after))
+      }
+    })()
+    return newTasks
   },
 
   // 선택된 source id만 toDate로 카피하고 원본을 rolled_at으로 마킹.
