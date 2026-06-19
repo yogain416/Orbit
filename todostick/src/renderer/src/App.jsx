@@ -6,6 +6,7 @@ import RecordsView from './views/RecordsView'
 import TimeBlockView from './views/TimeBlockView'
 import ReviewView from './views/ReviewView'
 import HabitView from './views/HabitView'
+import HoldView from './views/HoldView'
 import LoginView from './views/LoginView'
 import TaskModal from './components/TaskModal'
 import StickerPopup from './components/StickerPopup'
@@ -15,7 +16,7 @@ import SyncStatusBadge from './components/SyncStatusBadge'
 import ReminderToastContainer, { playFunSound } from './components/ReminderToast'
 import { formatDate, getTodayStr } from './utils/date'
 
-const VIEWS = ['일별', '주별', '월별', '타임블록', '습관', '리뷰', '기록']
+const VIEWS = ['일별', '주별', '월별', '타임블록', '습관', '보류', '리뷰', '기록']
 
 export default function App() {
   const isSticker = window.location.hash === '#sticker'
@@ -128,11 +129,11 @@ function MainApp({ user }) {
         {/* 로고 */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className="text-lg text-indigo-500">◎</span>
-          <span className="font-extrabold text-indigo-600 text-base tracking-tight">Orbit</span>
+          <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-base tracking-tight">Orbit</span>
           {envInfo.isDev && (
             <span
               title={`개발 모드 — DB: ${envInfo.dbPath}`}
-              className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded border border-amber-300 cursor-help"
+              className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 rounded border border-amber-300 dark:border-amber-500/30 cursor-help"
             >
               DEV
             </span>
@@ -145,7 +146,7 @@ function MainApp({ user }) {
           {!isToday && (
             <button
               onClick={goToToday}
-              className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-colors font-medium flex-shrink-0"
+              className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-500/30 transition-colors font-medium flex-shrink-0"
             >
               오늘로
             </button>
@@ -226,6 +227,7 @@ function MainApp({ user }) {
           />
         )}
         {view === '습관' && <HabitView />}
+        {view === '보류' && <HoldView />}
         {view === '리뷰' && <ReviewView />}
         {view === '기록' && <RecordsView />}
       </main>

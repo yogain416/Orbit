@@ -13,7 +13,7 @@ function ExternalLink({ href, children }) {
     }
   }
   return (
-    <a href={href} onClick={onClick} className="text-indigo-600 hover:text-indigo-800 underline">
+    <a href={href} onClick={onClick} className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 underline">
       {children}
     </a>
   )

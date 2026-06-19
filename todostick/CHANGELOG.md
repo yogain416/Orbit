@@ -11,6 +11,15 @@
 - 핵심: PC↔Supabase에 더해 폰 Google 캘린더/Tasks와도 sync. **선택적 sync(opt-in)** 도입 — `tasks.sync_to_google` 컬럼으로 레코드별 토글, OFF 전환 시 Google에서 삭제
 - 상세: `docs/superpowers/plans/2026-05-20-orbit-plan-4-google-sync.md`
 
+## [1.11.0] - 2026-06-19 — 할일 보류 + 진행중 자동 이월 복구
+
+### Added — 할일 보류(hold)
+- ⏸ **보류 기능** — 할일 카드의 **보류** 버튼으로 잠시 미뤄둘 수 있음. 보류한 항목은 일별/주별/월별 목록·진행률·이월 후보에서 빠지고, 상단 새 **보류** 탭의 보류 목록에서만 보임. 목록에서 **오늘로 복귀** 시 `date=오늘`로 이동해 오늘 할일에 다시 등장.
+- 🧱 `tasks.held_at` 컬럼(로컬 전용, sync 제외 — `weekly_goal`과 동일) · **스키마 v5→v6** · IPC `tasks:setOnHold/getHeld/returnFromHold` · 신규 `HoldView`.
+
+### Fixed — 진행중 자동 이월 복구
+- ▶ **진행중 항목 자동 이월 복구** — v1.8.4에서 자동 이월을 선택형 모달로 바꾸며 진행중 항목까지 모달 후보로 노출되던 회귀를 수정. 진행중 항목은 오늘 진입 시 **모달 없이 오늘로 자동 이월**(완료/진행중 해제 전까지 매일 따라옴), 그 외 미완료 항목만 선택형 모달로 표시. main `autoRolloverInProgress`(IPC `tasks:autoRolloverInProgress`), `getRolloverCandidates`는 진행중 제외.
+
 ## [1.10.1] - 2026-06-17 — 버그 수정
 
 ### Fixed

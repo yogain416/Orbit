@@ -498,6 +498,30 @@ ipcMain.handle('tasks:setStarred', (_, id, value) => {
   triggerSyncFlush()
   return result
 })
+ipcMain.handle('tasks:setOnHold', (_, id, value) => {
+  const result = db.setOnHold(id, value)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('tasks:getHeld', () => db.getHeldTasks())
+ipcMain.handle('tasks:returnFromHold', (_, id, toDate) => {
+  const result = db.returnFromHold(id, toDate)
+  mainWindow?.webContents.send('tasks:refresh')
+  stickerWindow?.webContents.send('tasks:refresh')
+  triggerSyncFlush()
+  return result
+})
+ipcMain.handle('tasks:autoRolloverInProgress', (_, toDate) => {
+  const result = db.autoRolloverInProgress(toDate)
+  if (result.length > 0) {
+    mainWindow?.webContents.send('tasks:refresh')
+    stickerWindow?.webContents.send('tasks:refresh')
+    triggerSyncFlush()
+  }
+  return result
+})
 ipcMain.handle('tasks:getRolloverCandidates', (_, toDate) => {
   return db.getRolloverCandidates(toDate)
 })
