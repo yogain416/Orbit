@@ -6,14 +6,14 @@ const PX_PER_HOUR = 64
 const PX_PER_MIN = PX_PER_HOUR / 60
 
 const BLOCK_COLORS = {
-  red: 'bg-red-200 border-red-400 text-red-800',
-  orange: 'bg-orange-200 border-orange-400 text-orange-800',
-  yellow: 'bg-yellow-200 border-yellow-400 text-yellow-800',
-  green: 'bg-green-200 border-green-400 text-green-800',
-  blue: 'bg-blue-200 border-blue-400 text-blue-800',
-  purple: 'bg-purple-200 border-purple-400 text-purple-800',
+  red: 'bg-red-200 border-red-400 text-red-800 dark:bg-red-500/20 dark:border-red-500/40 dark:text-red-200',
+  orange: 'bg-orange-200 border-orange-400 text-orange-800 dark:bg-orange-500/20 dark:border-orange-500/40 dark:text-orange-200',
+  yellow: 'bg-yellow-200 border-yellow-400 text-yellow-800 dark:bg-yellow-500/20 dark:border-yellow-500/40 dark:text-yellow-200',
+  green: 'bg-green-200 border-green-400 text-green-800 dark:bg-green-500/20 dark:border-green-500/40 dark:text-green-200',
+  blue: 'bg-blue-200 border-blue-400 text-blue-800 dark:bg-blue-500/20 dark:border-blue-500/40 dark:text-blue-200',
+  purple: 'bg-purple-200 border-purple-400 text-purple-800 dark:bg-purple-500/20 dark:border-purple-500/40 dark:text-purple-200',
 }
-const DEFAULT_BLOCK = 'bg-indigo-100 border-indigo-300 text-indigo-800'
+const DEFAULT_BLOCK = 'bg-indigo-100 border-indigo-300 text-indigo-800 dark:bg-indigo-500/20 dark:border-indigo-500/40 dark:text-indigo-200'
 
 function timeToMinutes(t) {
   if (!t) return null

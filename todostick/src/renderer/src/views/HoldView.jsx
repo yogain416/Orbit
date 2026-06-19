@@ -84,7 +84,7 @@ export default function HoldView() {
                     <p className="text-sm font-semibold leading-snug text-slate-800 dark:text-slate-100 break-words">
                       {task.title}
                       {task.is_in_progress && (
-                        <span className="ml-1.5 text-xs text-blue-500 font-normal">진행중</span>
+                        <span className="ml-1.5 text-xs text-blue-500 dark:text-blue-400 font-normal">진행중</span>
                       )}
                       {catInfo && (
                         <span

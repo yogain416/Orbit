@@ -379,7 +379,7 @@ export default function StickerPopup() {
                 ) : allDone ? (
                   <div className="flex flex-col items-center justify-center h-full gap-1">
                     <span className="text-2xl">✅</span>
-                    <p className="text-xs text-green-600 font-medium">모두 완료!</p>
+                    <p className="text-xs text-green-600 dark:text-green-400 font-medium">모두 완료!</p>
                   </div>
                 ) : (
                   displayTasks.map((task) => (

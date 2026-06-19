@@ -652,7 +652,7 @@ function SeeMemo({ dateStr }) {
       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3">📝 오늘의 회고</p>
       <div className="flex flex-col gap-3">
         <div>
-          <label className="text-xs font-medium text-green-600 mb-1 block">✅ 잘된 점</label>
+          <label className="text-xs font-medium text-green-600 dark:text-green-400 mb-1 block">✅ 잘된 점</label>
           <textarea
             value={good}
             onChange={(e) => { setGood(e.target.value); ref.current.good = e.target.value }}
@@ -663,7 +663,7 @@ function SeeMemo({ dateStr }) {
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-amber-600 mb-1 block">😅 아쉬운 점</label>
+          <label className="text-xs font-medium text-amber-600 dark:text-amber-300 mb-1 block">😅 아쉬운 점</label>
           <textarea
             value={bad}
             onChange={(e) => { setBad(e.target.value); ref.current.bad = e.target.value }}
@@ -674,7 +674,7 @@ function SeeMemo({ dateStr }) {
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-indigo-600 mb-1 block">🔜 내일 개선할 것</label>
+          <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300 mb-1 block">🔜 내일 개선할 것</label>
           <textarea
             value={next}
             onChange={(e) => { setNext(e.target.value); ref.current.next = e.target.value }}
