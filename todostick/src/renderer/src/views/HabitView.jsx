@@ -92,7 +92,7 @@ function weekdayRates(days) {
   }))
 }
 
-function HabitGrid({ days, accent, todayStr, isGoal, onToggle, onSkip }) {
+function HabitGrid({ days, accent, todayStr, onToggle, onSkip }) {
   const firstDayOfWeek = new Date(days[0].date + 'T00:00:00').getDay()
   const offsetFromMon = (firstDayOfWeek + 6) % 7
   const padded = [...Array(offsetFromMon).fill(null), ...days]
@@ -102,12 +102,10 @@ function HabitGrid({ days, accent, todayStr, isGoal, onToggle, onSkip }) {
     weeks.push(padded.slice(i, i + 7))
   }
 
-  // 클릭 가능 여부 — 목표형은 (미래 제외) 아무 날이나 토글, 일반형은 off/future 제외.
-  const canToggle = (cell) => {
-    if (cell.date > todayStr) return false
-    if (isGoal) return true
-    return cell.status !== 'off'
-  }
+  // 클릭 가능 여부 — 미래만 제외하고 아무 날이나 토글 가능.
+  // off(반복 요일 아님)인 날도 클릭해 '보충(makeup) 완료'를 찍을 수 있다
+  // (예: 월수금 습관을 사정상 화요일에 수행). 못 한 원래 요일은 우클릭 휴식으로 처리.
+  const canToggle = (cell) => cell.date <= todayStr
 
   return (
     <div className="flex gap-[3px]">
@@ -239,7 +237,6 @@ function HabitCard({ h, todayStr, onToggle, onSkip, onSetPaused, onDelete, onEdi
         days={h.days}
         accent={h.template.color}
         todayStr={todayStr}
-        isGoal={isGoal}
         onToggle={(date) => onToggle(h.template.id, date)}
         onSkip={(date, skip) => onSkip(h.template.id, date, skip)}
       />

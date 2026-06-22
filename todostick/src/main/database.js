@@ -706,6 +706,16 @@ export default {
     const prevRepeatType = task.repeat_type
     const now = nowIso()
 
+    // 반복 인스턴스를 다른 날로 '이동'하는 경우 감지 — 이 회차만 옮기는 것이므로
+    // 원래 날짜를 부모 템플릿의 skipped_dates에 넣어 ensureRepeatInstancesForDate가
+    // 그 날 인스턴스를 재생성(잔상)하지 못하게 막는다.
+    const isInstanceDateMove =
+      !task.is_template &&
+      task.parent_id &&
+      Object.prototype.hasOwnProperty.call(fields, 'date') &&
+      fields.date &&
+      fields.date !== task.date
+
     // 동적 UPDATE — fields의 키만 갱신. user_id는 변경 금지(외부 입력으로 들어와도 무시).
     const setKeys = []
     const params = []
@@ -750,6 +760,22 @@ export default {
           `UPDATE tasks SET is_template = 0, parent_id = NULL, skipped_dates = NULL, is_habit = 0, updated_at = ?
            WHERE id = ?`
         ).run(now, task.id)
+      }
+
+      // 반복 인스턴스 이동: 원래 날짜를 템플릿 skipped_dates에 추가 → 그 날 재생성 방지.
+      if (isInstanceDateMove) {
+        const tmplRow = db.prepare('SELECT * FROM tasks WHERE id=?').get(task.parent_id)
+        if (tmplRow) {
+          const tmpl = rowToTask(tmplRow)
+          const skipped = new Set(Array.isArray(tmpl.skipped_dates) ? tmpl.skipped_dates : [])
+          if (!skipped.has(task.date)) {
+            skipped.add(task.date)
+            db.prepare(`UPDATE tasks SET skipped_dates = ?, updated_at = ? WHERE id = ?`)
+              .run(JSON.stringify([...skipped].sort()), now, task.parent_id)
+            const after = db.prepare('SELECT * FROM tasks WHERE id=?').get(task.parent_id)
+            if (after) enqueueSync(db, 'tasks', 'upsert', task.parent_id, taskRowToPayload(after))
+          }
+        }
       }
 
       // 메인 row의 최종 상태 + 전파된 row들을 모두 enqueue
