@@ -189,12 +189,12 @@ function createStickerWindow() {
     width: winW,
     height: winH,
     minWidth: 240,
-    minHeight: 160,
+    minHeight: 46, // 접기(collapsed) 높이까지 허용. 펼친 상태 최소는 렌더러 핸들이 보장
     x,
     y,
     frame: false,
     alwaysOnTop: true,
-    resizable: false,
+    resizable: true, // 프로그램적 setSize 축소 허용(Windows: resizable=false면 축소 불가)
     skipTaskbar: true,
     transparent: true,
     hasShadow: true,
