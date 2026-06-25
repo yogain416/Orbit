@@ -177,14 +177,19 @@ function createMainWindow() {
 function createStickerWindow() {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const saved = db.getSetting('stickerPosition')
+  const savedSize = db.getSetting('stickerSize')
+  const winW = Math.max(240, savedSize?.width ?? 280)
+  const winH = Math.max(160, savedSize?.height ?? 360)
   const rawX = saved?.x ?? sw - 300
   const rawY = saved?.y ?? sh - 380
   const x = Math.max(0, Math.min(rawX, sw - 280))
   const y = Math.max(0, Math.min(rawY, sh - 100))
 
   stickerWindow = new BrowserWindow({
-    width: 280,
-    height: 360,
+    width: winW,
+    height: winH,
+    minWidth: 240,
+    minHeight: 160,
     x,
     y,
     frame: false,
@@ -699,10 +704,19 @@ ipcMain.handle('habits:delete', (_, templateId) => {
   return result
 })
 
-// IPC: 창 크기 조절 (스티커 접기/펼치기)
+// IPC: 창 크기 조절 (스티커 접기/펼치기) — 일시적, 저장 안 함
 ipcMain.on('window:setSize', (event, width, height) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (win) win.setSize(width, height)
+})
+
+// IPC: 스티커 크기 조절 + 저장 (코너 핸들 드래그 종료 시) — 재실행 시 복원
+ipcMain.on('window:setStickerSize', (event, width, height) => {
+  const w = Math.max(240, Math.round(width))
+  const h = Math.max(160, Math.round(height))
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) win.setSize(w, h)
+  db.setSetting('stickerSize', { width: w, height: h })
 })
 
 // IPC: 마우스 이벤트 통과 (스티커 영역 밖 클릭 허용)

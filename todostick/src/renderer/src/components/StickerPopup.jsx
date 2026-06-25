@@ -5,6 +5,8 @@ import RichMemoEditor from './RichMemoEditor'
 const STICKER_W = 280
 const STICKER_H_FULL = 360
 const STICKER_H_COLLAPSED = 46
+const STICKER_MIN_W = 240
+const STICKER_MIN_H = 200
 
 const STICKER_COLOR_DOT = {
   red: 'bg-red-400',
@@ -45,7 +47,14 @@ export default function StickerPopup() {
   const [seeBad, setSeeBad] = useState('')
   const [seeNext, setSeeNext] = useState('')
   const seeRef = useRef({ good: '', bad: '', next: '' })
+  // 펼친 상태의 현재 크기(접기/펼치기·리사이즈가 공유). 마운트 시 실제 창 크기로 초기화.
+  const sizeRef = useRef({ w: STICKER_W, h: STICKER_H_FULL })
+  const resizingRef = useRef(false)
   const today = getTodayStr()
+
+  useEffect(() => {
+    sizeRef.current = { w: window.innerWidth, h: window.innerHeight }
+  }, [])
 
   const load = useCallback(async () => {
     const data = await window.api.tasks.getByDate(today)
@@ -146,8 +155,9 @@ export default function StickerPopup() {
   // mousemove + elementFromPoint 방식으로 실시간 판별
   useEffect(() => {
     const onMouseMove = (e) => {
+      if (resizingRef.current) return // 리사이즈 중에는 클릭-통과 토글 보류
       const el = document.elementFromPoint(e.clientX, e.clientY)
-      const isInteractive = !!el?.closest('button, input, textarea, a, [role="button"], [data-drag], [data-scroll]')
+      const isInteractive = !!el?.closest('button, input, textarea, a, [role="button"], [data-drag], [data-scroll], [data-resize]')
       window.api.window.setIgnoreMouseEvents(!isInteractive)
     }
     window.addEventListener('mousemove', onMouseMove)
@@ -158,15 +168,41 @@ export default function StickerPopup() {
   const toggleCollapse = () => {
     const next = !collapsed
     setCollapsed(next)
-    window.api.window.setSize(STICKER_W, next ? STICKER_H_COLLAPSED : STICKER_H_FULL)
+    window.api.window.setSize(sizeRef.current.w, next ? STICKER_H_COLLAPSED : sizeRef.current.h)
     if (next) setShowQuickAdd(false)
+  }
+
+  // 코너 핸들 드래그 → 폭/높이 조절. 화면 좌표 기준이라 창이 줄어드는 동안에도 안정적.
+  const handleResizeStart = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizingRef.current = true
+    window.api.window.setIgnoreMouseEvents(false)
+    const startX = e.screenX
+    const startY = e.screenY
+    const startW = window.innerWidth
+    const startH = window.innerHeight
+    const onMove = (ev) => {
+      const w = Math.max(STICKER_MIN_W, Math.round(startW + (ev.screenX - startX)))
+      const h = Math.max(STICKER_MIN_H, Math.round(startH + (ev.screenY - startY)))
+      sizeRef.current = { w, h }
+      window.api.window.setSize(w, h)
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      resizingRef.current = false
+      window.api.window.setStickerSize(sizeRef.current.w, sizeRef.current.h) // 저장
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
   }
 
   const handlePlusClick = () => {
     if (collapsed) {
       setCollapsed(false)
       setActiveTab('today')
-      window.api.window.setSize(STICKER_W, STICKER_H_FULL)
+      window.api.window.setSize(sizeRef.current.w, sizeRef.current.h)
       setShowQuickAdd(true)
       setQuickTitle('')
     } else if (activeTab !== 'today') {
@@ -263,7 +299,7 @@ export default function StickerPopup() {
   const displayTasks = showCompleted ? tasks : tasks.filter((t) => !t.is_completed)
 
   return (
-    <div className={`flex flex-col h-screen select-none overflow-hidden rounded-xl ${collapsed ? 'bg-transparent' : 'bg-yellow-50 dark:bg-slate-800'}`}>
+    <div className={`relative flex flex-col h-screen select-none overflow-hidden rounded-xl ${collapsed ? 'bg-transparent' : 'bg-yellow-50 dark:bg-slate-800'}`}>
       {/* 헤더 (드래그 영역) */}
       <div
         data-drag
@@ -525,6 +561,22 @@ export default function StickerPopup() {
             </div>
           )}
         </>
+      )}
+
+      {/* 코너 리사이즈 핸들 (우측 하단) — 펼친 상태에서만 */}
+      {!collapsed && (
+        <div
+          data-resize
+          onMouseDown={handleResizeStart}
+          title="드래그하여 크기 조절"
+          style={{ WebkitAppRegion: 'no-drag' }}
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-40 flex items-end justify-end p-0.5 text-yellow-700/60 dark:text-amber-300/50 hover:text-yellow-800 dark:hover:text-amber-200"
+        >
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
+            <path d="M8 0v8H0L8 0z" fill="currentColor" opacity="0.5" />
+            <path d="M7 7L7 7M4 7L7 4M1 7L7 1" stroke="currentColor" strokeWidth="0.8" />
+          </svg>
+        </div>
       )}
 
       {/* 완료 메모 팝업 */}

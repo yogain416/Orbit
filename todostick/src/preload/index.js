@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
     openMain: () => ipcRenderer.send('window:openMain'),
     close: () => ipcRenderer.send('window:close'),
     setSize: (w, h) => ipcRenderer.send('window:setSize', w, h),
+    setStickerSize: (w, h) => ipcRenderer.send('window:setStickerSize', w, h),
     setIgnoreMouseEvents: (ignore) => ipcRenderer.send('window:setIgnoreMouseEvents', ignore)
   },
   see: {

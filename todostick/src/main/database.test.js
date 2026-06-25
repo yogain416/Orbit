@@ -276,6 +276,28 @@ describe('database (SQLite-backed)', () => {
     expect(JSON.parse(tmplRow.skipped_dates)).toContain('2026-05-15')
   })
 
+  it('updateTask로 반복 인스턴스 날짜 이동 → 원래 날짜 재생성(잔상) 방지', () => {
+    database.createTask({ title: '매일', date: '2026-05-15', repeat_type: 'daily' })
+    // 후속 회차(05-16) 인스턴스를 생성시킨 뒤 그것을 05-20으로 이동.
+    const before = database.getTasksByDate('2026-05-16')
+    const inst16 = before.find((t) => t.parent_id)
+    expect(inst16).toBeTruthy()
+
+    database.updateTask(inst16.id, { date: '2026-05-20' })
+
+    // 템플릿 skipped_dates에 원래 날짜가 추가됨.
+    const tmplRow = testDb.prepare('SELECT * FROM tasks WHERE is_template=1').get()
+    expect(JSON.parse(tmplRow.skipped_dates)).toContain('2026-05-16')
+
+    // 원래 날짜를 다시 조회해도 잔상 인스턴스가 재생성되지 않음.
+    const after = database.getTasksByDate('2026-05-16')
+    expect(after.some((t) => t.parent_id === tmplRow.id)).toBe(false)
+
+    // 이동된 인스턴스는 새 날짜에 존재.
+    const moved = testDb.prepare('SELECT * FROM tasks WHERE id=?').get(inst16.id)
+    expect(moved.date).toBe('2026-05-20')
+  })
+
   it('getRolloverCandidates → 미완료 일반 task만 반환 (완료/템플릿 제외)', () => {
     const t1 = database.createTask({ title: '미완료', date: '2026-05-16' })
     const t2 = database.createTask({ title: '완료됨', date: '2026-05-16' })
