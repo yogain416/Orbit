@@ -175,17 +175,24 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
   useEffect(() => { draggedIdRef.current = draggedId }, [draggedId])
   const tasksRef = useRef(tasks)
   useEffect(() => { tasksRef.current = tasks }, [tasks])
+  // 화면에 실제 렌더된 순서(정렬+완료필터 반영) — 드롭 인덱스 계산의 기준
+  const displayTasksRef = useRef([])
   const handleDrop = useCallback(async (targetId) => {
     const dragged = draggedIdRef.current
     if (!dragged || dragged === targetId) {
       setDraggedId(null); setDragOverId(null); return
     }
-    const ids = tasksRef.current.map((t) => t.id)
-    const from = ids.indexOf(dragged)
-    const to = ids.indexOf(targetId)
-    const newOrder = [...ids]
-    newOrder.splice(from, 1)
-    newOrder.splice(to, 0, dragged)
+    // 사용자가 보고 드래그한 화면 순서 기준으로 위치 계산
+    const visible = displayTasksRef.current.map((t) => t.id)
+    const from = visible.indexOf(dragged)
+    const to = visible.indexOf(targetId)
+    if (from === -1 || to === -1) { setDraggedId(null); setDragOverId(null); return }
+    const reordered = [...visible]
+    reordered.splice(from, 1)
+    reordered.splice(to, 0, dragged)
+    // 숨겨진(완료 숨김) 항목은 뒤에 붙여 order_index 누락/충돌 방지
+    const hidden = tasksRef.current.map((t) => t.id).filter((id) => !reordered.includes(id))
+    const newOrder = [...reordered, ...hidden]
     setDraggedId(null); setDragOverId(null)
     await window.api.tasks.reorder(dateStr, newOrder)
     load()
@@ -196,20 +203,13 @@ export default function DayView({ currentDate, onDateChange, onAddTask, onEditTa
     setExpandedId((prev) => (prev === id ? null : id))
   }, [])
 
-  // 기본 정렬: ① 미완료 우선 ② 시간 있는 것 시간 오름차순(위에서 아래로) ③ 시간 없으면 별표 우선 ④ order_index
+  // 정렬: ① 완료 항목은 항상 아래로 ② 그 외에는 수동 순서(order_index = 드래그한 순서) 유지
   const sortedTasks = [...tasks].sort((a, b) => {
     if (!!a.is_completed !== !!b.is_completed) return a.is_completed ? 1 : -1
-    const aHas = !!a.start_time
-    const bHas = !!b.start_time
-    if (aHas !== bHas) return aHas ? -1 : 1
-    if (aHas && bHas) {
-      const cmp = a.start_time.localeCompare(b.start_time)
-      if (cmp !== 0) return cmp
-    }
-    if (!!a.is_starred !== !!b.is_starred) return a.is_starred ? -1 : 1
     return (a.order_index ?? 0) - (b.order_index ?? 0)
   })
   const displayTasks = showCompleted ? sortedTasks : sortedTasks.filter((t) => !t.is_completed)
+  displayTasksRef.current = displayTasks
   const completed = tasks.filter((t) => t.is_completed).length
   const total = tasks.length
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0
